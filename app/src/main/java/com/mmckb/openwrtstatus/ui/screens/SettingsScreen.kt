@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +39,7 @@ fun SettingsScreen(
     var useHttps by remember { mutableStateOf(config.useHttps) }
     var useMock by remember { mutableStateOf(config.useMock) }
     var refreshInterval by remember { mutableStateOf(config.refreshIntervalSec.toString()) }
+    val colors = LocalAppColors.current
 
     Column(
         modifier = modifier.fillMaxSize().padding(16.dp),
@@ -114,5 +117,11 @@ fun SettingsScreen(
         ) {
             Text("保存")
         }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "需路由器已安装 luci-rpc（OpenWrt 官方源默认包含）。兼容 OpenWrt 23.05 / 24.10 / 25.12。",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
     }
 }
