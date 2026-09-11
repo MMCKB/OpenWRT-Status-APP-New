@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.mmckb.openwrtstatus"
-    compileSdk = 35
+    // Kyant0 backdrop/shapes AARs require compiling against API 36 or later.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mmckb.openwrtstatus"

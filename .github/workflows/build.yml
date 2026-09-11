@@ -27,7 +27,7 @@ jobs:
       - name: Accept SDK licenses & install build packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       # This repo does not commit a Gradle wrapper jar; install Gradle explicitly instead.
       - name: Install Gradle 8.13
