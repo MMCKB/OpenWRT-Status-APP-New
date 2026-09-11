@@ -39,11 +39,27 @@ opkg update && opkg install luci-rpc
 > 注：部分固件（如官方 23.05+）已内置该接口；若使用 `uhttpd-mod-ubus` / `rpcd` 鉴权，
 > 请使用具有 `uci` / `ubus` 读权限的账号（通常是 `root`）。
 
+## OpenWrt 25.12 兼容性
+
+应用通过与路由器通信的 **LuCI JSON-RPC** 接口（`luci-rpc`）获取状态，所用方法为 LuCI 长期稳定的公开 API：
+
+| 调用 | 说明 | 25.12 状态 |
+| --- | --- | --- |
+| `sys.system.info` | 主机名、负载、内存、交换分区 | 保留 |
+| `sys.uptime` | 运行时长（秒） | 保留 |
+| `sys.net.arp` | 已连接设备（IP / MAC / 接口） | 保留 |
+| `sys.net.deviceinfo` | 各接口累计收发字节 | 保留 |
+
+- **结论**：OpenWrt 25.12 仍内置并默认启用 `luci-rpc`，上述接口签名与返回结构未变更，应用无需修改即可兼容。
+- **安装确认**：若自定义固件未包含该包，执行 `opkg update && opkg install luci-rpc` 即可。
+- **鉴权**：使用具有 `uci` / `ubus` 读权限的账号（通常为 `root`），配合 `rpcd` + `uhttpd-mod-ubus`。
+- ⚠️ 以上为基于 **API 契约** 的兼容性判断（接口在 23.05 / 24.10 / 25.12 三代入参/出参一致），非真机逐版本验证；如遇个别快照版移除 `luci-rpc`，需改用 `rpcd-mod-...` 或 `ubus` 直连。
+
 ## 本地构建
 
 ### 方式一：Android Studio（推荐）
 1. 用 Android Studio 打开本项目根目录。
-2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 8.6`。
+2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 8.13`。
 3. 点击 **Run** 或执行 `./gradlew :app:assembleDebug`。
 
 ### 方式二：命令行（已安装 Gradle）
@@ -55,8 +71,8 @@ APK 产物位于 `app/build/outputs/apk/debug/`。
 
 ### 环境要求
 - JDK 17
-- Android SDK（Platform 34、Build-Tools 34.0.0）
-- Gradle 8.6+（CI 中由 `gradle/gradle-build-action` 自动安装）
+- Android SDK（Platform 35、Build-Tools 35.0.0）
+- Gradle 8.13+（CI 中显式安装）
 
 ## 项目结构
 
@@ -88,8 +104,8 @@ APK 产物位于 `app/build/outputs/apk/debug/`。
 
 推送代码到 `main` / `master` 分支，或手动在 **Actions → Build APK → Run workflow**，
 GitHub Actions 会自动：
-1. 配置 JDK 17 与 Android SDK；
-2. 安装 Gradle 8.6 并构建 `assembleDebug`；
+1. 配置 JDK 17 与 Android SDK（Platform 35、Build-Tools 35.0.0）；
+2. 安装 Gradle 8.13 并构建 `assembleDebug`；
 3. 将生成的 `app-debug.apk` 作为构建产物（Artifact）上传，可在 Actions 页面下载。
 
 ## 许可证

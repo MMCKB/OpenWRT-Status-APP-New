@@ -1,5 +1,6 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,18 +10,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,9 +36,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mmckb.openwrtstatus.data.model.DashboardData
 import com.mmckb.openwrtstatus.data.model.StatusUiState
 import com.mmckb.openwrtstatus.ui.RouterViewModel
+import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatRate
 import com.mmckb.openwrtstatus.ui.formatUptime
+import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,7 +69,8 @@ fun DashboardScreen(
             val data = state.data
             LazyColumn(
                 modifier = modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 88.dp)
             ) {
                 item { StatusHeader(online = data.online, lastUpdated = data.lastUpdated) }
                 item { SystemOverviewCard(data) }
@@ -88,14 +91,19 @@ private fun LoadingView() {
 
 @Composable
 private fun ErrorView(message: String, onRetry: () -> Unit) {
+    val colors = LocalAppColors.current
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("获取状态失败", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+        Text(
+            "获取状态失败",
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.error
+        )
         Spacer(Modifier.height(8.dp))
-        Text(message, style = MaterialTheme.typography.bodySmall)
+        Text(message, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         Button(onClick = onRetry) { Text("重试") }
     }
@@ -103,18 +111,19 @@ private fun ErrorView(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun StatusHeader(online: Boolean, lastUpdated: Long) {
-    val color = if (online) Color(0xFF2E7D32) else Color(0xFFC62828)
+    val colors = LocalAppColors.current
+    val color = if (online) colors.success else colors.error
     val text = if (online) "在线" else "离线"
     val time = remember(lastUpdated) {
         SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(lastUpdated))
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(color = color, shape = CircleShape, modifier = Modifier.size(12.dp)) {}
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(12.dp).background(color, CircleShape))
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(text, fontWeight = FontWeight.Bold, color = color)
-                Text("更新于 $time", style = MaterialTheme.typography.bodySmall)
+                Text("更新于 $time", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -122,87 +131,96 @@ private fun StatusHeader(online: Boolean, lastUpdated: Long) {
 
 @Composable
 private fun SystemOverviewCard(data: DashboardData) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("系统概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            InfoRow("主机名", data.hostname)
-            data.model?.let { InfoRow("型号", it) }
-            data.firmware?.let { InfoRow("固件", it) }
-            InfoRow("运行时间", formatUptime(data.uptimeSeconds))
-        }
+    val colors = LocalAppColors.current
+    AppCard {
+        Text("系统概览", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.onSurface)
+        Spacer(Modifier.height(8.dp))
+        InfoRow("主机名", data.hostname)
+        data.model?.let { InfoRow("型号", it) }
+        data.firmware?.let { InfoRow("固件", it) }
+        InfoRow("运行时间", formatUptime(data.uptimeSeconds))
     }
 }
 
 @Composable
 private fun SystemLoadCard(data: DashboardData) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("系统负载", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                listOf("1分钟", "5分钟", "15分钟").forEachIndexed { i, label ->
-                    val v = data.loadAverage.getOrNull(i) ?: 0.0
-                    Column {
-                        Text(label, style = MaterialTheme.typography.labelSmall)
-                        Text("%.2f".format(Locale.US, v), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                    }
+    val colors = LocalAppColors.current
+    AppCard {
+        Text("系统负载", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.onSurface)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            listOf("1分钟", "5分钟", "15分钟").forEachIndexed { i, label ->
+                val v = data.loadAverage.getOrNull(i) ?: 0.0
+                Column {
+                    Text(label, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                    Text(
+                        "%.2f".format(Locale.US, v),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.onSurface
+                    )
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "内存使用 %.0f%%  (%s / %s)".format(
-                    Locale.US, data.memoryUsedPercent,
-                    formatBytes((data.memoryTotalBytes * data.memoryUsedPercent / 100).toLong()),
-                    formatBytes(data.memoryTotalBytes)
-                ),
-                style = MaterialTheme.typography.bodySmall
-            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "内存使用 %.0f%%  (%s / %s)".format(
+                Locale.US, data.memoryUsedPercent,
+                formatBytes((data.memoryTotalBytes * data.memoryUsedPercent / 100).toLong()),
+                formatBytes(data.memoryTotalBytes)
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
+        LinearProgressIndicator(
+            progress = { (data.memoryUsedPercent / 100f).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        )
+        if (data.hasSwap) {
+            Text("交换分区 %.0f%%".format(Locale.US, data.swapUsedPercent), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             LinearProgressIndicator(
-                progress = { (data.memoryUsedPercent / 100f).coerceIn(0f, 1f) },
+                progress = { (data.swapUsedPercent / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
-            if (data.hasSwap) {
-                Text("交换分区 %.0f%%".format(Locale.US, data.swapUsedPercent), style = MaterialTheme.typography.bodySmall)
-                LinearProgressIndicator(
-                    progress = { (data.swapUsedPercent / 100f).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                )
-            }
         }
     }
 }
 
 @Composable
 private fun TrafficCard(data: DashboardData) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("网络流量", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            if (data.interfaces.isEmpty()) {
-                Text("无接口数据", style = MaterialTheme.typography.bodySmall)
-            } else {
-                data.interfaces.forEach { t ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(t.name, modifier = Modifier.width(80.dp), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                "↓ ${formatRate(t.rxRate)}    累计 ${formatBytes(t.rxBytes)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF1565C0)
-                            )
-                            Text(
-                                "↑ ${formatRate(t.txRate)}    累计 ${formatBytes(t.txBytes)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF00897B)
-                            )
-                        }
+    val colors = LocalAppColors.current
+    AppCard {
+        Text("网络流量", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.onSurface)
+        Spacer(Modifier.height(8.dp))
+        if (data.interfaces.isEmpty()) {
+            Text("无接口数据", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        } else {
+            data.interfaces.forEach { t ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        t.name,
+                        modifier = Modifier.width(80.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.onSurface
+                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "↓ ${formatRate(t.rxRate)}    累计 ${formatBytes(t.rxBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.primary
+                        )
+                        Text(
+                            "↑ ${formatRate(t.txRate)}    累计 ${formatBytes(t.txBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.accent
+                        )
                     }
-                    HorizontalDivider()
                 }
+                HorizontalDivider(color = colors.outline)
             }
         }
     }
@@ -210,36 +228,36 @@ private fun TrafficCard(data: DashboardData) {
 
 @Composable
 private fun DevicesCard(data: DashboardData) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("已连接设备", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(8.dp))
-                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape, modifier = Modifier.size(24.dp)) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("${data.deviceCount}", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
+    val colors = LocalAppColors.current
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("已连接设备", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.onSurface)
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(24.dp).background(colors.accent.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("${data.deviceCount}", style = MaterialTheme.typography.labelSmall, color = colors.accent)
             }
-            Spacer(Modifier.height(8.dp))
-            if (data.devices.isEmpty()) {
-                Text("未发现设备", style = MaterialTheme.typography.bodySmall)
-            } else {
-                data.devices.forEach { d ->
-                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text(d.name ?: d.ip, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text(
-                            "${d.ip}  ·  ${d.mac}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(Modifier.weight(1f))
-                        d.iface?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
-                    }
-                    HorizontalDivider()
+        }
+        Spacer(Modifier.height(8.dp))
+        if (data.devices.isEmpty()) {
+            Text("未发现设备", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        } else {
+            data.devices.forEach { d ->
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text(d.name ?: d.ip, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = colors.onSurface)
+                    Text(
+                        "${d.ip}  ·  ${d.mac}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
                 }
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.weight(1f))
+                    d.iface?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant) }
+                }
+                HorizontalDivider(color = colors.outline)
             }
         }
     }
@@ -247,13 +265,14 @@ private fun DevicesCard(data: DashboardData) {
 
 @Composable
 private fun InfoRow(label: String, value: String) {
+    val colors = LocalAppColors.current
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = colors.onSurfaceVariant,
             modifier = Modifier.width(72.dp)
         )
-        Text(value, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
     }
 }

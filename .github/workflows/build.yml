@@ -27,14 +27,14 @@ jobs:
       - name: Accept SDK licenses & install build packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       # This repo does not commit a Gradle wrapper jar; install Gradle explicitly instead.
-      - name: Install Gradle 8.6
+      - name: Install Gradle 8.13
         run: |
-          curl -sSL https://services.gradle.org/distributions/gradle-8.6-bin.zip -o /tmp/gradle.zip
+          curl -sSL https://services.gradle.org/distributions/gradle-8.13-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /opt
-          echo "/opt/gradle-8.6/bin" >> "$GITHUB_PATH"
+          echo "/opt/gradle-8.13/bin" >> "$GITHUB_PATH"
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
