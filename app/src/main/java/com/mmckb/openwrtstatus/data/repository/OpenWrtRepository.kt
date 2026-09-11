@@ -1,131 +1,286 @@
 package com.mmckb.openwrtstatus.data.repository
 
-import com.mmckb.openwrtstatus.data.model.DeviceInfo
-import com.mmckb.openwrtstatus.data.model.InterfaceStat
+import com.mmckb.openwrtstatus.data.model.InterfaceInfo
+import com.mmckb.openwrtstatus.data.model.LeaseInfo
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.RouterStatus
-import com.mmckb.openwrtstatus.data.remote.LuciRpcClient
+import com.mmckb.openwrtstatus.data.model.WirelessInfo
+import com.mmckb.openwrtstatus.data.remote.UbusRpcClient
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Fetches aggregated router status via the LuCI JSON-RPC API.
+ * Fetches aggregated router status over the **rpcd ubus** JSON-RPC endpoint.
  *
- * Exposed LuCI RPC methods used here:
- *  - `sys.system.info`  → hostname, load average, memory & swap
- *  - `sys.uptime`       → seconds since boot
- *  - `sys.net.arp`      → connected devices (IP/MAC/interface)
- *  - `sys.net.deviceinfo` → per-interface cumulative rx/tx bytes
+ * Calls used (all read-only):
+ *  - `system board`            → hostname, model, firmware release
+ *  - `system info`             → uptime, load average, memory & swap
+ *  - `network.interface dump`  → logical interfaces (state, IPv4, uptime, counters)
+ *  - `network.device status`   → per-device byte counters (fallback for interface stats)
+ *  - `network.wireless status` → radios / SSIDs / connected stations
+ *
+ * The optional calls degrade gracefully: a failure only adds a warning instead of
+ * failing the whole refresh.
  */
-class OpenWrtRepository(private val rpc: LuciRpcClient = LuciRpcClient()) {
+class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     suspend fun fetchStatus(config: RouterConfig): RouterStatus {
         if (config.useMock) return MockData.sample()
 
-        val scheme = if (config.useHttps) "https" else "http"
-        val baseUrl = "$scheme://${config.ip}:${config.port}"
-        val token = rpc.login(baseUrl, config.username, config.password)
+        val endpoint = rpc.buildEndpoint(config.ip, config.port, config.useHttps)
+        val token = rpc.login(endpoint, config.username, config.password, config.allowInsecureTls)
 
-        val systemInfo = rpc.call(baseUrl, token, "sys", "system.info")
-        val arp = rpc.call(baseUrl, token, "sys", "net.arp")
-        val deviceInfo = rpc.call(baseUrl, token, "sys", "net.deviceinfo")
-        val uptime = runCatching { rpc.call(baseUrl, token, "sys", "uptime") }.getOrElse { JsonNull }
+        val board = rpc.call(endpoint, token, "system", "board", EMPTY, config.allowInsecureTls)
+        val info = rpc.call(endpoint, token, "system", "info", EMPTY, config.allowInsecureTls)
 
-        return parse(systemInfo, arp, deviceInfo, uptime)
+        val warnings = mutableListOf<String>()
+
+        val dump = runCatching {
+            rpc.call(endpoint, token, "network.interface", "dump", EMPTY, config.allowInsecureTls)
+        }.onFailure { warnings += "网络接口状态暂不可用。" }.getOrElse { JsonNull }
+
+        val devices = runCatching {
+            rpc.call(endpoint, token, "network.device", "status", EMPTY, config.allowInsecureTls)
+        }.onFailure { warnings += "设备流量计数暂不可用。" }.getOrElse { JsonNull }
+
+        val wireless = runCatching {
+            rpc.call(endpoint, token, "network.wireless", "status", EMPTY, config.allowInsecureTls)
+        }.onFailure { warnings += "无线状态暂不可用。" }.getOrElse { JsonNull }
+
+        return buildStatus(board, info, dump, devices, wireless, warnings)
     }
 
-    private fun parse(
-        systemInfo: JsonElement,
-        arp: JsonElement,
-        deviceInfo: JsonElement,
-        uptime: JsonElement
+    private fun buildStatus(
+        board: JsonElement,
+        info: JsonElement,
+        dump: JsonElement,
+        deviceCounters: JsonElement,
+        wireless: JsonElement,
+        warnings: MutableList<String>
     ): RouterStatus {
-        val info = systemInfo.jsonObject
-        val hostname = info["hostname"]
-            ?.takeIf { it !is JsonNull }
-            ?.jsonPrimitive?.content ?: "OpenWrt"
+        val boardObj = board.obj()
+        val infoObj = info.obj()
 
-        // ubus reports load average scaled by 65536; divide to get the familiar value.
-        val load: List<Double> = info["load"]?.let { el ->
-            if (el is JsonArray) el.mapNotNull { child ->
-                if (child is JsonNull) null else runCatching { child.jsonPrimitive.content.toDoubleOrNull() }.getOrNull()
-            }
-            else emptyList()
-        }?.map { it / 65536.0 } ?: emptyList()
+        val release = boardObj?.get("release").obj()
+        val firmware = release?.get("description")?.str()
+            ?: release?.get("version")?.str()
+            ?: boardObj?.get("release")?.str()
 
-        val mem = info["memory"]?.takeIf { it is JsonObject }?.jsonObject
-        val swap = info["swap"]?.takeIf { it is JsonObject }?.jsonObject
-        val memTotal = mem?.get("total").toLongOrNull() ?: 0L
-        val memFree = mem?.get("free").toLongOrNull() ?: 0L
-        val swapTotal = swap?.get("total").toLongOrNull() ?: 0L
-        val swapFree = swap?.get("free").toLongOrNull() ?: 0L
+        val memory = infoObj?.get("memory").obj()
+        val swap = infoObj?.get("swap").obj()
 
-        val uptimeSeconds = if (uptime !is JsonNull) {
-            uptime.toLongOrNull() ?: 0L
-        } else {
-            info["uptime"]?.takeIf { it !is JsonNull }?.toLongOrNull() ?: 0L
-        }
+        val memTotal = memory?.get("total")?.long() ?: 0L
+        val memAvailable = listOf("free", "buffered", "cached")
+            .mapNotNull { memory?.get(it)?.long() }
+            .takeIf { it.isNotEmpty() }
+            ?.sum()
+            ?: memory?.get("available")?.long()
+            ?: memory?.get("free")?.long()
+            ?: 0L
 
-        val firmware = info["release"]?.takeIf { it is JsonObject }
-            ?.jsonObject?.get("version")
-            ?.takeIf { it !is JsonNull }?.jsonPrimitive?.content
-        val model = info["model"]
-            ?.takeIf { it !is JsonNull }?.jsonPrimitive?.content
+        val swapTotal = swap?.get("total")?.long() ?: 0L
+        val swapAvailable = swap?.get("free")?.long() ?: 0L
+
+        val counters = readDeviceCounters(deviceCounters)
 
         return RouterStatus(
             online = true,
-            hostname = hostname,
-            uptimeSeconds = uptimeSeconds,
-            loadAverage = load,
+            hostname = boardObj?.get("hostname")?.str() ?: "OpenWrt",
+            uptimeSeconds = infoObj?.get("uptime")?.long() ?: 0L,
+            loadAverage = readLoad(infoObj?.get("load")),
             memoryTotalBytes = memTotal,
-            memoryFreeBytes = memFree,
+            memoryAvailableBytes = memAvailable,
             swapTotalBytes = swapTotal,
-            swapFreeBytes = swapFree,
-            devices = parseArp(arp),
-            interfaces = parseDeviceInfo(deviceInfo),
+            swapAvailableBytes = swapAvailable,
+            interfaces = readInterfaces(dump, counters),
+            wireless = readWireless(wireless),
+            leases = emptyList(),
             firmware = firmware,
-            model = model
+            model = boardObj?.get("model")?.str() ?: boardObj?.get("system")?.str(),
+            warnings = warnings
         )
     }
 
-    private fun parseArp(arp: JsonElement): List<DeviceInfo> {
-        if (arp !is JsonArray) return emptyList()
-        return arp.mapNotNull { el ->
-            if (el !is JsonObject) return@mapNotNull null
-            val ip = pick(el, "IP", "ip") ?: return@mapNotNull null
-            val mac = pick(el, "MAC", "mac") ?: "—"
-            val iface = pick(el, "DEVICE", "device", "iface", "INTERFACE")
-            val name = pick(el, "NAME", "name")
-            DeviceInfo(ip, mac, iface, name)
+    /**
+     * ubus reports load as either a float (newer builds) or a fixed-point integer scaled
+     * by 65535 (older builds). Only divide when the value is clearly scaled.
+     */
+    private fun readLoad(element: JsonElement?): List<Double> {
+        val array = element as? JsonArray ?: return emptyList()
+        return array.take(3).mapNotNull { child ->
+            val value = child.dbl() ?: return@mapNotNull null
+            if (value > 100.0) value / 65535.0 else value
         }
     }
 
-    private fun parseDeviceInfo(deviceInfo: JsonElement): List<InterfaceStat> {
-        if (deviceInfo !is JsonObject) return emptyList()
-        return deviceInfo.mapNotNull { (name, value) ->
-            if (value !is JsonObject) return@mapNotNull null
-            val rx = value["rx_bytes"].toLongOrNull() ?: value["rx"].toLongOrNull() ?: 0L
-            val tx = value["tx_bytes"].toLongOrNull() ?: value["tx"].toLongOrNull() ?: 0L
-            InterfaceStat(name, rx, tx)
+    private fun readDeviceCounters(payload: JsonElement): Map<String, Pair<Long, Long>> {
+        val root = payload.obj() ?: return emptyMap()
+        return root.mapNotNull { (name, value) ->
+            val stats = value.obj()?.get("statistics").obj() ?: value.obj() ?: return@mapNotNull null
+            val rx = stats["rx_bytes"]?.long() ?: return@mapNotNull null
+            val tx = stats["tx_bytes"]?.long() ?: return@mapNotNull null
+            name to (rx to tx)
+        }.toMap()
+    }
+
+    private fun readInterfaces(
+        dump: JsonElement,
+        counters: Map<String, Pair<Long, Long>>
+    ): List<InterfaceInfo> {
+        val root = dump.obj() ?: return emptyList()
+        val list = root["interface"] as? JsonArray
+            ?: root["interfaces"] as? JsonArray
+            ?: return emptyList()
+
+        return list.mapIndexedNotNull { index, raw ->
+            val item = raw.obj() ?: return@mapIndexedNotNull null
+            val name = item["interface"]?.str() ?: item["name"]?.str() ?: "接口 ${index + 1}"
+
+            val deviceRaw = item["l3_device"] ?: item["device"]
+            val device = deviceRaw.obj()?.get("name")?.str() ?: deviceRaw?.str() ?: "—"
+
+            val stats = item["statistics"].obj()
+            val counter = counters[device]
+            val rx = stats?.get("rx_bytes")?.long()
+                ?: item["rx_bytes"]?.long()
+                ?: counter?.first
+                ?: 0L
+            val tx = stats?.get("tx_bytes")?.long()
+                ?: item["tx_bytes"]?.long()
+                ?: counter?.second
+                ?: 0L
+
+            val ipv4 = (item["ipv4-address"] as? JsonArray)
+                ?.mapNotNull { entry ->
+                    entry.obj()?.get("address")?.str() ?: entry.str()
+                }
+                ?: emptyList()
+
+            InterfaceInfo(
+                name = name,
+                device = device,
+                up = item["up"]?.bool() ?: false,
+                ipv4 = ipv4,
+                uptimeSeconds = item["uptime"]?.long() ?: 0L,
+                rxBytes = rx,
+                txBytes = tx
+            )
         }
     }
 
-    private fun pick(obj: JsonObject, vararg keys: String): String? {
-        for (k in keys) {
-            val v = obj[k] ?: obj[k.lowercase()] ?: obj[k.uppercase()]
-            if (v != null && v !is JsonNull) return v.jsonPrimitive.content
+    private fun readWireless(payload: JsonElement): List<WirelessInfo> {
+        val root = payload.obj() ?: return emptyList()
+        return root.entries.flatMap { (radioName, radioValue) ->
+            val radio = radioValue.obj() ?: return@flatMap emptyList()
+            val radioConfig = radio["config"].obj()
+            val rawInterfaces = radio["interfaces"] ?: radio["interface"]
+            val entries = (rawInterfaces as? JsonArray)?.toList()
+                ?: rawInterfaces.obj()?.values?.toList()
+                ?: listOf(radioValue)
+
+            entries.mapIndexedNotNull { index, raw ->
+                val item = raw.obj() ?: return@mapIndexedNotNull null
+                val config = item["config"].obj()
+
+                val ssid = config?.get("ssid")?.str()
+                    ?: item["ssid"]?.str()
+                    ?: radioConfig?.get("ssid")?.str()
+                    ?: return@mapIndexedNotNull null
+
+                val disabled = item["disabled"]?.truthy()
+                    ?: config?.get("disabled")?.truthy()
+                    ?: radio["disabled"]?.truthy()
+                    ?: radioConfig?.get("disabled")?.truthy()
+                    ?: false
+
+                val state = item["up"] ?: item["state"] ?: item["status"] ?: radio["up"] ?: radio["state"]
+                val hasConfig = config?.get("mode")?.str() != null || config?.get("ssid") != null
+                val up = !disabled && (state?.truthy() ?: hasConfig)
+
+                val stations = item["stations"] as? JsonArray
+                val assoc = item["assoclist"].obj()
+                val clients = when {
+                    stations != null -> stations.size
+                    assoc != null -> assoc.size
+                    else -> null
+                }
+
+                WirelessInfo(
+                    name = item["ifname"]?.str() ?: item["name"]?.str() ?: "$radioName·${index + 1}",
+                    ssid = ssid,
+                    up = up,
+                    channel = item["channel"]?.display()
+                        ?: radio["channel"]?.display()
+                        ?: config?.get("channel")?.display()
+                        ?: "自动",
+                    clients = clients
+                )
+            }
         }
-        return null
     }
 
-    private fun JsonElement?.toLongOrNull(): Long? {
-        val el = this ?: return null
-        if (el is JsonNull) return null
-        return runCatching { el.jsonPrimitive.content.toLongOrNull() }.getOrNull()
+    /** Parses `/tmp/dhcp.leases` lines: `<expiry> <mac> <ip> <name> <clientid>`. */
+    fun parseLeases(raw: String): List<LeaseInfo> {
+        if (raw.isBlank()) return emptyList()
+        return raw.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { line ->
+                val parts = line.split(Regex("\\s+"))
+                if (parts.size < 4) return@mapNotNull null
+                val expires = parts[0].toLongOrNull() ?: return@mapNotNull null
+                val mac = parts[1]
+                val ip = parts[2]
+                val name = parts[3].takeIf { it != "*" && it.isNotBlank() } ?: "未知设备"
+                LeaseInfo(mac = mac, ip = ip, name = name, expiresAt = expires)
+            }
+            .toList()
+    }
+
+    // --- Json navigation helpers -------------------------------------------------
+
+    private fun JsonElement?.obj(): JsonObject? =
+        this?.takeIf { it is JsonObject }?.jsonObject
+
+    private fun JsonElement?.str(): String? {
+        val primitive = this as? JsonPrimitive ?: return null
+        val value = primitive.content
+        return value.takeIf { it.isNotBlank() && it != "—" }
+    }
+
+    private fun JsonElement?.display(): String? {
+        val primitive = this as? JsonPrimitive ?: return null
+        return primitive.content
+    }
+
+    private fun JsonElement?.long(): Long? =
+        (this as? JsonPrimitive)?.content?.toLongOrNull()
+
+    private fun JsonElement?.dbl(): Double? =
+        (this as? JsonPrimitive)?.content?.toDoubleOrNull()
+
+    private fun JsonElement?.bool(): Boolean? =
+        (this as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+
+    private fun JsonElement?.truthy(): Boolean? {
+        val primitive = this as? JsonPrimitive ?: return null
+        val content = primitive.content
+        content.toBooleanStrictOrNull()?.let { return it }
+        return when (content.trim().lowercase()) {
+            "1", "yes", "on", "up", "active", "enabled", "running" -> true
+            "0", "no", "off", "down", "inactive", "disabled" -> false
+            else -> null
+        }
+    }
+
+    private companion object {
+        val EMPTY = buildJsonObject {}
     }
 }

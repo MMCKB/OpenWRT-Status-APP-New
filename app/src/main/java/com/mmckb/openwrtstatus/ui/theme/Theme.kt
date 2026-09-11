@@ -65,7 +65,10 @@ fun darkAppColors() = AppColors(
 
 /** Shape tokens for the custom design system. */
 object AppShapes {
-    val card = RoundedCornerShape(20.dp)
+    /** Large container card used as the primary layout unit. */
+    val card = RoundedCornerShape(24.dp)
+    /** Secondary blocks nested inside a card (tiles, chips). */
+    val block = RoundedCornerShape(14.dp)
     val pill = RoundedCornerShape(999.dp)
 }
 
