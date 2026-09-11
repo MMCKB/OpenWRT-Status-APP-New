@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -158,13 +159,13 @@ private fun SystemLoadCard(data: DashboardData) {
                 style = MaterialTheme.typography.bodySmall
             )
             LinearProgressIndicator(
-                progress = (data.memoryUsedPercent / 100f).coerceIn(0f, 1f),
+                progress = { (data.memoryUsedPercent / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
             if (data.hasSwap) {
                 Text("交换分区 %.0f%%".format(Locale.US, data.swapUsedPercent), style = MaterialTheme.typography.bodySmall)
                 LinearProgressIndicator(
-                    progress = (data.swapUsedPercent / 100f).coerceIn(0f, 1f),
+                    progress = { (data.swapUsedPercent / 100f).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 )
             }
