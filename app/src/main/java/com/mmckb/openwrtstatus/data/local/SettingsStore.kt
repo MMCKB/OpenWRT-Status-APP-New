@@ -18,8 +18,14 @@ class SettingsStore(context: Context) {
         username = prefs.getString("username", "root") ?: "root",
         password = prefs.getString("password", "") ?: "",
         useHttps = prefs.getBoolean("useHttps", false),
+        allowInsecureTls = prefs.getBoolean("allowInsecureTls", false),
         useMock = prefs.getBoolean("useMock", false),
-        refreshIntervalSec = prefs.getInt("refreshIntervalSec", 5).coerceIn(2, 60)
+        refreshIntervalSec = prefs.getInt("refreshIntervalSec", 5).coerceIn(2, 60),
+        sshEnabled = prefs.getBoolean("sshEnabled", false),
+        sshHost = prefs.getString("sshHost", "") ?: "",
+        sshPort = prefs.getInt("sshPort", 22).coerceIn(1, 65535),
+        sshUsername = prefs.getString("sshUsername", "root") ?: "root",
+        sshPassword = prefs.getString("sshPassword", "") ?: ""
     )
 
     fun save(config: RouterConfig) {
@@ -29,8 +35,14 @@ class SettingsStore(context: Context) {
             putString("username", config.username)
             putString("password", config.password)
             putBoolean("useHttps", config.useHttps)
+            putBoolean("allowInsecureTls", config.allowInsecureTls)
             putBoolean("useMock", config.useMock)
             putInt("refreshIntervalSec", config.refreshIntervalSec)
+            putBoolean("sshEnabled", config.sshEnabled)
+            putString("sshHost", config.sshHost)
+            putInt("sshPort", config.sshPort)
+            putString("sshUsername", config.sshUsername)
+            putString("sshPassword", config.sshPassword)
         }.apply()
     }
 }

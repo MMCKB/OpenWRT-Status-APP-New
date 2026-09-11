@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  OpenWrt routers are typically reached over plain HTTP on the LAN, and HTTPS access
+  commonly uses a self-signed certificate. Cleartext is therefore permitted explicitly,
+  and user-installed trust anchors are honoured.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
