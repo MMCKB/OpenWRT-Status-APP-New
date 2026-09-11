@@ -51,8 +51,10 @@ class OpenWrtRepository(private val rpc: LuciRpcClient = LuciRpcClient()) {
             ?.jsonPrimitive?.content ?: "OpenWrt"
 
         // ubus reports load average scaled by 65536; divide to get the familiar value.
-        val load = info["load"]?.let { el ->
-            if (el is JsonArray) el.mapNotNull { if (it is JsonNull) null else runCatching { it.jsonPrimitive.double }.getOrNull() }
+        val load: List<Double> = info["load"]?.let { el ->
+            if (el is JsonArray) el.mapNotNull { child ->
+                if (child is JsonNull) null else runCatching { child.jsonPrimitive.content.toDoubleOrNull() }.getOrNull()
+            }
             else emptyList()
         }?.map { it / 65536.0 } ?: emptyList()
 
@@ -124,7 +126,6 @@ class OpenWrtRepository(private val rpc: LuciRpcClient = LuciRpcClient()) {
     private fun JsonElement?.toLongOrNull(): Long? {
         val el = this ?: return null
         if (el is JsonNull) return null
-        return runCatching { el.jsonPrimitive.long }.getOrNull()
-            ?: runCatching { el.jsonPrimitive.content.toLongOrNull() }.getOrNull()
+        return runCatching { el.jsonPrimitive.content.toLongOrNull() }.getOrNull()
     }
 }
