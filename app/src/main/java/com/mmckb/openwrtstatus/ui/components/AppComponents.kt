@@ -1,47 +1,79 @@
 package com.mmckb.openwrtstatus.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.fastRoundToInt
+import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
+import com.mmckb.openwrtstatus.ui.glass.DampedDragAnimation
+import com.mmckb.openwrtstatus.ui.glass.InteractiveHighlight
+import com.mmckb.openwrtstatus.ui.glass.LiquidTab
+import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlin.math.abs
+import kotlin.math.sign
 
 /**
  * The primary layout unit: a large rounded card with generous padding and a hairline border.
@@ -189,23 +221,25 @@ fun AppTopBar(
     }
 }
 
-/**
- * A floating, glass (liquid-glass / backdrop) bottom tab bar.
- *
- * The glass effect samples whatever content is rendered behind it via the supplied [backdrop]
- * (see [com.kyant.backdrop.backdrops.rememberLayerBackdrop] + `Modifier.layerBackdrop`).
- *
- * The bar is sized to its content (each tab has a bounded width) so it stays compact and
- * centred instead of stretching across the screen.
- *
- * Effects require Android 12 (API 31) for blur/vibrancy and Android 13 (API 33) for the lens
- * refraction; on older versions the surface gracefully degrades to a translucent capsule.
- */
 data class TabItem(
     val label: String,
     val icon: ImageVector
 )
 
+/** Width of a single tab; the bar keeps a compact fixed size instead of filling the screen. */
+private val TAB_WIDTH = 56.dp
+
+/**
+ * A floating liquid-glass tab bar reproducing the interaction of the official
+ * Kyant0/AndroidLiquidGlass catalog: press-and-drag the pill with a damped spring,
+ * a touch-following specular highlight, and lens / shadow / inner-shadow reactions.
+ *
+ * The bar is sized to its content (`TAB_WIDTH * tabs.size`) so it stays compact and centred
+ * rather than stretching across the screen.
+ *
+ * Effects require Android 12 (API 31) for blur/vibrancy and Android 13 (API 33) for lens and
+ * the shader highlight; older versions degrade to a translucent capsule without crashing.
+ */
 @Composable
 fun FloatingTabBar(
     backdrop: Backdrop,
@@ -221,51 +255,208 @@ fun FloatingTabBar(
     } else {
         Color(0xFF14171C).copy(alpha = 0.42f)
     }
+    val accent = colors.accent
+    val density = LocalDensity.current
 
-    Row(
-        modifier = modifier
-            .drawBackdrop(
-                backdrop = backdrop,
-                shape = { Capsule() },
-                effects = {
-                    vibrancy()
-                    blur(16.dp.toPx())
-                    lens(24.dp.toPx(), 24.dp.toPx())
-                },
-                onDrawSurface = { drawRect(containerColor) }
-            )
-            .height(58.dp)
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        tabs.forEachIndexed { index, tab ->
-            val selected = index == selectedIndex
-            Column(
-                modifier = Modifier
-                    .clip(Capsule())
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Tab,
-                        onClick = { onTabSelected(index) }
-                    )
-                    .fillMaxHeight()
-                    .widthIn(min = 54.dp)
-                    .padding(horizontal = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    imageVector = tab.icon,
-                    contentDescription = tab.label,
-                    tint = if (selected) colors.accent else colors.onSurfaceVariant
+    val barWidth = TAB_WIDTH * tabs.size
+    val tabWidth: Dp = (barWidth - 12.dp) / tabs.size
+    val tabWidthPx = with(density) { tabWidth.toPx() }
+
+    val animationScope = rememberCoroutineScope()
+    var currentIndex by remember(selectedIndex) { mutableIntStateOf(selectedIndex) }
+
+    val offsetAnimation = remember { Animatable(0f) }
+    val panelOffset by remember(density, tabWidthPx) {
+        derivedStateOf {
+            val fraction = (offsetAnimation.value / tabWidthPx).fastCoerceIn(-1f, 1f)
+            with(density) { 4.dp.toPx() * sign(fraction) * EaseOut.transform(abs(fraction)) }
+        }
+    }
+
+    // Records the bar content so the moving pill can sample it.
+    val tabsBackdrop = rememberLayerBackdrop()
+
+    val dampedDragAnimation = remember(animationScope, tabs.size, tabWidthPx) {
+        DampedDragAnimation(
+            animationScope = animationScope,
+            initialValue = selectedIndex.toFloat(),
+            valueRange = 0f..(tabs.size - 1).toFloat(),
+            visibilityThreshold = 0.001f,
+            initialScale = 1f,
+            pressedScale = 78f / 56f,
+            onDragStarted = {},
+            onDragStopped = {
+                val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabs.size - 1)
+                currentIndex = targetIndex
+                animateToValue(targetIndex.toFloat())
+                animationScope.launch {
+                    offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
+                }
+            },
+            onDrag = { _, dragAmount ->
+                updateValue(
+                    (targetValue + dragAmount.x / tabWidthPx)
+                        .fastCoerceIn(0f, (tabs.size - 1).toFloat())
                 )
-                Text(
-                    text = tab.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (selected) colors.accent else colors.onSurfaceVariant
+                animationScope.launch {
+                    offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(selectedIndex) {
+        snapshotFlow { selectedIndex }.collectLatest { index -> currentIndex = index }
+    }
+    LaunchedEffect(dampedDragAnimation) {
+        snapshotFlow { currentIndex }
+            .drop(1)
+            .collectLatest { index ->
+                dampedDragAnimation.animateToValue(index.toFloat())
+                onTabSelected(index)
+            }
+    }
+
+    val interactiveHighlight = remember(animationScope, tabWidthPx) {
+        InteractiveHighlight(
+            animationScope = animationScope,
+            position = { size, _ ->
+                Offset(
+                    (dampedDragAnimation.value + 0.5f) * tabWidthPx + panelOffset,
+                    size.height / 2f
                 )
             }
+        )
+    }
+
+    Box(contentAlignment = Alignment.CenterStart, modifier = modifier.width(barWidth)) {
+        // 1) The glass bar itself.
+        Row(
+            Modifier
+                .graphicsLayer { translationX = panelOffset }
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { Capsule() },
+                    effects = {
+                        vibrancy()
+                        blur(8.dp.toPx())
+                        lens(24.dp.toPx(), 24.dp.toPx())
+                    },
+                    layerBlock = {
+                        val progress = dampedDragAnimation.pressProgress
+                        val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                    onDrawSurface = { drawRect(containerColor) }
+                )
+                .then(interactiveHighlight.modifier)
+                .height(58.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                val selected = index == currentIndex
+                LiquidTab(onClick = { currentIndex = index }) {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = tab.label,
+                        tint = if (selected) accent else colors.onSurfaceVariant
+                    )
+                    Text(
+                        text = tab.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (selected) accent else colors.onSurfaceVariant
+                    )
+                }
+            }
         }
+
+        CompositionLocalProvider(
+            LocalLiquidTabScale provides { lerp(1f, 1.2f, dampedDragAnimation.pressProgress) }
+        ) {
+            // 2) Invisible copy that records the bar content, sampled by the moving pill.
+            Row(
+                Modifier
+                    .clearAndSetSemantics {}
+                    .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
+                    .graphicsLayer { translationX = panelOffset }
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { Capsule() },
+                        effects = {
+                            val progress = dampedDragAnimation.pressProgress
+                            vibrancy()
+                            blur(8.dp.toPx())
+                            lens(24.dp.toPx() * progress, 24.dp.toPx() * progress)
+                        },
+                        highlight = {
+                            Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
+                        },
+                        onDrawSurface = { drawRect(containerColor) }
+                    )
+                    .then(interactiveHighlight.modifier)
+                    .height(52.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp)
+                    .graphicsLayer(colorFilter = ColorFilter.tint(accent)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                tabs.forEach { tab ->
+                    LiquidTab(onClick = {}) {
+                        Icon(imageVector = tab.icon, contentDescription = null)
+                        Text(tab.label, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
+        // 3) The moving, pressable pill.
+        Box(
+            Modifier
+                .padding(horizontal = 6.dp)
+                .graphicsLayer {
+                    translationX = dampedDragAnimation.value * tabWidthPx + panelOffset
+                }
+                .then(interactiveHighlight.gestureModifier)
+                .then(dampedDragAnimation.modifier)
+                .drawBackdrop(
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                    shape = { Capsule() },
+                    effects = {
+                        val progress = dampedDragAnimation.pressProgress
+                        lens(10.dp.toPx() * progress, 14.dp.toPx() * progress, chromaticAberration = true)
+                    },
+                    highlight = {
+                        Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
+                    },
+                    shadow = {
+                        Shadow(alpha = dampedDragAnimation.pressProgress)
+                    },
+                    innerShadow = {
+                        val progress = dampedDragAnimation.pressProgress
+                        InnerShadow(radius = 8.dp * progress, alpha = progress)
+                    },
+                    layerBlock = {
+                        scaleX = dampedDragAnimation.scaleX
+                        scaleY = dampedDragAnimation.scaleY
+                        val velocity = dampedDragAnimation.velocity / 10f
+                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                    },
+                    onDrawSurface = {
+                        val progress = dampedDragAnimation.pressProgress
+                        drawRect(
+                            if (isLight) Color.Black.copy(0.1f) else Color.White.copy(0.1f),
+                            alpha = 1f - progress
+                        )
+                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                    }
+                )
+                .height(52.dp)
+                .width(tabWidth)
+        )
     }
 }
