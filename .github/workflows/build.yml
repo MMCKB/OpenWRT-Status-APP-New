@@ -37,15 +37,8 @@ jobs:
           unzip -q /tmp/gradle.zip -d /opt
           echo "/opt/gradle-9.7.1/bin" >> "$GITHUB_PATH"
 
-      - name: Build APKs (debug + release, unified MMCKB signing)
-        run: gradle :app:assembleDebug :app:assembleRelease --no-daemon
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: openwrt-status-app-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+      - name: Build APK (release, unified MMCKB signing)
+        run: gradle :app:assembleRelease --no-daemon
 
       - name: Upload release APK
         uses: actions/upload-artifact@v7
