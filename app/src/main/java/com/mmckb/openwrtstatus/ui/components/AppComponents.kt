@@ -190,6 +190,7 @@ fun AppTopBar(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    navigationIcon: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     val colors = LocalAppColors.current
@@ -202,6 +203,10 @@ fun AppTopBar(
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (navigationIcon != null) {
+            navigationIcon()
+            Spacer(Modifier.width(8.dp))
+        }
         Column(modifier = Modifier.weight(1f, fill = false)) {
             Text(
                 text = title,
