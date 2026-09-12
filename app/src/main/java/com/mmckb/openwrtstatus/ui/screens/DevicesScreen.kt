@@ -1,38 +1,33 @@
 package com.mmckb.openwrtstatus.ui.screens
 
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Router
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -45,49 +40,31 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
-import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-
-/** Width of the action strip (delete + edit) revealed by swiping a device card left. */
-private val REVEAL_WIDTH = 128.dp
-
-/** Narrow delete slice inside the strip; edit takes the rest. */
 
 /**
- * Device manager: every router renders as its own card, the active one pinned on top.
- * Swipe a card RIGHT-to-LEFT to reveal delete / edit actions (delete asks for
- * confirmation); tap a card to make that router the active one.
+ * Device manager, in its original form: one "设备列表" card with a row per router
+ * (tap the row to switch the active device; inline edit / delete icons on each row).
  * The add/edit form overlays the list: during a predictive back gesture it follows the
  * Material spec (scale to 90%, fade out by the 35% threshold) while the list fades in.
  * SSH is always enabled and only asks for port and password (an empty SSH password
- * falls back to the router password). Device names must be unique.
+ * falls back to the router password). Device names must be unique across the list.
  */
 @Composable
 fun DevicesScreen(
@@ -99,7 +76,6 @@ fun DevicesScreen(
     val activeId by viewModel.activeId.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<RouterConfig?>(null) }
     var isNew by remember { mutableStateOf(false) }
-    var openCardId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
     var formBackProgress by remember { mutableFloatStateOf(0f) }
 
@@ -109,84 +85,88 @@ fun DevicesScreen(
     }
 
     val colors = LocalAppColors.current
-    val sorted = remember(devices, activeId) {
-        devices.sortedByDescending { it.id == activeId }
-    }
     val currentEditing = editing
     val formEased = PredictiveBackEasing.transform(formBackProgress)
 
-    Box(modifier.fillMaxSize()) {
-        // Device list: stays mounted and fades in behind the form during the gesture.
-        LazyColumn(
-            modifier = Modifier
+    if (currentEditing != null) {
+        DeviceEditForm(
+            initial = currentEditing,
+            isNew = isNew,
+            existing = devices.filterNot { it.id == currentEditing.id },
+            onSave = { saved ->
+                if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
+                editing = null
+            },
+            onDelete = {
+                viewModel.deleteDevice(currentEditing.id)
+                editing = null
+            },
+            onCancel = { editing = null },
+            modifier = modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    alpha = if (currentEditing != null) {
-                        ((formEased - 0.35f) / 0.65f).coerceIn(0f, 1f)
-                    } else {
-                        1f
-                    }
+                    scaleX = 1f - 0.1f * formEased
+                    scaleY = 1f - 0.1f * formEased
+                    alpha = (1f - formEased / 0.35f).coerceIn(0f, 1f)
                 }
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 16.dp)
-        ) {
-            items(sorted, key = { it.id }) { device ->
-                SwipeRevealDeviceCard(
-                    device = device,
-                    active = device.id == activeId,
-                    revealed = openCardId == device.id,
-                    onRevealedChanged = { openCardId = if (it) device.id else null },
-                    onSelect = { viewModel.selectDevice(device.id) },
-                    onDelete = { pendingDelete = device }
-                )
-            }
-            item {
-                Button(
-                    onClick = {
-                        editing = RouterConfig()
-                        isNew = true
-                    },
-                    shape = AppShapes.card,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("添加设备") }
-            }
-        }
-
-        if (currentEditing != null) {
-            DeviceEditForm(
-                initial = currentEditing,
-                isNew = isNew,
-                existing = devices.filterNot { it.id == currentEditing.id },
-                onSave = { saved ->
-                    if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
-                    editing = null
-                },
-                onDelete = {
-                    viewModel.deleteDevice(currentEditing.id)
-                    editing = null
-                },
-                onCancel = { editing = null },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = 1f - 0.1f * formEased
-                        scaleY = 1f - 0.1f * formEased
-                        alpha = (1f - formEased / 0.35f).coerceIn(0f, 1f)
-                    }
-            )
-        }
-    }
-
-    // Predictive back for the form, per the Material spec: the outgoing surface scales
-    // to 90% and fades out by the 35% threshold while the list fades in behind it.
-    if (currentEditing != null) {
+        )
         androidx.activity.compose.PredictiveBackHandler {
             try {
                 it.collect { event -> formBackProgress = event.progress }
                 editing = null
             } catch (_: kotlinx.coroutines.CancellationException) {
             }
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 96.dp)
+    ) {
+        item {
+            AppCard {
+                CardSectionTitle("设备列表（${devices.size}）")
+                Spacer(Modifier.height(8.dp))
+                if (devices.isEmpty()) {
+                    Text(
+                        "还没有设备。点击下方「添加设备」，填入路由器地址与账号即可。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                devices.forEach { device ->
+                    DeviceRow(
+                        device = device,
+                        active = device.id == activeId,
+                        onClick = { viewModel.selectDevice(device.id) },
+                        onEdit = {
+                            editing = device
+                            isNew = false
+                        },
+                        onDelete = { pendingDelete = device }
+                    )
+                }
+            }
+        }
+        item {
+            Button(
+                onClick = {
+                    editing = RouterConfig()
+                    isNew = true
+                },
+                shape = AppShapes.card,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("添加设备") }
+        }
+        item {
+            Text(
+                "点击设备即可切换当前连接；概览、监控与终端都作用于当前设备。",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
         }
     }
 
@@ -198,7 +178,6 @@ fun DevicesScreen(
             confirmColor = colors.error,
             onConfirm = {
                 viewModel.deleteDevice(target.id)
-                openCardId = null
                 pendingDelete = null
             },
             onDismiss = { pendingDelete = null }
@@ -206,152 +185,46 @@ fun DevicesScreen(
     }
 }
 
-/** One device card with a delete action revealed by a left swipe; tap switches device. */
 @Composable
-private fun SwipeRevealDeviceCard(
+private fun DeviceRow(
     device: RouterConfig,
     active: Boolean,
-    revealed: Boolean,
-    onRevealedChanged: (Boolean) -> Unit,
-    onSelect: () -> Unit,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = LocalAppColors.current
-    val density = LocalDensity.current
-    val revealPx = with(density) { REVEAL_WIDTH.toPx() }
-    val offset = remember(device.id) { mutableFloatStateOf(0f) }
-    val settleJob = remember { mutableStateOf<Job?>(null) }
-    val scope = rememberCoroutineScope()
-
-    // Close again whenever the parent decides this card must not stay open.
-    LaunchedEffect(revealed) {
-        if (!revealed && offset.value != 0f) {
-            settleJob.value?.cancel()
-            settleJob.value = scope.launch {
-                animate(offset.value, 0f, animationSpec = spring(0.85f, 380f)) { v, _ ->
-                    offset.value = v
-                }
-            }
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // Wide red delete surface behind the card, revealed by a right-to-left swipe.
-        SwipeAction(
-            label = "删除",
-            icon = Icons.Filled.Delete,
-            background = colors.error,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .matchParentSize()
-                .clip(AppShapes.card)
-        ) { onDelete() }
-        Surface(
-            shape = AppShapes.card,
-            color = colors.surface,
-            border = BorderStroke(1.dp, if (active) colors.primary else colors.outline),
-            modifier = Modifier
-                .offset { IntOffset(offset.value.roundToInt(), 0) }
-                .pointerInput(device.id, revealPx) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { settleJob.value?.cancel() },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            offset.value = (offset.value - dragAmount).coerceIn(-revealPx, 0f)
-                        },
-                        onDragEnd = {
-                            val open = offset.value < -revealPx / 2
-                            settleJob.value = scope.launch {
-                                animate(
-                                    initialValue = offset.value,
-                                    targetValue = if (open) -revealPx else 0f,
-                                    animationSpec = spring(0.85f, 380f)
-                                ) { v, _ -> offset.value = v }
-                            }
-                            onRevealedChanged(open)
-                        }
-                    )
-                }
-                .clickable { onSelect() }
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .background(colors.surfaceVariant, RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Router,
-                        contentDescription = null,
-                        tint = colors.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            device.displayName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (active) {
-                            Spacer(Modifier.width(8.dp))
-                            Surface(
-                                shape = AppShapes.pill,
-                                color = colors.primary,
-                                contentColor = colors.onPrimary
-                            ) {
-                                Text(
-                                    "当前设备",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        "${device.ip}:${device.port} · ${device.username}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** One rounded action button inside the revealed strip. */
-@Composable
-private fun SwipeAction(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    background: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .background(background)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = label, tint = Color.White)
-            Spacer(Modifier.height(2.dp))
-            Text(label, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Clip)
+        Box(
+            Modifier
+                .size(10.dp)
+                .background(if (active) colors.success else colors.onSurfaceVariant, CircleShape)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                device.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
+            Text(
+                "${device.ip}:${device.port} · ${device.username}" + if (active) " · 当前" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onEdit) {
+            Icon(Icons.Filled.Edit, contentDescription = "编辑", tint = colors.onSurfaceVariant)
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, contentDescription = "删除", tint = colors.onSurfaceVariant)
         }
     }
 }
