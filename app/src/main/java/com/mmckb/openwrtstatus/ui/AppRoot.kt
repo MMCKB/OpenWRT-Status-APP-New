@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,6 +41,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
+import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
@@ -80,14 +82,25 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         // Page layer fills the whole screen; the top bar overlays it.
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             if (showAbout) {
+                // Material predictive back spec: the outgoing surface scales to 90% and
+                // fades out by the 35% threshold while the page behind fades in.
+                val eased = PredictiveBackEasing.transform(aboutBackProgress)
+                SettingsScreen(
+                    onOpenAbout = { showAbout = true },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = ((eased - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                        }
+                )
                 AboutScreen(
                     onBack = { showAbout = false },
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            translationX = aboutBackProgress * size.width * 0.5f
-                            scaleX = 1f - 0.12f * aboutBackProgress
-                            scaleY = 1f - 0.12f * aboutBackProgress
+                            scaleX = 1f - 0.1f * eased
+                            scaleY = 1f - 0.1f * eased
+                            alpha = (1f - eased / 0.35f).coerceIn(0f, 1f)
                         }
                 )
             } else {
@@ -193,6 +206,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(bottom = 22.dp)
             )
         }
