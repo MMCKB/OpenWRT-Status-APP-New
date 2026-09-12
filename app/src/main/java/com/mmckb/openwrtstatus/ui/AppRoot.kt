@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Refresh
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,6 +35,7 @@ import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
 import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.MonitorScreen
+import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
@@ -45,6 +48,7 @@ private const val TAB_SETTINGS = 4
 @Composable
 fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var selectedTab by remember { mutableIntStateOf(TAB_DASHBOARD) }
+    var showAbout by remember { mutableStateOf(false) }
     val config by viewModel.config.collectAsState()
     val colors = LocalAppColors.current
 
@@ -53,21 +57,39 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         Column(Modifier.fillMaxSize()) {
+            val navigationIcon: (@Composable () -> Unit)? = if (showAbout) {
+                {
+                    IconButton(onClick = { showAbout = false }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            } else {
+                null
+            }
             AppTopBar(
-                title = when (selectedTab) {
-                    TAB_DASHBOARD -> "概览"
-                    TAB_DEVICES -> "设备"
-                    TAB_MONITOR -> "监控"
-                    TAB_TERMINAL -> "终端"
-                    else -> "关于"
+                title = if (showAbout) {
+                    "关于"
+                } else {
+                    when (selectedTab) {
+                        TAB_DASHBOARD -> "概览"
+                        TAB_DEVICES -> "设备"
+                        TAB_MONITOR -> "监控"
+                        TAB_TERMINAL -> "终端"
+                        else -> "设置"
+                    }
                 },
-                subtitle = when (selectedTab) {
-                    TAB_DASHBOARD -> "${config.username}@${config.ip}:${config.port}"
-                    TAB_TERMINAL -> "${config.sshUsername}@${config.sshHost.ifBlank { config.ip }}:${config.sshPort}"
-                    else -> null
+                subtitle = if (showAbout) {
+                    null
+                } else {
+                    when (selectedTab) {
+                        TAB_DASHBOARD -> "${config.username}@${config.ip}:${config.port}"
+                        TAB_TERMINAL -> "${config.sshUsername}@${config.sshHost.ifBlank { config.ip }}:${config.sshPort}"
+                        else -> null
+                    }
                 },
+                navigationIcon = navigationIcon,
                 actions = {
-                    if (selectedTab == TAB_DASHBOARD) {
+                    if (selectedTab == TAB_DASHBOARD && !showAbout) {
                         IconButton(onClick = { viewModel.refresh() }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                         }
@@ -81,24 +103,31 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     .weight(1f)
                     .layerBackdrop(backdrop)
             ) {
-                when (selectedTab) {
-                    TAB_DASHBOARD -> DashboardScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    TAB_DEVICES -> DevicesScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    TAB_MONITOR -> MonitorScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    TAB_TERMINAL -> TerminalScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    else -> AboutScreen(modifier = Modifier.fillMaxSize())
+                if (showAbout) {
+                    AboutScreen(modifier = Modifier.fillMaxSize())
+                } else {
+                    when (selectedTab) {
+                        TAB_DASHBOARD -> DashboardScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TAB_DEVICES -> DevicesScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TAB_MONITOR -> MonitorScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TAB_TERMINAL -> TerminalScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        else -> SettingsScreen(
+                            onOpenAbout = { showAbout = true },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -113,7 +142,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 TabItem("设置", Icons.Filled.Settings)
             ),
             selectedIndex = selectedTab,
-            onTabSelected = { selectedTab = it },
+            onTabSelected = {
+                selectedTab = it
+                showAbout = false
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 22.dp)
