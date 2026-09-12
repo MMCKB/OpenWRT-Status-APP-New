@@ -52,6 +52,8 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.VERSION_NAME is read by the About screen.
+        buildConfig = true
     }
 
     packaging {

@@ -1,5 +1,6 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,8 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -38,6 +42,7 @@ import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 fun SettingsScreen(
     config: RouterConfig,
     onSave: (RouterConfig) -> Unit,
+    onOpenAbout: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var ip by remember { mutableStateOf(config.ip) }
@@ -197,6 +202,31 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("保存")
+        }
+
+        AppCard(
+            modifier = Modifier.clickable(onClick = onOpenAbout)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "关于",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "版本、开源许可",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant
+                )
+            }
         }
 
         Text(
