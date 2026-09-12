@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.ui.components.AppCard
+import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /**
@@ -36,7 +37,9 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = rememberTopBarPadding())
+            .padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         AppCard(modifier = Modifier.clickable(onClick = onOpenAbout)) {

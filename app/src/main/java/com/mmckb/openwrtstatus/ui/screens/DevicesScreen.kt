@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,9 +64,11 @@ import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
-import com.mmckb.openwrtstatus.ui.theme.AppShapes
+import com.mmckb.openwrtstatus.ui.components.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
+import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -76,7 +80,7 @@ private val REVEAL_WIDTH = 128.dp
  * Swipe a card RIGHT to reveal delete / edit actions (delete asks for confirmation).
  * Cards are not clickable - switching happens from the dashboard device picker.
  * The add/edit form carries the full connection setup; SSH is always enabled and only
- * asks for port and password (host/username follow the router connection).
+ * asks for port and password (an empty SSH password falls back to the router password).
  */
 @Composable
 fun DevicesScreen(
@@ -95,6 +99,7 @@ fun DevicesScreen(
         DeviceEditForm(
             initial = currentEditing,
             isNew = isNew,
+            existing = devices.filterNot { it.id == currentEditing.id },
             onSave = { saved ->
                 if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
                 editing = null
@@ -115,9 +120,9 @@ fun DevicesScreen(
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(bottom = 96.dp)
+        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 96.dp)
     ) {
         items(sorted, key = { it.id }) { device ->
             SwipeRevealDeviceCard(
@@ -138,6 +143,7 @@ fun DevicesScreen(
                     editing = RouterConfig()
                     isNew = true
                 },
+                shape = AppShapes.card,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("添加设备") }
         }
@@ -172,12 +178,20 @@ private fun SwipeRevealDeviceCard(
     val colors = LocalAppColors.current
     val density = LocalDensity.current
     val revealPx = with(density) { REVEAL_WIDTH.toPx() }
-    val offset = remember(device.id) { Animatable(0f) }
+    val offset = remember(device.id) { mutableFloatStateOf(0f) }
+    val settleJob = remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
 
     // Close again whenever the parent decides this card must not stay open.
     LaunchedEffect(revealed) {
-        if (!revealed && offset.value != 0f) offset.animateTo(0f)
+        if (!revealed && offset.value != 0f) {
+            settleJob.value?.cancel()
+            settleJob.value = scope.launch {
+                animate(offset.value, 0f, animationSpec = spring(0.85f, 380f)) { v, _ ->
+                    offset.value = v
+                }
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -202,34 +216,37 @@ private fun SwipeRevealDeviceCard(
         Surface(
             shape = AppShapes.card,
             color = colors.surface,
-            border = BorderStroke(1.dp, colors.primary),
+            border = BorderStroke(1.dp, if (active) colors.primary else colors.outline),
             modifier = Modifier
                 .offset { IntOffset(offset.value.roundToInt(), 0) }
-                .pointerInput(revealPx) {
+                .pointerInput(device.id, revealPx) {
                     detectHorizontalDragGestures(
+                        onDragStart = { settleJob.value?.cancel() },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            scope.launch {
-                                offset.snapTo((offset.value + dragAmount).coerceIn(0f, revealPx))
-                            }
+                            offset.value = (offset.value + dragAmount).coerceIn(0f, revealPx)
                         },
                         onDragEnd = {
-                            scope.launch {
-                                val open = offset.value > revealPx / 2
-                                offset.animateTo(if (open) revealPx else 0f)
-                                onRevealedChanged(open)
+                            val open = offset.value > revealPx / 2
+                            settleJob.value = scope.launch {
+                                animate(
+                                    initialValue = offset.value,
+                                    targetValue = if (open) revealPx else 0f,
+                                    animationSpec = spring(0.85f, 380f)
+                                ) { v, _ -> offset.value = v }
                             }
+                            onRevealedChanged(open)
                         }
                     )
                 }
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(38.dp)
                         .background(colors.surfaceVariant, RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -237,7 +254,7 @@ private fun SwipeRevealDeviceCard(
                         imageVector = Icons.Filled.Router,
                         contentDescription = null,
                         tint = colors.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
                 Spacer(Modifier.width(12.dp))
@@ -267,7 +284,7 @@ private fun SwipeRevealDeviceCard(
                             }
                         }
                     }
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         "${device.ip}:${device.port} · ${device.username}",
                         style = MaterialTheme.typography.bodySmall,
@@ -307,12 +324,15 @@ private fun SwipeAction(
 
 /**
  * Add/edit form carrying the full device configuration. SSH is always enabled and
- * inline with the router connection fields - only port and password are asked for.
+ * inline with the router connection fields - only port and password are asked for
+ * (an empty SSH password falls back to the router password). Device names must be
+ * unique across the list.
  */
 @Composable
 private fun DeviceEditForm(
     initial: RouterConfig,
     isNew: Boolean,
+    existing: List<RouterConfig>,
     onSave: (RouterConfig) -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit,
@@ -327,14 +347,20 @@ private fun DeviceEditForm(
     var allowInsecureTls by remember { mutableStateOf(initial.allowInsecureTls) }
     var sshPort by remember { mutableStateOf(initial.sshPort.toString()) }
     var sshPassword by remember { mutableStateOf(initial.sshPassword) }
+    var nameError by remember { mutableStateOf<String?>(null) }
 
     val colors = LocalAppColors.current
+
+    // System back leaves the form instead of leaving the app.
+    androidx.activity.compose.BackHandler { onCancel() }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = rememberTopBarPadding())
+            .padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -353,11 +379,19 @@ private fun DeviceEditForm(
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
+                onValueChange = {
+                    name = it
+                    nameError = null
+                },
                 label = { Text("设备名称（选填，留空显示地址）") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                isError = nameError != null
             )
+            if (nameError != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(nameError!!, style = MaterialTheme.typography.bodySmall, color = colors.error)
+            }
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = ip,
@@ -408,29 +442,30 @@ private fun DeviceEditForm(
             OutlinedTextField(
                 value = sshPassword,
                 onValueChange = { sshPassword = it },
-                label = { Text("SSH 密码") },
+                label = { Text("SSH 密码（留空则使用路由器密码）") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation()
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "连接地址为 http(s)://地址:端口/ubus（rpcd 接口）；SSH 登录使用上方的用户名，主机与路由器地址相同。",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
             )
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = onCancel,
+                shape = AppShapes.card,
                 modifier = Modifier.weight(1f)
             ) { Text("取消") }
             Button(
                 onClick = {
+                    val candidate = name.trim()
+                    val effective = candidate.ifBlank { ip.ifBlank { "192.168.1.1" } }
+                    if (existing.any { it.displayName == effective }) {
+                        nameError = "名称与其他设备重复"
+                        return@Button
+                    }
                     onSave(
                         initial.copy(
-                            name = name.trim(),
+                            name = candidate,
                             ip = ip.ifBlank { "192.168.1.1" },
                             port = port.toIntOrNull()?.coerceIn(1, 65535) ?: 80,
                             username = username.ifBlank { "root" },
@@ -441,10 +476,11 @@ private fun DeviceEditForm(
                             sshHost = "",
                             sshPort = sshPort.toIntOrNull()?.coerceIn(1, 65535) ?: 22,
                             sshUsername = username.ifBlank { "root" },
-                            sshPassword = sshPassword
+                            sshPassword = sshPassword.ifBlank { password }
                         )
                     )
                 },
+                shape = AppShapes.card,
                 modifier = Modifier.weight(1f)
             ) { Text("保存") }
         }
@@ -457,14 +493,6 @@ private fun DeviceEditForm(
                 Text("删除该设备", color = colors.error)
             }
         }
-
-        Text(
-            "需路由器已安装并启用 rpcd（OpenWrt 官方固件默认包含）。兼容 OpenWrt 21.02 / 22.03 / 23.05 / 24.10 / 25.12。",
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = colors.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 96.dp)
-        )
     }
 }
 

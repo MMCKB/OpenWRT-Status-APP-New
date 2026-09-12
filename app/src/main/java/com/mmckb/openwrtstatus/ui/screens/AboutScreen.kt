@@ -39,6 +39,7 @@ import com.mmckb.openwrtstatus.BuildConfig
 import com.mmckb.openwrtstatus.R
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
+import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 private const val REPO_URL = "https://github.com/MMCKB/OpenWRT-Status-APP-New"
@@ -56,7 +57,9 @@ fun AboutScreen(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = rememberTopBarPadding())
+            .padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
