@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,23 +67,29 @@ import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
-import com.mmckb.openwrtstatus.ui.theme.AppShapes
+import com.mmckb.openwrtstatus.ui.components.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
+import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** Width of the action strip (delete + edit) revealed by swiping a device card right. */
+/** Width of the action strip (delete + edit) revealed by swiping a device card left. */
 private val REVEAL_WIDTH = 128.dp
+
+/** Narrow delete slice inside the strip; edit takes the rest. */
+private val DELETE_WIDTH = 32.dp
 
 /**
  * Device manager: every router renders as its own card, the active one pinned on top.
- * Swipe a card LEFT to reveal edit / delete actions (delete asks for confirmation);
- * tap a card to make that router the active one.
- * The add/edit form carries the full connection setup; SSH is always enabled and only
- * asks for port and password (an empty SSH password falls back to the router password).
+ * Swipe a card RIGHT-to-LEFT to reveal delete / edit actions (delete asks for
+ * confirmation); tap a card to make that router the active one.
+ * The add/edit form overlays the list: during a predictive back gesture it follows the
+ * Material spec (scale to 90%, fade out by the 35% threshold) while the list fades in.
+ * SSH is always enabled and only asks for port and password (an empty SSH password
+ * falls back to the router password). Device names must be unique.
  */
 @Composable
 fun DevicesScreen(
@@ -96,65 +103,96 @@ fun DevicesScreen(
     var isNew by remember { mutableStateOf(false) }
     var openCardId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
-
-    val currentEditing = editing
+    var formBackProgress by remember { mutableFloatStateOf(0f) }
 
     // Tells the shell to hide the tab bar while the add/edit form is open.
-    LaunchedEffect(currentEditing) {
-        onSecondaryPageChanged(currentEditing != null)
-    }
-    if (currentEditing != null) {
-        DeviceEditForm(
-            initial = currentEditing,
-            isNew = isNew,
-            existing = devices.filterNot { it.id == currentEditing.id },
-            onSave = { saved ->
-                if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
-                editing = null
-            },
-            onDelete = {
-                viewModel.deleteDevice(currentEditing.id)
-                editing = null
-            },
-            onCancel = { editing = null },
-            modifier = modifier
-        )
-        return
+    LaunchedEffect(editing) {
+        onSecondaryPageChanged(editing != null)
     }
 
     val colors = LocalAppColors.current
     val sorted = remember(devices, activeId) {
         devices.sortedByDescending { it.id == activeId }
     }
+    val currentEditing = editing
+    val formEased = PredictiveBackEasing.transform(formBackProgress)
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 16.dp)
-    ) {
-        items(sorted, key = { it.id }) { device ->
-            SwipeRevealDeviceCard(
-                device = device,
-                active = device.id == activeId,
-                revealed = openCardId == device.id,
-                onRevealedChanged = { openCardId = if (it) device.id else null },
-                onSelect = { viewModel.selectDevice(device.id) },
-                onEdit = {
-                    editing = device
-                    isNew = false
+    Box(modifier.fillMaxSize()) {
+        // Device list: stays mounted and fades in behind the form during the gesture.
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    alpha = if (currentEditing != null) {
+                        ((formEased - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                    } else {
+                        1f
+                    }
+                }
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 16.dp)
+        ) {
+            items(sorted, key = { it.id }) { device ->
+                SwipeRevealDeviceCard(
+                    device = device,
+                    active = device.id == activeId,
+                    revealed = openCardId == device.id,
+                    onRevealedChanged = { openCardId = if (it) device.id else null },
+                    onSelect = { viewModel.selectDevice(device.id) },
+                    onEdit = {
+                        editing = device
+                        isNew = false
+                    },
+                    onDelete = { pendingDelete = device }
+                )
+            }
+            item {
+                Button(
+                    onClick = {
+                        editing = RouterConfig()
+                        isNew = true
+                    },
+                    shape = AppShapes.card,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("添加设备") }
+            }
+        }
+
+        if (currentEditing != null) {
+            DeviceEditForm(
+                initial = currentEditing,
+                isNew = isNew,
+                existing = devices.filterNot { it.id == currentEditing.id },
+                onSave = { saved ->
+                    if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
+                    editing = null
                 },
-                onDelete = { pendingDelete = device }
+                onDelete = {
+                    viewModel.deleteDevice(currentEditing.id)
+                    editing = null
+                },
+                onCancel = { editing = null },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = 1f - 0.1f * formEased
+                        scaleY = 1f - 0.1f * formEased
+                        alpha = (1f - formEased / 0.35f).coerceIn(0f, 1f)
+                    }
             )
         }
-        item {
-            Button(
-                onClick = {
-                    editing = RouterConfig()
-                    isNew = true
-                },
-                shape = AppShapes.card,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("添加设备") }
+    }
+
+    // Predictive back for the form, per the Material spec: the outgoing surface scales
+    // to 90% and fades out by the 35% threshold while the list fades in behind it.
+    if (currentEditing != null) {
+        androidx.activity.compose.PredictiveBackHandler {
+            try {
+                it.collect { event -> formBackProgress = event.progress }
+                editing = null
+            } catch (_: kotlinx.coroutines.CancellationException) {
+            }
         }
     }
 
@@ -206,22 +244,18 @@ private fun SwipeRevealDeviceCard(
 
     Box(modifier = Modifier.fillMaxWidth()) {
         // Fixed-width strip on the reveal side (right edge for a left swipe):
-        // delete takes a narrow slice, edit gets the rest. The strip slides in from
-        // beyond the right edge as the card moves away.
+        // delete takes a narrow slice, edit gets the rest.
         Row(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .width(REVEAL_WIDTH)
                 .clip(AppShapes.card)
-                .graphicsLayer {
-                    translationX = revealPx + offset.value
-                }
         ) {
             SwipeAction(
                 label = "删除",
                 icon = Icons.Filled.Delete,
                 background = colors.error,
-                modifier = Modifier.width(32.dp)
+                modifier = Modifier.width(DELETE_WIDTH)
             ) { onDelete() }
             SwipeAction(
                 label = "编辑",
@@ -344,7 +378,7 @@ private fun SwipeAction(
  * Add/edit form carrying the full device configuration. SSH is always enabled and
  * inline with the router connection fields - only port and password are asked for
  * (an empty SSH password falls back to the router password). Device names must be
- * unique across the list.
+ * unique across the list. Scale/fade during predictive back are driven by the caller.
  */
 @Composable
 private fun DeviceEditForm(
@@ -366,31 +400,14 @@ private fun DeviceEditForm(
     var sshPort by remember { mutableStateOf(initial.sshPort.toString()) }
     var sshPassword by remember { mutableStateOf(initial.sshPassword) }
     var nameError by remember { mutableStateOf<String?>(null) }
-    var backProgress by remember { mutableFloatStateOf(0f) }
 
     val colors = LocalAppColors.current
 
-    // Predictive back: the form tracks the gesture (shrinks/fades) and returns to the
-    // list when the gesture commits; nothing happens if the gesture is cancelled.
-    androidx.activity.compose.PredictiveBackHandler { events ->
-        try {
-            events.collect { backProgress = it.progress }
-            onCancel()
-        } catch (_: kotlinx.coroutines.CancellationException) {
-        } finally {
-            backProgress = 0f
-        }
-    }
-
     Column(
         modifier = modifier
-            .graphicsLayer {
-                translationX = backProgress * size.width * 0.5f
-                scaleX = 1f - 0.12f * backProgress
-                scaleY = 1f - 0.12f * backProgress
-            }
             .fillMaxSize()
             .statusBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = 12.dp)

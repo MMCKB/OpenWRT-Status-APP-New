@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -536,3 +537,10 @@ fun AppDialog(
 @Composable
 fun rememberTopBarPadding(): Dp =
     WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp + 12.dp
+
+/**
+ * Interpolator mandated by the Material predictive back spec (0.1, 0.1, 0, 1) - matches
+ * the SystemUI back animation interpolator so in-app previews track the gesture the
+ * same way system surfaces do.
+ */
+val PredictiveBackEasing: CubicBezierEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)
