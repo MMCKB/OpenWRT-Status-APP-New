@@ -84,13 +84,13 @@ fun AppCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colors = LocalAppColors.current
+    // Flat card: separation comes from the border only, matching the RN predecessor
+    // (no tonal/shadow elevation, so cards never cast a grey halo on the background).
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = AppShapes.card,
         color = colors.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline.copy(alpha = 0.55f)),
-        tonalElevation = 1.dp,
-        shadowElevation = 2.dp
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline)
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
