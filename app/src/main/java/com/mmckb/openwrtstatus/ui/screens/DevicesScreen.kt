@@ -96,12 +96,12 @@ fun DevicesScreen(
     var openCardId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
 
+    val currentEditing = editing
+
     // Tells the shell to hide the tab bar while the add/edit form is open.
     LaunchedEffect(currentEditing) {
         onSecondaryPageChanged(currentEditing != null)
     }
-
-    val currentEditing = editing
     if (currentEditing != null) {
         DeviceEditForm(
             initial = currentEditing,

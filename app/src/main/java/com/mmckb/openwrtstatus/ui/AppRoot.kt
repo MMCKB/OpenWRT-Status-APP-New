@@ -1,6 +1,6 @@
 package com.mmckb.openwrtstatus.ui
 
-import androidx.activity.PredictiveBackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
