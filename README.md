@@ -149,4 +149,9 @@ GitHub Actions 会自动：
 
 ## 许可证
 
-见仓库根目录 `LICENSE`。
+本项目代码以 [MIT](./LICENSE) 协议发布。
+
+所使用的第三方组件及其许可见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)，许可全文位于
+[`licenses/`](./licenses/) 目录。其中 `ui/glass/` 下 4 个文件改编自
+[Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（Apache-2.0，
+修改已在文件头声明）；JSch 为 BSD-3-Clause，二进制分发时须保留其版权声明。
