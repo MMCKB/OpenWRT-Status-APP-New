@@ -30,7 +30,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -80,7 +79,6 @@ import kotlin.math.roundToInt
 private val REVEAL_WIDTH = 128.dp
 
 /** Narrow delete slice inside the strip; edit takes the rest. */
-private val DELETE_WIDTH = 32.dp
 
 /**
  * Device manager: every router renders as its own card, the active one pinned on top.
@@ -140,10 +138,6 @@ fun DevicesScreen(
                     revealed = openCardId == device.id,
                     onRevealedChanged = { openCardId = if (it) device.id else null },
                     onSelect = { viewModel.selectDevice(device.id) },
-                    onEdit = {
-                        editing = device
-                        isNew = false
-                    },
                     onDelete = { pendingDelete = device }
                 )
             }
@@ -212,7 +206,7 @@ fun DevicesScreen(
     }
 }
 
-/** One device card with delete / edit actions revealed by a left swipe; tap switches device. */
+/** One device card with a delete action revealed by a left swipe; tap switches device. */
 @Composable
 private fun SwipeRevealDeviceCard(
     device: RouterConfig,
@@ -220,7 +214,6 @@ private fun SwipeRevealDeviceCard(
     revealed: Boolean,
     onRevealedChanged: (Boolean) -> Unit,
     onSelect: () -> Unit,
-    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = LocalAppColors.current
@@ -243,27 +236,16 @@ private fun SwipeRevealDeviceCard(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        // Fixed-width strip on the reveal side (right edge for a left swipe):
-        // delete takes a narrow slice, edit gets the rest.
-        Row(
+        // Wide red delete surface behind the card, revealed by a right-to-left swipe.
+        SwipeAction(
+            label = "删除",
+            icon = Icons.Filled.Delete,
+            background = colors.error,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .width(REVEAL_WIDTH)
+                .matchParentSize()
                 .clip(AppShapes.card)
-        ) {
-            SwipeAction(
-                label = "删除",
-                icon = Icons.Filled.Delete,
-                background = colors.error,
-                modifier = Modifier.width(DELETE_WIDTH)
-            ) { onDelete() }
-            SwipeAction(
-                label = "编辑",
-                icon = Icons.Filled.Edit,
-                background = Color(0xFFFFC107),
-                modifier = Modifier.weight(1f)
-            ) { onEdit() }
-        }
+        ) { onDelete() }
         Surface(
             shape = AppShapes.card,
             color = colors.surface,
