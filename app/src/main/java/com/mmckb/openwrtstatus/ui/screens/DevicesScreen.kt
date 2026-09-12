@@ -61,8 +61,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
-import com.mmckb.openwrtstatus.ui.components.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
+import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
