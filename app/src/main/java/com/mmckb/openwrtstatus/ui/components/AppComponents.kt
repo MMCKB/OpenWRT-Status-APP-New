@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,6 +53,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -199,7 +203,6 @@ fun AppTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.background)
             .statusBarsPadding()
             .height(60.dp)
             .padding(horizontal = 20.dp),
@@ -529,3 +532,8 @@ fun AppDialog(
         }
     }
 }
+
+/** Top inset consumed by the translucent blurred top bar: status bar + bar height + gap. */
+@Composable
+fun rememberTopBarPadding(): Dp =
+    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp + 12.dp

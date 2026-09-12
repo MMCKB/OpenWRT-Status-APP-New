@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
+import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /**
@@ -61,7 +62,9 @@ fun TerminalScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = rememberTopBarPadding())
+            .padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         if (state is SshTerminal.State.Failed) {

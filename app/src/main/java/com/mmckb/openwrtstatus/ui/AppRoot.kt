@@ -1,22 +1,25 @@
 package com.mmckb.openwrtstatus.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,27 +29,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
+import com.mmckb.openwrtstatus.ui.screens.DetailScreen
 import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
-import com.mmckb.openwrtstatus.ui.screens.MonitorScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
+import com.mmckb.openwrtstatus.ui.screens.ToolScreen
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 private const val TAB_DASHBOARD = 0
 private const val TAB_DEVICES = 1
-private const val TAB_MONITOR = 2
-private const val TAB_TERMINAL = 3
-private const val TAB_SETTINGS = 4
+private const val TAB_TERMINAL = 2
+private const val TAB_TOOL = 3
+private const val TAB_DETAIL = 4
+private const val TAB_SETTINGS = 5
 
 @Composable
 fun AppRoot(viewModel: RouterViewModel = viewModel()) {
@@ -55,12 +63,74 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val config by viewModel.config.collectAsState()
     val colors = LocalAppColors.current
 
-    // Records whatever content is rendered behind the floating glass tab.
+    // Records the page layer: pages extend edge to edge, so the translucent top bar and
+    // the bottom tab strip blur the live content behind them.
     val backdrop = rememberLayerBackdrop()
 
+    // Secondary view (about): system back returns to settings instead of the desktop.
+    BackHandler(enabled = showAbout) { showAbout = false }
+
     Box(Modifier.fillMaxSize().background(colors.background)) {
-        Column(Modifier.fillMaxSize()) {
-            val navigationIcon: (@Composable () -> Unit)? = if (showAbout) {
+        // Page layer fills the whole screen; the top bar overlays it.
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            if (showAbout) {
+                AboutScreen(modifier = Modifier.fillMaxSize())
+            } else {
+                when (selectedTab) {
+                    TAB_DASHBOARD -> DashboardScreen(
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    TAB_DEVICES -> DevicesScreen(
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    TAB_TERMINAL -> TerminalScreen(
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    TAB_TOOL -> ToolScreen(modifier = Modifier.fillMaxSize())
+                    TAB_DETAIL -> DetailScreen(modifier = Modifier.fillMaxSize())
+                    else -> SettingsScreen(
+                        onOpenAbout = { showAbout = true },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        // Translucent blurred top bar instead of a solid one.
+        AppTopBar(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { RectangleShape },
+                    effects = { blur(18.dp.toPx()) },
+                    onDrawSurface = { drawRect(colors.background.copy(alpha = 0.72f)) }
+                ),
+            title = if (showAbout) {
+                "关于"
+            } else {
+                when (selectedTab) {
+                    TAB_DASHBOARD -> "概览"
+                    TAB_DEVICES -> "设备"
+                    TAB_TERMINAL -> "终端"
+                    TAB_TOOL -> "工具"
+                    TAB_DETAIL -> "详情"
+                    else -> "设置"
+                }
+            },
+            subtitle = if (showAbout) {
+                null
+            } else {
+                when (selectedTab) {
+                    TAB_DASHBOARD -> "${config.username}@${config.ip}:${config.port}"
+                    TAB_TERMINAL -> "${config.sshUsername}@${config.sshHost.ifBlank { config.ip }}:${config.sshPort}"
+                    else -> null
+                }
+            },
+            navigationIcon = if (showAbout) {
                 {
                     IconButton(onClick = { showAbout = false }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -68,92 +138,49 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 }
             } else {
                 null
-            }
-            AppTopBar(
-                title = if (showAbout) {
-                    "关于"
-                } else {
-                    when (selectedTab) {
-                        TAB_DASHBOARD -> "概览"
-                        TAB_DEVICES -> "设备"
-                        TAB_MONITOR -> "监控"
-                        TAB_TERMINAL -> "终端"
-                        else -> "设置"
-                    }
-                },
-                subtitle = if (showAbout) {
-                    null
-                } else {
-                    when (selectedTab) {
-                        TAB_DASHBOARD -> "${config.username}@${config.ip}:${config.port}"
-                        TAB_TERMINAL -> "${config.sshUsername}@${config.sshHost.ifBlank { config.ip }}:${config.sshPort}"
-                        else -> null
-                    }
-                },
-                navigationIcon = navigationIcon,
-                actions = {
-                    if (selectedTab == TAB_DASHBOARD && !showAbout) {
-                        IconButton(onClick = { viewModel.refresh() }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "刷新")
-                        }
-                    }
-                    if (selectedTab == TAB_TERMINAL && !showAbout) {
-                        val terminalState by viewModel.terminal.state.collectAsState()
-                        val terminalConnected = terminalState is SshTerminal.State.Connected
-                        TextButton(
-                            onClick = {
-                                if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
-                            },
-                            enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting
-                        ) {
-                            Text(if (terminalConnected) "断开" else "连接")
-                        }
+            },
+            actions = {
+                if (selectedTab == TAB_DASHBOARD && !showAbout) {
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                     }
                 }
-            )
+                if (selectedTab == TAB_TERMINAL && !showAbout) {
+                    val terminalState by viewModel.terminal.state.collectAsState()
+                    val terminalConnected = terminalState is SshTerminal.State.Connected
+                    TextButton(
+                        onClick = {
+                            if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
+                        },
+                        enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting
+                    ) {
+                        Text(if (terminalConnected) "断开" else "连接", color = colors.primary)
+                    }
+                }
+            }
+        )
 
-            // Content area. layerBackdrop() records this layer so the floating tab can sample it.
-            Box(
-                Modifier
-                    .weight(1f)
-                    .layerBackdrop(backdrop)
-            ) {
-                if (showAbout) {
-                    AboutScreen(modifier = Modifier.fillMaxSize())
-                } else {
-                    when (selectedTab) {
-                        TAB_DASHBOARD -> DashboardScreen(
-                            viewModel = viewModel,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        TAB_DEVICES -> DevicesScreen(
-                            viewModel = viewModel,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        TAB_MONITOR -> MonitorScreen(
-                            viewModel = viewModel,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        TAB_TERMINAL -> TerminalScreen(
-                            viewModel = viewModel,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        else -> SettingsScreen(
-                            onOpenAbout = { showAbout = true },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
-        }
+        // Blurred strip behind the bottom tab pill.
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .height(96.dp)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { RectangleShape },
+                    effects = { blur(16.dp.toPx()) },
+                    onDrawSurface = { drawRect(colors.background.copy(alpha = 0.55f)) }
+                )
+        )
 
         FloatingTabBar(
             backdrop = backdrop,
             tabs = listOf(
                 TabItem("概览", Icons.Filled.Dashboard),
                 TabItem("设备", Icons.Filled.Devices),
-                TabItem("监控", Icons.Filled.ShowChart),
                 TabItem("终端", Icons.Filled.Terminal),
+                TabItem("工具", Icons.Filled.Build),
+                TabItem("详情", Icons.Filled.Info),
                 TabItem("设置", Icons.Filled.Settings)
             ),
             selectedIndex = selectedTab,
