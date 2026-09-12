@@ -264,7 +264,13 @@ fun FloatingTabBar(
     val tabWidthPx = with(density) { tabWidth.toPx() }
 
     val animationScope = rememberCoroutineScope()
-    var currentIndex by remember(selectedIndex) { mutableIntStateOf(selectedIndex) }
+
+    // Deliberately NOT keyed on selectedIndex: keying would swap the underlying
+    // MutableIntState object on every external tab change, while the snapshotFlow below
+    // (launched once) keeps observing the original object. Taps would then stop emitting
+    // after the first switch (first tap fine, later taps dead). External changes are
+    // synced in via LaunchedEffect(selectedIndex) instead.
+    var currentIndex by remember { mutableIntStateOf(selectedIndex) }
 
     val offsetAnimation = remember { Animatable(0f) }
     val panelOffset by remember(density, tabWidthPx) {
@@ -306,8 +312,9 @@ fun FloatingTabBar(
         )
     }
 
+    // Sync external selection changes (e.g. AppRoot jumping back to 概览 after saving settings).
     LaunchedEffect(selectedIndex) {
-        snapshotFlow { selectedIndex }.collectLatest { index -> currentIndex = index }
+        currentIndex = selectedIndex
     }
     LaunchedEffect(dampedDragAnimation) {
         snapshotFlow { currentIndex }
