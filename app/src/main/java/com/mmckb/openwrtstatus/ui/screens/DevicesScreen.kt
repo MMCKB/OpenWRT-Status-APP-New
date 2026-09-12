@@ -1,20 +1,25 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,37 +27,54 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
+import com.mmckb.openwrtstatus.ui.components.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+/** Width of the action strip (edit + delete) revealed by swiping a device card left. */
+private val REVEAL_WIDTH = 128.dp
 
 /**
- * Device manager: lists every configured router, switches the active device with a tap
- * and offers add / edit / delete. The edit form carries the full connection setup
- * (ubus endpoint, poll interval, demo mode and SSH credentials) that used to live on
- * the settings page; the settings tab now only keeps the about section.
+ * Device manager: every router renders as its own card; swipe a card left to reveal
+ * edit / delete actions (delete asks for confirmation). Tapping a card switches the
+ * active device. The add/edit form carries the full connection setup (ubus endpoint
+ * and SSH credentials merged into one section) that used to live on the settings page.
  */
 @Composable
 fun DevicesScreen(
@@ -63,6 +85,8 @@ fun DevicesScreen(
     val activeId by viewModel.activeId.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<RouterConfig?>(null) }
     var isNew by remember { mutableStateOf(false) }
+    var openCardId by remember { mutableStateOf<String?>(null) }
+    var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
 
     val currentEditing = editing
     if (currentEditing != null) {
@@ -83,35 +107,26 @@ fun DevicesScreen(
         return
     }
 
+    val colors = LocalAppColors.current
+
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 96.dp)
     ) {
-        item {
-            AppCard {
-                CardSectionTitle("设备列表（${devices.size}）")
-                Spacer(Modifier.height(8.dp))
-                if (devices.isEmpty()) {
-                    Text(
-                        "还没有设备。点击下方「添加设备」，填入路由器地址与账号即可。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalAppColors.current.onSurfaceVariant
-                    )
-                }
-                devices.forEach { device ->
-                    DeviceRow(
-                        device = device,
-                        active = device.id == activeId,
-                        onClick = { viewModel.selectDevice(device.id) },
-                        onEdit = {
-                            editing = device
-                            isNew = false
-                        },
-                        onDelete = { viewModel.deleteDevice(device.id) }
-                    )
-                }
-            }
+        items(devices, key = { it.id }) { device ->
+            SwipeRevealDeviceCard(
+                device = device,
+                active = device.id == activeId,
+                revealed = openCardId == device.id,
+                onRevealedChanged = { openCardId = if (it) device.id else null },
+                onSelect = { viewModel.selectDevice(device.id) },
+                onEdit = {
+                    editing = device
+                    isNew = false
+                },
+                onDelete = { pendingDelete = device }
+            )
         }
         item {
             Button(
@@ -124,61 +139,161 @@ fun DevicesScreen(
         }
         item {
             Text(
-                "点击设备即可切换当前连接；概览、监控与终端都作用于当前设备。",
+                "点击卡片切换当前设备，向左滑动卡片可编辑或删除。概览、监控与终端都作用于当前设备。",
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalAppColors.current.onSurfaceVariant,
+                color = colors.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
+        }
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除设备") },
+            text = {
+                Text("确定要删除「${target.displayName}」吗？删除后需要重新添加才能连接该路由器。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteDevice(target.id)
+                    openCardId = null
+                    pendingDelete = null
+                }) {
+                    Text("删除", color = colors.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            }
+        )
+    }
+}
+
+/** One device card with edit/delete actions revealed by a left swipe. */
+@Composable
+private fun SwipeRevealDeviceCard(
+    device: RouterConfig,
+    active: Boolean,
+    revealed: Boolean,
+    onRevealedChanged: (Boolean) -> Unit,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    val density = LocalDensity.current
+    val revealPx = with(density) { REVEAL_WIDTH.toPx() }
+    val offset = remember(device.id) { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    // Close again whenever the parent decides this card must not stay open.
+    LaunchedEffect(revealed) {
+        if (!revealed && offset.value != 0f) offset.animateTo(0f)
+    }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(AppShapes.card)
+        ) {
+            SwipeAction(
+                label = "编辑",
+                icon = Icons.Filled.Edit,
+                background = colors.primary,
+                modifier = Modifier.weight(1f)
+            ) { onEdit() }
+            SwipeAction(
+                label = "删除",
+                icon = Icons.Filled.Delete,
+                background = colors.error,
+                modifier = Modifier.weight(1f)
+            ) { onDelete() }
+        }
+        AppCard(
+            modifier = Modifier
+                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                .pointerInput(revealPx) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch {
+                                offset.snapTo((offset.value + dragAmount).coerceIn(-revealPx, 0f))
+                            }
+                        },
+                        onDragEnd = {
+                            scope.launch {
+                                val open = offset.value < -revealPx / 2
+                                offset.animateTo(if (open) -revealPx else 0f)
+                                onRevealedChanged(open)
+                            }
+                        }
+                    )
+                }
+                .clickable {
+                    if (offset.value != 0f) {
+                        scope.launch { offset.animateTo(0f) }
+                        onRevealedChanged(false)
+                    } else {
+                        onSelect()
+                    }
+                }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .background(if (active) colors.success else colors.onSurfaceVariant, CircleShape)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        device.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "${device.ip}:${device.port} · ${device.username}" + if (active) " · 当前" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun DeviceRow(
-    device: RouterConfig,
-    active: Boolean,
-    onClick: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
+private fun SwipeAction(
+    label: String,
+    icon: ImageVector,
+    background: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
-    val colors = LocalAppColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            Modifier
-                .size(10.dp)
-                .background(if (active) colors.success else colors.onSurfaceVariant, CircleShape)
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                device.displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Text(
-                "${device.ip}:${device.port} · ${device.username}" + if (active) " · 当前" else "",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Filled.Edit, contentDescription = "编辑", tint = colors.onSurfaceVariant)
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Delete, contentDescription = "删除", tint = colors.onSurfaceVariant)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, contentDescription = label, tint = Color.White)
+            Spacer(Modifier.height(2.dp))
+            Text(label, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Clip)
         }
     }
 }
 
 /**
- * Add/edit form carrying the full device configuration (formerly the settings page).
+ * Add/edit form carrying the full device configuration: ubus endpoint and SSH
+ * credentials merged into a single section.
  */
 @Composable
 private fun DeviceEditForm(
@@ -196,8 +311,6 @@ private fun DeviceEditForm(
     var password by remember { mutableStateOf(initial.password) }
     var useHttps by remember { mutableStateOf(initial.useHttps) }
     var allowInsecureTls by remember { mutableStateOf(initial.allowInsecureTls) }
-    var useMock by remember { mutableStateOf(initial.useMock) }
-    var refreshInterval by remember { mutableStateOf(initial.refreshIntervalSec.toString()) }
 
     var sshEnabled by remember { mutableStateOf(initial.sshEnabled) }
     var sshHost by remember { mutableStateOf(initial.sshHost) }
@@ -226,7 +339,7 @@ private fun DeviceEditForm(
         }
 
         AppCard {
-            CardSectionTitle("路由器连接")
+            CardSectionTitle("连接配置")
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = name,
@@ -272,27 +385,18 @@ private fun DeviceEditForm(
             Spacer(Modifier.height(12.dp))
             SwitchRow("使用 HTTPS", useHttps) { useHttps = it }
             SwitchRow("忽略证书校验（自签名证书）", allowInsecureTls) { allowInsecureTls = it }
-            SwitchRow("演示模式（使用模拟数据）", useMock) { useMock = it }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = refreshInterval,
-                onValueChange = { refreshInterval = it.filter { c -> c.isDigit() } },
-                label = { Text("刷新间隔（秒，2-60）") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = colors.outline)
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                "SSH 远程终端与 DHCP 租约",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
             )
             Spacer(Modifier.height(8.dp))
-            Text(
-                "连接地址为 http(s)://地址:端口/ubus（rpcd 接口）。",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
-        }
-
-        AppCard {
-            CardSectionTitle("SSH 远程终端")
-            Spacer(Modifier.height(12.dp))
             SwitchRow("启用 SSH", sshEnabled) { sshEnabled = it }
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
@@ -334,7 +438,7 @@ private fun DeviceEditForm(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "启用后可在「终端」页执行命令，并在「监控」页读取 /tmp/dhcp.leases 租约。",
+                "连接地址为 http(s)://地址:端口/ubus（rpcd 接口）。启用 SSH 后可在「终端」页执行命令，并在「监控」页读取租约。",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )
@@ -356,8 +460,6 @@ private fun DeviceEditForm(
                             password = password,
                             useHttps = useHttps,
                             allowInsecureTls = allowInsecureTls,
-                            useMock = useMock,
-                            refreshIntervalSec = refreshInterval.toIntOrNull()?.coerceIn(2, 60) ?: 5,
                             sshEnabled = sshEnabled,
                             sshHost = sshHost,
                             sshPort = sshPort.toIntOrNull()?.coerceIn(1, 65535) ?: 22,
