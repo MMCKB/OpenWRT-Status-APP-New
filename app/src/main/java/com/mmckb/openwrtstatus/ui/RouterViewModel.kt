@@ -23,8 +23,8 @@ import kotlin.math.max
 private const val HISTORY_LIMIT = 60
 
 /**
- * Holds router connection config, the latest dashboard snapshot, DHCP leases,
- * a rolling monitoring history and the SSH terminal session.
+ * Holds the device list, the active router config, the latest dashboard snapshot,
+ * DHCP leases, a rolling monitoring history and the SSH terminal session.
  */
 class RouterViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -34,8 +34,21 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     /** Interactive SSH shell used by the terminal screen. */
     val terminal = SshTerminal()
 
-    private val _config = MutableStateFlow(settingsStore.load())
+    private val initialDevices = settingsStore.loadDevices()
+
+    private val _devices = MutableStateFlow(initialDevices)
+    val devices: StateFlow<List<RouterConfig>> = _devices
+
+    private val _activeId = MutableStateFlow(settingsStore.loadActiveId(initialDevices))
+    val activeId: StateFlow<String> = _activeId
+
+    private val _config = MutableStateFlow(configFor(initialDevices, _activeId.value))
     val config: StateFlow<RouterConfig> = _config
+
+    private fun configFor(devices: List<RouterConfig>, id: String): RouterConfig =
+        devices.firstOrNull { it.id == id }
+            ?: devices.firstOrNull()
+            ?: RouterConfig(id = SettingsStore.ID_LEGACY)
 
     private val _uiState = MutableStateFlow<StatusUiState>(StatusUiState.Initial)
     val uiState: StateFlow<StatusUiState> = _uiState
@@ -57,13 +70,15 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         refresh()
     }
 
-    fun refresh() {
+    /** Fetches a dashboard snapshot; [forceConfig] overrides the active config once. */
+    fun refresh(forceConfig: RouterConfig? = null) {
         viewModelScope.launch {
+            val cfg = forceConfig ?: _config.value
             if (_uiState.value !is StatusUiState.Success) {
                 _uiState.value = StatusUiState.Loading
             }
             try {
-                val status = repository.fetchStatus(_config.value)
+                val status = repository.fetchStatus(cfg)
                 val now = System.currentTimeMillis()
 
                 val rates = status.interfaces.map { iface ->
@@ -118,7 +133,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
 
-                if (_config.value.sshEnabled) refreshLeases()
+                if (cfg.sshEnabled) refreshLeases()
             } catch (e: RouterException) {
                 _uiState.value = StatusUiState.Error(e.message ?: "连接失败", e.hint)
             } catch (e: Exception) {
@@ -172,13 +187,68 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         terminal.disconnect()
     }
 
-    fun saveConfig(newConfig: RouterConfig) {
-        _config.value = newConfig
-        settingsStore.save(newConfig)
+    /** Adds a device and makes it the active one. */
+    fun addDevice(device: RouterConfig) {
+        val new = device.copy(id = java.util.UUID.randomUUID().toString())
+        _devices.value = _devices.value + new
+        _activeId.value = new.id
+        syncActiveConfig()
+        persist()
+        resetSessionState()
+        refresh(new)
+    }
+
+    /** Updates an existing device; refreshes immediately when it is the active one. */
+    fun updateDevice(device: RouterConfig) {
+        _devices.value = _devices.value.map { if (it.id == device.id) device else it }
+        syncActiveConfig()
+        persist()
+        if (device.id == _activeId.value) {
+            resetSessionState()
+            refresh(device)
+        }
+    }
+
+    /** Removes a device; falls back to the first remaining device when needed. */
+    fun deleteDevice(id: String) {
+        val remaining = _devices.value.filterNot { it.id == id }
+        _devices.value = remaining
+        if (_activeId.value == id) {
+            _activeId.value = remaining.firstOrNull()?.id.orEmpty()
+            syncActiveConfig()
+            persist()
+            resetSessionState()
+            remaining.firstOrNull()?.let { refresh(it) }
+        } else {
+            persist()
+        }
+    }
+
+    /** Switches the active device; history and session state are reset. */
+    fun selectDevice(id: String) {
+        if (id == _activeId.value) return
+        _activeId.value = id
+        syncActiveConfig()
+        persist()
+        resetSessionState()
+        refresh(_config.value)
+    }
+
+    private fun syncActiveConfig() {
+        _config.value = configFor(_devices.value, _activeId.value)
+    }
+
+    private fun persist() {
+        settingsStore.saveDevices(_devices.value, _activeId.value)
+    }
+
+    private fun resetSessionState() {
         previousTraffic.clear()
         previousTime = 0
         _history.value = emptyList()
-        refresh()
+        _leases.value = emptyList()
+        _leaseError.value = null
+        terminal.disconnect()
     }
 
     override fun onCleared() {

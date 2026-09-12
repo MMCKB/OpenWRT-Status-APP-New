@@ -1,11 +1,15 @@
 package com.mmckb.openwrtstatus.data.model
 
 /**
- * Connection configuration for the target OpenWrt router.
+ * Connection configuration for one OpenWrt router.
  *
  * The router is reached over the rpcd ubus endpoint (`http(s)://host:port/ubus`).
+ * Multiple [RouterConfig] entries are kept in the device list; `id` is the stable key
+ * used for selection and `name` is the user-facing label (falls back to the address).
  */
 data class RouterConfig(
+    val id: String = "",
+    val name: String = "",
     val ip: String = "192.168.1.1",
     val port: Int = 80,
     val username: String = "root",
@@ -21,7 +25,10 @@ data class RouterConfig(
     val sshPort: Int = 22,
     val sshUsername: String = "root",
     val sshPassword: String = ""
-)
+) {
+    /** Label shown in device lists. */
+    val displayName: String get() = name.ifBlank { ip }
+}
 
 /**
  * SSH connection settings derived from [RouterConfig].

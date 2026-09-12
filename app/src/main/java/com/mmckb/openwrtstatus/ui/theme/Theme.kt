@@ -16,8 +16,7 @@ import androidx.compose.ui.unit.dp
  *
  * A lightweight design system built on top of Compose Foundation (no Material3 theme
  * dependency for the app chrome). [MaterialTheme] is still wrapped underneath so that the
- * material3 input controls used by [com.mmckb.openwrtstatus.ui.screens.SettingsScreen]
- * keep working.
+ * material3 input controls used across the screens (device form, dialogs) keep working.
  */
 data class AppColors(
     val background: Color,
