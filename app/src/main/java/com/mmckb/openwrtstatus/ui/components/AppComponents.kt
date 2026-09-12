@@ -406,7 +406,8 @@ fun FloatingTabBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 tabs.forEach { tab ->
-                    LiquidTab(onClick = {}) {
+                    // Recording layer: pixels only, must not intercept touches.
+                    LiquidTab(onClick = null) {
                         Icon(imageVector = tab.icon, contentDescription = null)
                         Text(tab.label, style = MaterialTheme.typography.labelSmall)
                     }

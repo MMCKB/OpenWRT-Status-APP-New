@@ -24,15 +24,23 @@ import com.kyant.shapes.Capsule
 /** Scale applied to the tab content while the glass pill is pressed. */
 val LocalLiquidTabScale = staticCompositionLocalOf { { 1f } }
 
+/**
+ * A single tab inside the glass bar.
+ *
+ * [onClick] is nullable on purpose: the tab bar renders this composable twice — once visibly
+ * and once in an invisible layer that only records pixels for the moving pill. The invisible
+ * copy must pass `null`, otherwise its hit area sits on top of the visible layer and swallows
+ * every tap (`alpha(0f)` does not disable hit testing in Compose).
+ */
 @Composable
 fun RowScope.LiquidTab(
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scale = LocalLiquidTabScale.current
-    Column(
-        modifier
+    val clickableModifier = if (onClick != null) {
+        Modifier
             .clip(Capsule())
             .clickable(
                 interactionSource = null,
@@ -40,6 +48,12 @@ fun RowScope.LiquidTab(
                 role = Role.Tab,
                 onClick = onClick
             )
+    } else {
+        Modifier
+    }
+    Column(
+        modifier
+            .then(clickableModifier)
             .fillMaxHeight()
             .weight(1f)
             .graphicsLayer {
