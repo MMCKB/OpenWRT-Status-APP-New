@@ -59,7 +59,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
@@ -351,7 +350,6 @@ fun FloatingTabBar(
                     backdrop = backdrop,
                     shape = { Capsule() },
                     effects = {
-                        vibrancy()
                         blur(8.dp.toPx())
                         lens(24.dp.toPx(), 24.dp.toPx())
                     },
@@ -401,7 +399,6 @@ fun FloatingTabBar(
                         shape = { Capsule() },
                         effects = {
                             val progress = dampedDragAnimation.pressProgress
-                            vibrancy()
                             blur(8.dp.toPx())
                             lens(24.dp.toPx() * progress, 24.dp.toPx() * progress)
                         },
