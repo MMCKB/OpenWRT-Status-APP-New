@@ -174,7 +174,7 @@ fun DevicesScreen(
     }
 }
 
-/** One device card with delete / edit actions revealed by a right swipe; tap switches device. */
+/** One device card with delete / edit actions revealed by a left swipe; tap switches device. */
 @Composable
 private fun SwipeRevealDeviceCard(
     device: RouterConfig,
@@ -205,22 +205,19 @@ private fun SwipeRevealDeviceCard(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        // Fixed-width strip on the reveal side; buttons slide in from the right as the
-        // card moves away, so both are always fully visible when opened.
+        // Fixed-width strip on the reveal side (right edge for a left swipe):
+        // delete takes a narrow slice, edit gets the rest.
         Row(
             modifier = Modifier
-                .align(Alignment.CenterStart)
+                .align(Alignment.CenterEnd)
                 .width(REVEAL_WIDTH)
                 .clip(AppShapes.card)
-                .graphicsLayer {
-                    translationX = revealPx - offset.value
-                }
         ) {
             SwipeAction(
                 label = "删除",
                 icon = Icons.Filled.Delete,
                 background = colors.error,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.width(32.dp)
             ) { onDelete() }
             SwipeAction(
                 label = "编辑",
@@ -240,14 +237,14 @@ private fun SwipeRevealDeviceCard(
                         onDragStart = { settleJob.value?.cancel() },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            offset.value = (offset.value + dragAmount).coerceIn(0f, revealPx)
+                            offset.value = (offset.value - dragAmount).coerceIn(-revealPx, 0f)
                         },
                         onDragEnd = {
-                            val open = offset.value > revealPx / 2
+                            val open = offset.value < -revealPx / 2
                             settleJob.value = scope.launch {
                                 animate(
                                     initialValue = offset.value,
-                                    targetValue = if (open) revealPx else 0f,
+                                    targetValue = if (open) -revealPx else 0f,
                                     animationSpec = spring(0.85f, 380f)
                                 ) { v, _ -> offset.value = v }
                             }
