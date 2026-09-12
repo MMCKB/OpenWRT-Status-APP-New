@@ -56,6 +56,7 @@ import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
+import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /**
