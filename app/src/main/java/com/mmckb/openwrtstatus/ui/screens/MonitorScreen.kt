@@ -77,7 +77,6 @@ fun MonitorScreen(
                 onRefresh = { viewModel.refreshLeases() }
             )
         }
-        item { SampleNoteCard(config.refreshIntervalSec, history.size) }
     }
 }
 
@@ -244,12 +243,7 @@ private fun LeasesCard(
         Spacer(Modifier.height(10.dp))
         when {
             !sshEnabled -> {
-                Text(
-                    "租约需要读取路由器上的 /tmp/dhcp.leases。请在设备编辑页启用 SSH 并填写凭据后刷新。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant
-                )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新租约") }
             }
             leases.isEmpty() -> {
@@ -292,28 +286,6 @@ private fun LeasesCard(
                 Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新租约") }
             }
         }
-    }
-}
-
-@Composable
-private fun SampleNoteCard(intervalSec: Int, sampleCount: Int) {
-    val colors = LocalAppColors.current
-    AppCard {
-        CardSectionTitle("采样说明")
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "每 ${intervalSec.coerceAtLeast(2)} 秒采样一次，保留最近 60 个点（当前 $sampleCount 个）。" +
-                "速率由相邻两次计数差值计算，重启应用后历史会重新累积。",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "提示：缩短刷新间隔可让曲线更细腻。",
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = colors.onSurfaceVariant
-        )
     }
 }
 
