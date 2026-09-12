@@ -215,11 +215,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     if (showAbout) {
         PredictiveBackHandler { events ->
             try {
-                events.collect { aboutBackProgress.value = it.progress }
+                events.collect { aboutBackProgress = it.progress }
                 showAbout = false
             } catch (_: kotlinx.coroutines.CancellationException) {
             } finally {
-                aboutBackProgress.value = 0f
+                aboutBackProgress = 0f
             }
         }
     }

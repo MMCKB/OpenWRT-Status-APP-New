@@ -366,11 +366,11 @@ private fun DeviceEditForm(
     // list when the gesture commits; nothing happens if the gesture is cancelled.
     androidx.activity.compose.PredictiveBackHandler { events ->
         try {
-            events.collect { backProgress.value = it.progress }
+            events.collect { backProgress = it.progress }
             onCancel()
         } catch (_: kotlinx.coroutines.CancellationException) {
         } finally {
-            backProgress.value = 0f
+            backProgress = 0f
         }
     }
 
