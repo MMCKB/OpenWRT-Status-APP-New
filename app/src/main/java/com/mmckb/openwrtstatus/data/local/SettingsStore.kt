@@ -3,16 +3,50 @@ package com.mmckb.openwrtstatus.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
- * Persists [RouterConfig] in a private SharedPreferences file.
+ * Persists the device list (multi-router support) plus the active device id in
+ * SharedPreferences as JSON. A legacy single-router install is migrated into a
+ * one-entry device list on first read.
  */
 class SettingsStore(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("openwrt_status_prefs", Context.MODE_PRIVATE)
 
-    fun load(): RouterConfig = RouterConfig(
+    fun loadDevices(): List<RouterConfig> {
+        val raw = prefs.getString(KEY_DEVICES, null)
+        if (raw != null) {
+            return runCatching {
+                val array = JSONArray(raw)
+                (0 until array.length()).map { deviceFromJson(array.getJSONObject(it)) }
+            }.getOrDefault(emptyList())
+        }
+        if (prefs.contains("ip")) {
+            return listOf(loadLegacy().copy(id = ID_LEGACY))
+        }
+        return emptyList()
+    }
+
+    /** Stored active id if still valid, otherwise the first device. */
+    fun loadActiveId(devices: List<RouterConfig>): String {
+        val stored = prefs.getString(KEY_ACTIVE, null).orEmpty()
+        return if (devices.any { it.id == stored }) stored else devices.firstOrNull()?.id.orEmpty()
+    }
+
+    fun saveDevices(devices: List<RouterConfig>, activeId: String) {
+        val array = JSONArray()
+        devices.forEach { array.put(it.toJson()) }
+        prefs.edit()
+            .putString(KEY_DEVICES, array.toString())
+            .putString(KEY_ACTIVE, activeId)
+            .apply()
+    }
+
+    /** Legacy single-config storage, kept only to migrate old installs. */
+    private fun loadLegacy(): RouterConfig = RouterConfig(
         ip = prefs.getString("ip", "192.168.1.1") ?: "192.168.1.1",
         port = prefs.getInt("port", 80),
         username = prefs.getString("username", "root") ?: "root",
@@ -28,21 +62,46 @@ class SettingsStore(context: Context) {
         sshPassword = prefs.getString("sshPassword", "") ?: ""
     )
 
-    fun save(config: RouterConfig) {
-        prefs.edit().apply {
-            putString("ip", config.ip)
-            putInt("port", config.port)
-            putString("username", config.username)
-            putString("password", config.password)
-            putBoolean("useHttps", config.useHttps)
-            putBoolean("allowInsecureTls", config.allowInsecureTls)
-            putBoolean("useMock", config.useMock)
-            putInt("refreshIntervalSec", config.refreshIntervalSec)
-            putBoolean("sshEnabled", config.sshEnabled)
-            putString("sshHost", config.sshHost)
-            putInt("sshPort", config.sshPort)
-            putString("sshUsername", config.sshUsername)
-            putString("sshPassword", config.sshPassword)
-        }.apply()
+    private fun RouterConfig.toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("name", name)
+        put("ip", ip)
+        put("port", port)
+        put("username", username)
+        put("password", password)
+        put("useHttps", useHttps)
+        put("allowInsecureTls", allowInsecureTls)
+        put("useMock", useMock)
+        put("refreshIntervalSec", refreshIntervalSec)
+        put("sshEnabled", sshEnabled)
+        put("sshHost", sshHost)
+        put("sshPort", sshPort)
+        put("sshUsername", sshUsername)
+        put("sshPassword", sshPassword)
+    }
+
+    private fun deviceFromJson(o: JSONObject): RouterConfig = RouterConfig(
+        id = o.optString("id"),
+        name = o.optString("name"),
+        ip = o.optString("ip", "192.168.1.1"),
+        port = o.optInt("port", 80),
+        username = o.optString("username", "root"),
+        password = o.optString("password"),
+        useHttps = o.optBoolean("useHttps"),
+        allowInsecureTls = o.optBoolean("allowInsecureTls"),
+        useMock = o.optBoolean("useMock"),
+        refreshIntervalSec = o.optInt("refreshIntervalSec", 5).coerceIn(2, 60),
+        sshEnabled = o.optBoolean("sshEnabled"),
+        sshHost = o.optString("sshHost"),
+        sshPort = o.optInt("sshPort", 22).coerceIn(1, 65535),
+        sshUsername = o.optString("sshUsername", "root"),
+        sshPassword = o.optString("sshPassword")
+    )
+
+    companion object {
+        const val ID_LEGACY = "device-legacy"
+
+        private const val KEY_DEVICES = "devices_json"
+        private const val KEY_ACTIVE = "activeDeviceId"
     }
 }
