@@ -206,12 +206,16 @@ private fun SwipeRevealDeviceCard(
 
     Box(modifier = Modifier.fillMaxWidth()) {
         // Fixed-width strip on the reveal side (right edge for a left swipe):
-        // delete takes a narrow slice, edit gets the rest.
+        // delete takes a narrow slice, edit gets the rest. The strip slides in from
+        // beyond the right edge as the card moves away.
         Row(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .width(REVEAL_WIDTH)
                 .clip(AppShapes.card)
+                .graphicsLayer {
+                    translationX = revealPx + offset.value
+                }
         ) {
             SwipeAction(
                 label = "删除",
