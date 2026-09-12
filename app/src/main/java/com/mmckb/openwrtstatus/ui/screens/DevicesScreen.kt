@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -77,14 +78,15 @@ private val REVEAL_WIDTH = 128.dp
 
 /**
  * Device manager: every router renders as its own card, the active one pinned on top.
- * Swipe a card RIGHT to reveal delete / edit actions (delete asks for confirmation).
- * Cards are not clickable - switching happens from the dashboard device picker.
+ * Swipe a card LEFT to reveal edit / delete actions (delete asks for confirmation);
+ * tap a card to make that router the active one.
  * The add/edit form carries the full connection setup; SSH is always enabled and only
  * asks for port and password (an empty SSH password falls back to the router password).
  */
 @Composable
 fun DevicesScreen(
     viewModel: RouterViewModel,
+    onSecondaryPageChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val devices by viewModel.devices.collectAsStateWithLifecycle()
@@ -93,6 +95,11 @@ fun DevicesScreen(
     var isNew by remember { mutableStateOf(false) }
     var openCardId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
+
+    // Tells the shell to hide the tab bar while the add/edit form is open.
+    LaunchedEffect(currentEditing) {
+        onSecondaryPageChanged(currentEditing != null)
+    }
 
     val currentEditing = editing
     if (currentEditing != null) {
@@ -130,6 +137,7 @@ fun DevicesScreen(
                 active = device.id == activeId,
                 revealed = openCardId == device.id,
                 onRevealedChanged = { openCardId = if (it) device.id else null },
+                onSelect = { viewModel.selectDevice(device.id) },
                 onEdit = {
                     editing = device
                     isNew = false
@@ -165,13 +173,14 @@ fun DevicesScreen(
     }
 }
 
-/** One device card with delete / edit actions revealed by a right swipe. */
+/** One device card with edit / delete actions revealed by a left swipe; tap switches device. */
 @Composable
 private fun SwipeRevealDeviceCard(
     device: RouterConfig,
     active: Boolean,
     revealed: Boolean,
     onRevealedChanged: (Boolean) -> Unit,
+    onSelect: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -201,17 +210,17 @@ private fun SwipeRevealDeviceCard(
                 .clip(AppShapes.card)
         ) {
             SwipeAction(
-                label = "删除",
-                icon = Icons.Filled.Delete,
-                background = colors.error,
-                modifier = Modifier.weight(1f)
-            ) { onDelete() }
-            SwipeAction(
                 label = "编辑",
                 icon = Icons.Filled.Edit,
                 background = colors.primary,
                 modifier = Modifier.weight(1f)
             ) { onEdit() }
+            SwipeAction(
+                label = "删除",
+                icon = Icons.Filled.Delete,
+                background = colors.error,
+                modifier = Modifier.weight(1f)
+            ) { onDelete() }
         }
         Surface(
             shape = AppShapes.card,
@@ -224,14 +233,14 @@ private fun SwipeRevealDeviceCard(
                         onDragStart = { settleJob.value?.cancel() },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            offset.value = (offset.value + dragAmount).coerceIn(0f, revealPx)
+                            offset.value = (offset.value - dragAmount).coerceIn(-revealPx, 0f)
                         },
                         onDragEnd = {
-                            val open = offset.value > revealPx / 2
+                            val open = offset.value < -revealPx / 2
                             settleJob.value = scope.launch {
                                 animate(
                                     initialValue = offset.value,
-                                    targetValue = if (open) revealPx else 0f,
+                                    targetValue = if (open) -revealPx else 0f,
                                     animationSpec = spring(0.85f, 380f)
                                 ) { v, _ -> offset.value = v }
                             }
@@ -239,6 +248,7 @@ private fun SwipeRevealDeviceCard(
                         }
                     )
                 }
+                .clickable { onSelect() }
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 18.dp),
@@ -348,14 +358,29 @@ private fun DeviceEditForm(
     var sshPort by remember { mutableStateOf(initial.sshPort.toString()) }
     var sshPassword by remember { mutableStateOf(initial.sshPassword) }
     var nameError by remember { mutableStateOf<String?>(null) }
+    var backProgress by remember { mutableFloatStateOf(0f) }
 
     val colors = LocalAppColors.current
 
-    // System back leaves the form instead of leaving the app.
-    androidx.activity.compose.BackHandler { onCancel() }
+    // Predictive back: the form tracks the gesture (shrinks/fades) and returns to the
+    // list when the gesture commits; nothing happens if the gesture is cancelled.
+    androidx.activity.compose.PredictiveBackHandler { events ->
+        try {
+            events.collect { backProgress.value = it.progress }
+            onCancel()
+        } catch (_: kotlinx.coroutines.CancellationException) {
+        } finally {
+            backProgress.value = 0f
+        }
+    }
 
     Column(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = 1f - 0.08f * backProgress
+                scaleY = 1f - 0.08f * backProgress
+                alpha = 1f - 0.25f * backProgress
+            }
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
