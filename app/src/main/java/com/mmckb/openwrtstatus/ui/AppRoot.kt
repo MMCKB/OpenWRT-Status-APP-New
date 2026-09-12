@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
@@ -92,6 +94,18 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     if (selectedTab == TAB_DASHBOARD && !showAbout) {
                         IconButton(onClick = { viewModel.refresh() }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        }
+                    }
+                    if (selectedTab == TAB_TERMINAL && !showAbout) {
+                        val terminalState by viewModel.terminal.state.collectAsState()
+                        val terminalConnected = terminalState is SshTerminal.State.Connected
+                        TextButton(
+                            onClick = {
+                                if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
+                            },
+                            enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting
+                        ) {
+                            Text(if (terminalConnected) "断开" else "连接")
                         }
                     }
                 }

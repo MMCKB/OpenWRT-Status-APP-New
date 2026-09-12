@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -469,5 +472,60 @@ fun FloatingTabBar(
                 .height(52.dp)
                 .width(tabWidth)
         )
+    }
+}
+
+/**
+ * App-styled modal dialog: the same flat bordered card language as [AppCard] instead of
+ * the Material3 AlertDialog look. Hosted in a raw [androidx.compose.ui.window.Dialog] so
+ * only the visual style is ours.
+ */
+@Composable
+fun AppDialog(
+    title: String,
+    message: String,
+    confirmLabel: String = "确定",
+    dismissLabel: String = "取消",
+    confirmColor: Color? = null,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = AppShapes.card,
+            color = colors.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
+            modifier = Modifier.widthIn(min = 280.dp, max = 340.dp)
+        ) {
+            Column(Modifier.padding(22.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(dismissLabel, color = colors.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = onConfirm) {
+                        Text(confirmLabel, color = confirmColor ?: colors.primary)
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus.ui.screens
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -14,25 +15,24 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Router
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,8 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -61,20 +59,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
+import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
-import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/** Width of the action strip (edit + delete) revealed by swiping a device card left. */
+/** Width of the action strip (delete + edit) revealed by swiping a device card right. */
 private val REVEAL_WIDTH = 128.dp
 
 /**
- * Device manager: every router renders as its own card; swipe a card left to reveal
- * edit / delete actions (delete asks for confirmation). Tapping a card switches the
- * active device. The add/edit form carries the full connection setup (ubus endpoint
- * and SSH credentials merged into one section) that used to live on the settings page.
+ * Device manager: every router renders as its own card, the active one pinned on top.
+ * Swipe a card RIGHT to reveal delete / edit actions (delete asks for confirmation).
+ * Cards are not clickable - switching happens from the dashboard device picker.
+ * The add/edit form carries the full connection setup; SSH is always enabled and only
+ * asks for port and password (host/username follow the router connection).
  */
 @Composable
 fun DevicesScreen(
@@ -108,19 +108,21 @@ fun DevicesScreen(
     }
 
     val colors = LocalAppColors.current
+    val sorted = remember(devices, activeId) {
+        devices.sortedByDescending { it.id == activeId }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(bottom = 96.dp)
     ) {
-        items(devices, key = { it.id }) { device ->
+        items(sorted, key = { it.id }) { device ->
             SwipeRevealDeviceCard(
                 device = device,
                 active = device.id == activeId,
                 revealed = openCardId == device.id,
                 onRevealedChanged = { openCardId = if (it) device.id else null },
-                onSelect = { viewModel.selectDevice(device.id) },
                 onEdit = {
                     editing = device
                     isNew = false
@@ -137,47 +139,31 @@ fun DevicesScreen(
                 modifier = Modifier.fillMaxWidth()
             ) { Text("添加设备") }
         }
-        item {
-            Text(
-                "点击卡片切换当前设备，向左滑动卡片可编辑或删除。概览、监控与终端都作用于当前设备。",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        }
     }
 
     pendingDelete?.let { target ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("删除设备") },
-            text = {
-                Text("确定要删除「${target.displayName}」吗？删除后需要重新添加才能连接该路由器。")
+        AppDialog(
+            title = "删除设备",
+            message = "确定要删除「${target.displayName}」吗？删除后需要重新添加才能连接该路由器。",
+            confirmLabel = "删除",
+            confirmColor = colors.error,
+            onConfirm = {
+                viewModel.deleteDevice(target.id)
+                openCardId = null
+                pendingDelete = null
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteDevice(target.id)
-                    openCardId = null
-                    pendingDelete = null
-                }) {
-                    Text("删除", color = colors.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
-            }
+            onDismiss = { pendingDelete = null }
         )
     }
 }
 
-/** One device card with edit/delete actions revealed by a left swipe. */
+/** One device card with delete / edit actions revealed by a right swipe. */
 @Composable
 private fun SwipeRevealDeviceCard(
     device: RouterConfig,
     active: Boolean,
     revealed: Boolean,
     onRevealedChanged: (Boolean) -> Unit,
-    onSelect: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -199,19 +185,22 @@ private fun SwipeRevealDeviceCard(
                 .clip(AppShapes.card)
         ) {
             SwipeAction(
-                label = "编辑",
-                icon = Icons.Filled.Edit,
-                background = colors.primary,
-                modifier = Modifier.weight(1f)
-            ) { onEdit() }
-            SwipeAction(
                 label = "删除",
                 icon = Icons.Filled.Delete,
                 background = colors.error,
                 modifier = Modifier.weight(1f)
             ) { onDelete() }
+            SwipeAction(
+                label = "编辑",
+                icon = Icons.Filled.Edit,
+                background = colors.primary,
+                modifier = Modifier.weight(1f)
+            ) { onEdit() }
         }
-        AppCard(
+        Surface(
+            shape = AppShapes.card,
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.primary),
             modifier = Modifier
                 .offset { IntOffset(offset.value.roundToInt(), 0) }
                 .pointerInput(revealPx) {
@@ -219,48 +208,70 @@ private fun SwipeRevealDeviceCard(
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             scope.launch {
-                                offset.snapTo((offset.value + dragAmount).coerceIn(-revealPx, 0f))
+                                offset.snapTo((offset.value + dragAmount).coerceIn(0f, revealPx))
                             }
                         },
                         onDragEnd = {
                             scope.launch {
-                                val open = offset.value < -revealPx / 2
-                                offset.animateTo(if (open) -revealPx else 0f)
+                                val open = offset.value > revealPx / 2
+                                offset.animateTo(if (open) revealPx else 0f)
                                 onRevealedChanged(open)
                             }
                         }
                     )
                 }
-                .clickable {
-                    if (offset.value != 0f) {
-                        scope.launch { offset.animateTo(0f) }
-                        onRevealedChanged(false)
-                    } else {
-                        onSelect()
-                    }
-                }
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    Modifier
-                        .size(10.dp)
-                        .background(if (active) colors.success else colors.onSurfaceVariant, CircleShape)
-                )
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(colors.surfaceVariant, RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Router,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            device.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (active) {
+                            Spacer(Modifier.width(8.dp))
+                            Surface(
+                                shape = AppShapes.pill,
+                                color = colors.primary,
+                                contentColor = colors.onPrimary
+                            ) {
+                                Text(
+                                    "当前设备",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
-                        device.displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Text(
-                        "${device.ip}:${device.port} · ${device.username}" + if (active) " · 当前" else "",
+                        "${device.ip}:${device.port} · ${device.username}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -268,10 +279,11 @@ private fun SwipeRevealDeviceCard(
     }
 }
 
+/** One rounded action button inside the revealed strip. */
 @Composable
 private fun SwipeAction(
     label: String,
-    icon: ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     background: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -292,8 +304,8 @@ private fun SwipeAction(
 }
 
 /**
- * Add/edit form carrying the full device configuration: ubus endpoint and SSH
- * credentials merged into a single section.
+ * Add/edit form carrying the full device configuration. SSH is always enabled and
+ * inline with the router connection fields - only port and password are asked for.
  */
 @Composable
 private fun DeviceEditForm(
@@ -311,11 +323,7 @@ private fun DeviceEditForm(
     var password by remember { mutableStateOf(initial.password) }
     var useHttps by remember { mutableStateOf(initial.useHttps) }
     var allowInsecureTls by remember { mutableStateOf(initial.allowInsecureTls) }
-
-    var sshEnabled by remember { mutableStateOf(initial.sshEnabled) }
-    var sshHost by remember { mutableStateOf(initial.sshHost) }
     var sshPort by remember { mutableStateOf(initial.sshPort.toString()) }
-    var sshUsername by remember { mutableStateOf(initial.sshUsername) }
     var sshPassword by remember { mutableStateOf(initial.sshPassword) }
 
     val colors = LocalAppColors.current
@@ -339,7 +347,7 @@ private fun DeviceEditForm(
         }
 
         AppCard {
-            CardSectionTitle("连接配置")
+            CardSectionTitle("路由器配置")
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = name,
@@ -385,28 +393,6 @@ private fun DeviceEditForm(
             Spacer(Modifier.height(12.dp))
             SwitchRow("使用 HTTPS", useHttps) { useHttps = it }
             SwitchRow("忽略证书校验（自签名证书）", allowInsecureTls) { allowInsecureTls = it }
-
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = colors.outline)
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                "SSH 远程终端与 DHCP 租约",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Spacer(Modifier.height(8.dp))
-            SwitchRow("启用 SSH", sshEnabled) { sshEnabled = it }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = sshHost,
-                onValueChange = { sshHost = it },
-                label = { Text("SSH 主机（留空则使用路由器地址）") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = sshEnabled
-            )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 value = sshPort,
@@ -414,17 +400,7 @@ private fun DeviceEditForm(
                 label = { Text("SSH 端口") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                enabled = sshEnabled
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = sshUsername,
-                onValueChange = { sshUsername = it },
-                label = { Text("SSH 用户名") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = sshEnabled
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
@@ -433,12 +409,11 @@ private fun DeviceEditForm(
                 label = { Text("SSH 密码") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                enabled = sshEnabled
+                visualTransformation = PasswordVisualTransformation()
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "连接地址为 http(s)://地址:端口/ubus（rpcd 接口）。启用 SSH 后可在「终端」页执行命令，并在「监控」页读取租约。",
+                "连接地址为 http(s)://地址:端口/ubus（rpcd 接口）；SSH 登录使用上方的用户名，主机与路由器地址相同。",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )
@@ -460,10 +435,10 @@ private fun DeviceEditForm(
                             password = password,
                             useHttps = useHttps,
                             allowInsecureTls = allowInsecureTls,
-                            sshEnabled = sshEnabled,
-                            sshHost = sshHost,
+                            sshEnabled = true,
+                            sshHost = "",
                             sshPort = sshPort.toIntOrNull()?.coerceIn(1, 65535) ?: 22,
-                            sshUsername = sshUsername.ifBlank { "root" },
+                            sshUsername = username.ifBlank { "root" },
                             sshPassword = sshPassword
                         )
                     )
