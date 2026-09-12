@@ -81,12 +81,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             if (showAbout) {
                 AboutScreen(
+                    onBack = { showAbout = false },
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            scaleX = 1f - 0.08f * aboutBackProgress
-                            scaleY = 1f - 0.08f * aboutBackProgress
-                            alpha = 1f - 0.25f * aboutBackProgress
+                            translationX = aboutBackProgress * size.width * 0.5f
+                            scaleX = 1f - 0.12f * aboutBackProgress
+                            scaleY = 1f - 0.12f * aboutBackProgress
                         }
                 )
             } else {
@@ -115,64 +116,50 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         }
 
         // Top bar: a plain Gaussian blur of the live content - no tint on top of it.
-        AppTopBar(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RectangleShape },
-                    effects = { blur(18.dp.toPx()) }
-                ),
-            title = if (showAbout) {
-                "关于"
-            } else {
-                when (selectedTab) {
+        // Hidden on secondary pages: those are standalone views with their own headers.
+        if (!secondaryOpen) {
+            AppTopBar(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { RectangleShape },
+                        effects = { blur(18.dp.toPx()) }
+                    ),
+                title = when (selectedTab) {
                     TAB_DASHBOARD -> "概览"
                     TAB_DEVICES -> "设备"
                     TAB_TERMINAL -> "终端"
                     TAB_TOOL -> "工具"
                     TAB_DETAIL -> "详情"
                     else -> "设置"
-                }
-            },
-            subtitle = if (showAbout) {
-                null
-            } else {
-                when (selectedTab) {
+                },
+                subtitle = when (selectedTab) {
                     TAB_DASHBOARD -> "${config.username}@${config.ip}:${config.port}"
                     TAB_TERMINAL -> "${config.sshUsername}@${config.sshHost.ifBlank { config.ip }}:${config.sshPort}"
                     else -> null
-                }
-            },
-            navigationIcon = if (showAbout) {
-                {
-                    IconButton(onClick = { showAbout = false }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                },
+                actions = {
+                    if (selectedTab == TAB_DASHBOARD) {
+                        IconButton(onClick = { viewModel.refresh() }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        }
+                    }
+                    if (selectedTab == TAB_TERMINAL) {
+                        val terminalState by viewModel.terminal.state.collectAsState()
+                        val terminalConnected = terminalState is SshTerminal.State.Connected
+                        TextButton(
+                            onClick = {
+                                if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
+                            },
+                            enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting
+                        ) {
+                            Text(if (terminalConnected) "断开" else "连接", color = colors.primary)
+                        }
                     }
                 }
-            } else {
-                null
-            },
-            actions = {
-                if (selectedTab == TAB_DASHBOARD && !showAbout) {
-                    IconButton(onClick = { viewModel.refresh() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
-                    }
-                }
-                if (selectedTab == TAB_TERMINAL && !showAbout) {
-                    val terminalState by viewModel.terminal.state.collectAsState()
-                    val terminalConnected = terminalState is SshTerminal.State.Connected
-                    TextButton(
-                        onClick = {
-                            if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
-                        },
-                        enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting
-                    ) {
-                        Text(if (terminalConnected) "断开" else "连接", color = colors.primary)
-                    }
-                }
-            }
-        )
+            )
+        }
 
         // Gaussian blur strip below the tab pill area (hidden on secondary pages).
         if (!secondaryOpen) {

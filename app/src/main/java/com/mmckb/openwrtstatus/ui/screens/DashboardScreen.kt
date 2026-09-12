@@ -132,7 +132,7 @@ private fun DashboardContent(data: DashboardData, modifier: Modifier = Modifier)
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 96.dp)
+        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 16.dp)
     ) {
         item { StatusCard(data) }
         item { ResourceCard(data) }

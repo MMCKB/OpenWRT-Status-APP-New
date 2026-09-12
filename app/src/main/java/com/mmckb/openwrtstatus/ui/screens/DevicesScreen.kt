@@ -129,7 +129,7 @@ fun DevicesScreen(
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 96.dp)
+        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 16.dp)
     ) {
         items(sorted, key = { it.id }) { device ->
             SwipeRevealDeviceCard(
@@ -173,7 +173,7 @@ fun DevicesScreen(
     }
 }
 
-/** One device card with edit / delete actions revealed by a left swipe; tap switches device. */
+/** One device card with delete / edit actions revealed by a right swipe; tap switches device. */
 @Composable
 private fun SwipeRevealDeviceCard(
     device: RouterConfig,
@@ -204,23 +204,29 @@ private fun SwipeRevealDeviceCard(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
+        // Fixed-width strip on the reveal side; buttons slide in from the right as the
+        // card moves away, so both are always fully visible when opened.
         Row(
             modifier = Modifier
-                .matchParentSize()
+                .align(Alignment.CenterStart)
+                .width(REVEAL_WIDTH)
                 .clip(AppShapes.card)
+                .graphicsLayer {
+                    translationX = revealPx - offset.value
+                }
         ) {
-            SwipeAction(
-                label = "编辑",
-                icon = Icons.Filled.Edit,
-                background = colors.primary,
-                modifier = Modifier.weight(1f)
-            ) { onEdit() }
             SwipeAction(
                 label = "删除",
                 icon = Icons.Filled.Delete,
                 background = colors.error,
                 modifier = Modifier.weight(1f)
             ) { onDelete() }
+            SwipeAction(
+                label = "编辑",
+                icon = Icons.Filled.Edit,
+                background = Color(0xFFFFC107),
+                modifier = Modifier.weight(1f)
+            ) { onEdit() }
         }
         Surface(
             shape = AppShapes.card,
@@ -233,14 +239,14 @@ private fun SwipeRevealDeviceCard(
                         onDragStart = { settleJob.value?.cancel() },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            offset.value = (offset.value - dragAmount).coerceIn(-revealPx, 0f)
+                            offset.value = (offset.value + dragAmount).coerceIn(0f, revealPx)
                         },
                         onDragEnd = {
-                            val open = offset.value < -revealPx / 2
+                            val open = offset.value > revealPx / 2
                             settleJob.value = scope.launch {
                                 animate(
                                     initialValue = offset.value,
-                                    targetValue = if (open) -revealPx else 0f,
+                                    targetValue = if (open) revealPx else 0f,
                                     animationSpec = spring(0.85f, 380f)
                                 ) { v, _ -> offset.value = v }
                             }
@@ -377,15 +383,16 @@ private fun DeviceEditForm(
     Column(
         modifier = modifier
             .graphicsLayer {
-                scaleX = 1f - 0.08f * backProgress
-                scaleY = 1f - 0.08f * backProgress
-                alpha = 1f - 0.25f * backProgress
+                translationX = backProgress * size.width * 0.5f
+                scaleX = 1f - 0.12f * backProgress
+                scaleY = 1f - 0.12f * backProgress
             }
             .fillMaxSize()
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = rememberTopBarPadding())
-            .padding(bottom = 12.dp),
+            .padding(top = 12.dp)
+            .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
