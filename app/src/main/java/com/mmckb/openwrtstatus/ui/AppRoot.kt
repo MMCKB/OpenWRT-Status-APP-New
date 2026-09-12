@@ -1,6 +1,6 @@
 package com.mmckb.openwrtstatus.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -60,21 +62,33 @@ private const val TAB_SETTINGS = 5
 fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var selectedTab by remember { mutableIntStateOf(TAB_DASHBOARD) }
     var showAbout by remember { mutableStateOf(false) }
+    var deviceFormOpen by remember { mutableStateOf(false) }
+    var aboutBackProgress by remember { mutableFloatStateOf(0f) }
     val config by viewModel.config.collectAsState()
     val colors = LocalAppColors.current
+
+    // A secondary page (about / device form) is a standalone view: the tab bar and the
+    // bottom blur strip hide while it is open, and system back returns one level up
+    // with the predictive back gesture.
+    val secondaryOpen = showAbout || deviceFormOpen
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
     val backdrop = rememberLayerBackdrop()
 
-    // Secondary view (about): system back returns to settings instead of the desktop.
-    BackHandler(enabled = showAbout) { showAbout = false }
-
     Box(Modifier.fillMaxSize().background(colors.background)) {
         // Page layer fills the whole screen; the top bar overlays it.
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             if (showAbout) {
-                AboutScreen(modifier = Modifier.fillMaxSize())
+                AboutScreen(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = 1f - 0.08f * aboutBackProgress
+                            scaleY = 1f - 0.08f * aboutBackProgress
+                            alpha = 1f - 0.25f * aboutBackProgress
+                        }
+                )
             } else {
                 when (selectedTab) {
                     TAB_DASHBOARD -> DashboardScreen(
@@ -83,6 +97,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     TAB_DEVICES -> DevicesScreen(
                         viewModel = viewModel,
+                        onSecondaryPageChanged = { deviceFormOpen = it },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_TERMINAL -> TerminalScreen(
@@ -99,15 +114,14 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             }
         }
 
-        // Translucent blurred top bar instead of a solid one.
+        // Top bar: a plain Gaussian blur of the live content - no tint on top of it.
         AppTopBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RectangleShape },
-                    effects = { blur(18.dp.toPx()) },
-                    onDrawSurface = { drawRect(colors.background.copy(alpha = 0.72f)) }
+                    effects = { blur(18.dp.toPx()) }
                 ),
             title = if (showAbout) {
                 "关于"
@@ -160,37 +174,53 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             }
         )
 
-        // Blurred strip behind the bottom tab pill.
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .height(96.dp)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RectangleShape },
-                    effects = { blur(16.dp.toPx()) },
-                    onDrawSurface = { drawRect(colors.background.copy(alpha = 0.55f)) }
-                )
-        )
+        // Gaussian blur strip below the tab pill area (hidden on secondary pages).
+        if (!secondaryOpen) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .height(88.dp)
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { RectangleShape },
+                        effects = { blur(16.dp.toPx()) }
+                    )
+            )
+        }
 
-        FloatingTabBar(
-            backdrop = backdrop,
-            tabs = listOf(
-                TabItem("概览", Icons.Filled.Dashboard),
-                TabItem("设备", Icons.Filled.Devices),
-                TabItem("终端", Icons.Filled.Terminal),
-                TabItem("工具", Icons.Filled.Build),
-                TabItem("详情", Icons.Filled.Info),
-                TabItem("设置", Icons.Filled.Settings)
-            ),
-            selectedIndex = selectedTab,
-            onTabSelected = {
-                selectedTab = it
+        if (!secondaryOpen) {
+            FloatingTabBar(
+                backdrop = backdrop,
+                tabs = listOf(
+                    TabItem("概览", Icons.Filled.Dashboard),
+                    TabItem("设备", Icons.Filled.Devices),
+                    TabItem("终端", Icons.Filled.Terminal),
+                    TabItem("工具", Icons.Filled.Build),
+                    TabItem("详情", Icons.Filled.Info),
+                    TabItem("设置", Icons.Filled.Settings)
+                ),
+                selectedIndex = selectedTab,
+                onTabSelected = {
+                    selectedTab = it
+                    showAbout = false
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 22.dp)
+            )
+        }
+    }
+
+    // About page: predictive back - the page tracks the gesture and returns on commit.
+    if (showAbout) {
+        PredictiveBackHandler { events ->
+            try {
+                events.collect { aboutBackProgress.value = it.progress }
                 showAbout = false
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 22.dp)
-        )
+            } catch (_: kotlinx.coroutines.CancellationException) {
+            } finally {
+                aboutBackProgress.value = 0f
+            }
+        }
     }
 }
