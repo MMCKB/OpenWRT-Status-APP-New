@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -63,11 +62,7 @@ android {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
+// AGP 9 built-in Kotlin: jvmTarget follows compileOptions (17) automatically.
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
