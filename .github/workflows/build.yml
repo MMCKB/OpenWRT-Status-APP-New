@@ -2,9 +2,9 @@ name: Build APK
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "Dev"]
   pull_request:
-    branches: ["main", "master"]
+    branches: ["main", "master", "Dev"]
   workflow_dispatch:
 
 jobs:
@@ -30,11 +30,12 @@ jobs:
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       # This repo does not commit a Gradle wrapper jar; install Gradle explicitly instead.
-      - name: Install Gradle 8.13
+      - name: Install Gradle 9.7.1
         run: |
-          curl -sSL https://services.gradle.org/distributions/gradle-8.13-bin.zip -o /tmp/gradle.zip
+          curl -sSL --retry 5 --retry-delay 5 --retry-all-errors \
+            https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /opt
-          echo "/opt/gradle-8.13/bin" >> "$GITHUB_PATH"
+          echo "/opt/gradle-9.7.1/bin" >> "$GITHUB_PATH"
 
       - name: Build APKs (debug + release, unified MMCKB signing)
         run: gradle :app:assembleDebug :app:assembleRelease --no-daemon
