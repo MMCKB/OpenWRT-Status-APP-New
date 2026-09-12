@@ -53,7 +53,6 @@ class SettingsStore(context: Context) {
         password = prefs.getString("password", "") ?: "",
         useHttps = prefs.getBoolean("useHttps", false),
         allowInsecureTls = prefs.getBoolean("allowInsecureTls", false),
-        useMock = prefs.getBoolean("useMock", false),
         refreshIntervalSec = prefs.getInt("refreshIntervalSec", 5).coerceIn(2, 60),
         sshEnabled = prefs.getBoolean("sshEnabled", false),
         sshHost = prefs.getString("sshHost", "") ?: "",
@@ -71,7 +70,6 @@ class SettingsStore(context: Context) {
         put("password", password)
         put("useHttps", useHttps)
         put("allowInsecureTls", allowInsecureTls)
-        put("useMock", useMock)
         put("refreshIntervalSec", refreshIntervalSec)
         put("sshEnabled", sshEnabled)
         put("sshHost", sshHost)
@@ -89,7 +87,6 @@ class SettingsStore(context: Context) {
         password = o.optString("password"),
         useHttps = o.optBoolean("useHttps"),
         allowInsecureTls = o.optBoolean("allowInsecureTls"),
-        useMock = o.optBoolean("useMock"),
         refreshIntervalSec = o.optInt("refreshIntervalSec", 5).coerceIn(2, 60),
         sshEnabled = o.optBoolean("sshEnabled"),
         sshHost = o.optString("sshHost"),

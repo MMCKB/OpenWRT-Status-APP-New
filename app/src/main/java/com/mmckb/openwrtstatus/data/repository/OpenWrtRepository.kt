@@ -32,7 +32,6 @@ import kotlinx.serialization.json.jsonPrimitive
 class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     suspend fun fetchStatus(config: RouterConfig): RouterStatus {
-        if (config.useMock) return MockData.sample()
 
         val endpoint = rpc.buildEndpoint(config.ip, config.port, config.useHttps)
         val token = rpc.login(endpoint, config.username, config.password, config.allowInsecureTls)

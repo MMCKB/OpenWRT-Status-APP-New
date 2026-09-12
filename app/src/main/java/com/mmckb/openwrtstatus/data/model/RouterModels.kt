@@ -17,7 +17,6 @@ data class RouterConfig(
     val useHttps: Boolean = false,
     /** Trust self-signed certificates (common on router HTTPS). */
     val allowInsecureTls: Boolean = false,
-    val useMock: Boolean = false,
     val refreshIntervalSec: Int = 5,
     // --- SSH (remote shell / DHCP leases) ---
     val sshEnabled: Boolean = false,
