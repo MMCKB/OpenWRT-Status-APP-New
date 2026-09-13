@@ -37,6 +37,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.mmckb.openwrtstatus.AboutActivity
+import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
@@ -51,9 +52,9 @@ import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 private const val TAB_DASHBOARD = 0
 private const val TAB_DEVICES = 1
-private const val TAB_TERMINAL = 2
-private const val TAB_TOOL = 3
-private const val TAB_DETAIL = 4
+private const val TAB_DETAIL = 2
+private const val TAB_TERMINAL = 3
+private const val TAB_TOOL = 4
 private const val TAB_SETTINGS = 5
 
 @Composable
@@ -83,7 +84,15 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     viewModel = viewModel,
                     modifier = Modifier.fillMaxSize()
                 )
-                TAB_TOOL -> ToolScreen(modifier = Modifier.fillMaxSize())
+                TAB_TOOL -> ToolScreen(
+                    onOpenFileManager = {
+                        context.startActivity(
+                            Intent(context, FileManagerActivity::class.java)
+                                .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
+                        )
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
                 TAB_DETAIL -> DetailScreen(modifier = Modifier.fillMaxSize())
                 else -> SettingsScreen(
                     onOpenAbout = {
@@ -154,9 +163,9 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             tabs = listOf(
                 TabItem("概览", Icons.Filled.Dashboard),
                 TabItem("设备", Icons.Filled.Devices),
+                TabItem("详情", Icons.Filled.Info),
                 TabItem("终端", Icons.Filled.Terminal),
                 TabItem("工具", Icons.Filled.Build),
-                TabItem("详情", Icons.Filled.Info),
                 TabItem("设置", Icons.Filled.Settings)
             ),
             selectedIndex = selectedTab,

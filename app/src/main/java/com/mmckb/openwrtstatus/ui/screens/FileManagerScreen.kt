@@ -1,0 +1,549 @@
+package com.mmckb.openwrtstatus.ui.screens
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.ssh.FileEntry
+import com.mmckb.openwrtstatus.data.ssh.SshFileException
+import com.mmckb.openwrtstatus.data.ssh.SshFiles
+import com.mmckb.openwrtstatus.ui.Formatters.formatBytes
+import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+private const val MAX_DOWNLOAD_BYTES = 30L * 1024 * 1024
+private const val PREVIEW_BYTES = 64 * 1024
+
+/**
+ * 文件管理页（二级页，独立 Activity）：基于 SSH exec 浏览路由器目录，
+ * 支持查看文本、下载、上传、新建文件夹、重命名与删除。
+ */
+@Composable
+fun FileManagerScreen(
+    ssh: SshConfig,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalAppColors.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    var currentPath by remember { mutableStateOf("/") }
+    var entries by remember { mutableStateOf<List<FileEntry>?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var messageIsError by remember { mutableStateOf(false) }
+
+    // Dialog targets.
+    var viewTarget by remember { mutableStateOf<Pair<FileEntry, String>?>(null) }
+    var deleteTarget by remember { mutableStateOf<FileEntry?>(null) }
+    var renameTarget by remember { mutableStateOf<FileEntry?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var newFolderDialog by remember { mutableStateOf(false) }
+    var folderText by remember { mutableStateOf("") }
+
+    fun joinPath(dir: String, name: String): String =
+        if (dir.endsWith("/")) "$dir$name" else "$dir/$name"
+
+    fun parentOf(path: String): String? {
+        val trimmed = path.trimEnd('/')
+        if (trimmed.isEmpty()) return null
+        val parent = trimmed.substringBeforeLast('/')
+        return if (parent.isEmpty()) "/" else parent
+    }
+
+    fun load(path: String) {
+        scope.launch {
+            busy = true
+            message = null
+            entries = null
+            try {
+                entries = withContext(Dispatchers.IO) { SshFiles.list(ssh, path) }
+            } catch (e: Exception) {
+                message = e.message ?: "读取目录失败。"
+                messageIsError = true
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(currentPath) { load(currentPath) }
+
+    fun runOp(info: String?, block: suspend () -> Unit) {
+        scope.launch {
+            busy = true
+            message = null
+            try {
+                withContext(Dispatchers.IO) { block() }
+                message = info
+                messageIsError = false
+            } catch (e: Exception) {
+                message = e.message ?: "操作失败。"
+                messageIsError = true
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun viewFile(entry: FileEntry) {
+        scope.launch {
+            busy = true
+            message = null
+            try {
+                val content = withContext(Dispatchers.IO) {
+                    SshFiles.readText(ssh, joinPath(currentPath, entry.name))
+                }
+                viewTarget = entry to content
+            } catch (e: Exception) {
+                message = e.message ?: "读取文件失败。"
+                messageIsError = true
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    // SAF: 下载到手机（create）与从手机上传（open）。
+    var pendingDownloadName by remember { mutableStateOf<String?>(null) }
+    val downloadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val name = pendingDownloadName
+        if (uri != null && name != null) {
+            runOp("已保存到手机。") {
+                val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
+                if (size > MAX_DOWNLOAD_BYTES) {
+                    throw SshFileException("文件过大（${formatBytes(size)}），暂不支持超过 ${formatBytes(MAX_DOWNLOAD_BYTES)} 的下载。")
+                }
+                val bytes = SshFiles.download(ssh, joinPath(currentPath, name))
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: throw SshFileException("无法写入所选位置。")
+            }
+        }
+        pendingDownloadName = null
+    }
+    val uploadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runOp("上传完成。") {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw SshFileException("无法读取所选文件。")
+                }
+                if (bytes.size > MAX_UPLOAD_BYTES) {
+                    throw SshFileException("文件过大（${formatBytes(bytes.size.toLong())}），暂支持不超过 ${formatBytes(MAX_UPLOAD_BYTES.toLong())} 的上传。")
+                }
+                val name = queryDisplayName(context, uri) ?: "upload.bin"
+                SshFiles.upload(ssh, joinPath(currentPath, name), bytes)
+            }
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(top = 8.dp, bottom = 12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("返回") }
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = { uploadLauncher.launch(arrayOf("*/*")) },
+                    enabled = !busy
+                ) { Text("上传") }
+            }
+            Text(
+                "文件管理",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
+            // Breadcrumb: every segment is a tap target back up the tree.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val trimmed = currentPath.trimEnd('/')
+                val segments = if (trimmed.isEmpty()) emptyList() else trimmed.removePrefix("/").split('/')
+                Text(
+                    "根目录",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (segments.isEmpty()) colors.primary else colors.onSurfaceVariant,
+                    fontWeight = if (segments.isEmpty()) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clickable(enabled = segments.isNotEmpty()) { currentPath = "/" }
+                        .padding(vertical = 8.dp)
+                )
+                segments.forEachIndexed { index, segment ->
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = colors.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    val isLast = index == segments.lastIndex
+                    Text(
+                        segment,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isLast) colors.primary else colors.onSurfaceVariant,
+                        fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clickable(enabled = !isLast) {
+                                currentPath = "/" + segments.take(index + 1).joinToString("/")
+                            }
+                            .padding(vertical = 8.dp)
+                    )
+                }
+            }
+
+            if (busy) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+            }
+            message?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (messageIsError) colors.error else colors.success,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            when (val list = entries) {
+                null -> if (!busy) {
+                    Text(
+                        message ?: "读取目录失败。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 24.dp)
+                    )
+                }
+                else -> LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)
+                ) {
+                    val parent = parentOf(currentPath)
+                    if (parent != null) {
+                        item(key = "..") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { currentPath = parent }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "..　返回上一级",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.primary
+                                )
+                            }
+                            HorizontalDivider(color = colors.outline)
+                        }
+                    }
+                    if (list.isEmpty() && parent == null) {
+                        item {
+                            Text(
+                                "此目录为空",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 24.dp)
+                            )
+                        }
+                    }
+                    items(list, key = { it.name }) { entry ->
+                        FileRow(
+                            entry = entry,
+                            busy = busy,
+                            onOpen = {
+                                if (entry.isDir) {
+                                    currentPath = joinPath(currentPath, entry.name)
+                                } else {
+                                    viewFile(entry)
+                                }
+                            },
+                            onView = { viewFile(entry) },
+                            onDownload = {
+                                pendingDownloadName = entry.name
+                                downloadLauncher.launch(entry.name)
+                            },
+                            onRename = {
+                                renameTarget = entry
+                                renameText = entry.name
+                            },
+                            onDelete = { deleteTarget = entry }
+                        )
+                        HorizontalDivider(color = colors.outline)
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = {
+                folderText = ""
+                newFolderDialog = true
+            },
+            containerColor = colors.primary,
+            contentColor = colors.onPrimary,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(20.dp)
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "新建文件夹")
+        }
+    }
+
+    // ---- Dialogs ----
+
+    viewTarget?.let { (entry, content) ->
+        AlertDialog(
+            onDismissRequest = { viewTarget = null },
+            title = { Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .height(360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (entry.size > PREVIEW_BYTES) {
+                        Text(
+                            "文件较大，仅显示前 64 KB。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Text(
+                        content,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = colors.onSurface
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewTarget = null }) { Text("关闭") }
+            }
+        )
+    }
+
+    deleteTarget?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除${if (entry.isDir) "文件夹" else "文件"}") },
+            text = { Text("确定删除 “${entry.name}” 吗？${if (entry.isDir) "文件夹及其全部内容将被删除。" else "此操作不可恢复。"}") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteTarget = null
+                    runOp("已删除。") { SshFiles.delete(ssh, joinPath(currentPath, entry.name), entry.isDir) }
+                }) { Text("删除", color = colors.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
+    renameTarget?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    label = { Text("新名称") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = renameText.isNotBlank() && renameText != entry.name,
+                    onClick = {
+                        val from = joinPath(currentPath, entry.name)
+                        val to = joinPath(currentPath, renameText.trim().trim('/'))
+                        renameTarget = null
+                        runOp("已重命名。") { SshFiles.rename(ssh, from, to) }
+                    }
+                ) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
+    if (newFolderDialog) {
+        AlertDialog(
+            onDismissRequest = { newFolderDialog = false },
+            title = { Text("新建文件夹") },
+            text = {
+                OutlinedTextField(
+                    value = folderText,
+                    onValueChange = { folderText = it },
+                    singleLine = true,
+                    label = { Text("文件夹名称") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = folderText.isNotBlank(),
+                    onClick = {
+                        val path = joinPath(currentPath, folderText.trim().trim('/'))
+                        newFolderDialog = false
+                        runOp("已创建文件夹。") { SshFiles.mkdir(ssh, path) }
+                    }
+                ) { Text("创建") }
+            },
+            dismissButton = {
+                TextButton(onClick = { newFolderDialog = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun FileRow(
+    entry: FileEntry,
+    busy: Boolean,
+    onOpen: () -> Unit,
+    onView: () -> Unit,
+    onDownload: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    var menuOpen by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !busy, onClick = onOpen)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (entry.isDir) Icons.Filled.Folder else Icons.Filled.Description,
+            contentDescription = null,
+            tint = if (entry.isDir) colors.primary else colors.onSurfaceVariant
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                entry.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                if (entry.isDir) "文件夹" else formatBytes(entry.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant
+            )
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }, enabled = !busy) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (!entry.isDir) {
+                    DropdownMenuItem(
+                        text = { Text("查看内容") },
+                        onClick = { menuOpen = false; onView() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("下载") },
+                        onClick = { menuOpen = false; onDownload() }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("重命名") },
+                    onClick = { menuOpen = false; onRename() }
+                )
+                DropdownMenuItem(
+                    text = { Text("删除", color = colors.error) },
+                    onClick = { menuOpen = false; onDelete() }
+                )
+            }
+        }
+    }
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String? =
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }
