@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -213,17 +212,18 @@ private fun DeviceCard(
             .fillMaxWidth()
             .clip(AppShapes.card)
     ) {
-        // 右滑露出左侧的编辑、左滑露出右侧的删除：条带与卡片同色，芯片浅色圆角随进度缩放。
+        // 右滑露出左侧的编辑、左滑露出右侧的删除：纯色块 + 居中图标。
         Row(
             modifier = Modifier
                 .matchParentSize()
-                .background(colors.surface),
+                .background(SwipeEditColor),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeAction(
                 label = "编辑",
-                tint = SwipeEditColor,
+                container = SwipeEditColor,
+                iconTint = SwipeEditIconColor,
                 icon = Icons.Filled.Edit,
                 progress = revealProgress,
                 modifier = Modifier.width(SwipeActionWidth)
@@ -235,13 +235,14 @@ private fun DeviceCard(
         Row(
             modifier = Modifier
                 .matchParentSize()
-                .background(colors.surface),
+                .background(SwipeDeleteColor),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeAction(
                 label = "删除",
-                tint = colors.error,
+                container = SwipeDeleteColor,
+                iconTint = Color.White,
                 icon = Icons.Filled.Delete,
                 progress = revealProgress,
                 modifier = Modifier.width(SwipeActionWidth)
@@ -362,45 +363,38 @@ private fun DeviceCard(
 @Composable
 private fun SwipeAction(
     label: String,
-    tint: Color,
+    container: Color,
+    iconTint: Color,
     icon: ImageVector,
     progress: Float,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Box(modifier = modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
-        // 浅色圆角芯片：背景为主题色 16% 透明度，随滑动进度缩放淡入。
-        Row(
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(container)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = iconTint,
             modifier = Modifier
+                .size(26.dp)
                 .graphicsLayer {
-                    alpha = 0.25f + 0.75f * progress
-                    scaleX = 0.7f + 0.3f * progress
-                    scaleY = 0.7f + 0.3f * progress
+                    alpha = 0.4f + 0.6f * progress
+                    scaleX = 0.6f + 0.4f * progress
+                    scaleY = 0.6f + 0.4f * progress
                 }
-                .clip(RoundedCornerShape(16.dp))
-                .background(tint.copy(alpha = 0.16f))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                label,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = tint
-            )
-        }
+        )
     }
 }
 
 private val SwipeActionWidth = 72.dp
 
-/** 编辑键的黄色（色板里没有现成的黄色，取琥珀色）。 */
-private val SwipeEditColor = Color(0xFFD97706)
+/** 纯红（删除）与纯黄（编辑）的滑动操作底色，图标颜色随底色定。 */
+private val SwipeDeleteColor = Color(0xFFE53935)
+private val SwipeEditColor = Color(0xFFFFEB3B)
+private val SwipeEditIconColor = Color(0xFF1A1C1E)

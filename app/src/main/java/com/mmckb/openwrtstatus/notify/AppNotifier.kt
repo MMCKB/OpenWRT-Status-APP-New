@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 object AppNotifier {
 
     const val CHANNEL_STATUS = "realtime_status"
+    const val ID_REALTIME_SPEED = 2001
     private const val PERMISSION_REQUEST_CODE = 1001
 
     /** 应用启动时调用：创建通知渠道（API 26+ 必需，重复创建无副作用）。 */
@@ -63,31 +64,35 @@ object AppNotifier {
             (context.getSystemService(NotificationManager::class.java)?.canPostPromotedNotifications() == true)
 
     /**
-     * Live Update 通知（预留 API，当前无调用方）。
-     * 满足官方硬性条件：ongoing、ProgressStyle 标准样式、contentTitle、请求提升。
-     * [progress] 传 -1 表示不定进度；Android 16 以下自动降级为普通通知。
+     * Live Update 通知（官方要求的 ongoing + 标准样式 + setRequestPromotedOngoing）。
+     * [metrics] 为 指标值 to 标签 的有序列表，以 MetricStyle 呈现（网速等实时指标）。
+     * Android 16 以下系统自动降级为普通 ongoing 通知。
      */
     fun showLiveUpdate(
         context: Context,
         id: Int,
         title: String,
-        text: String,
-        progress: Int = -1
+        metrics: List<Pair<CharSequence, CharSequence>>
     ) {
         if (!permissionGranted(context)) return
-        val builder = NotificationCompat.Builder(context, CHANNEL_STATUS)
+        val style = NotificationCompat.MetricStyle()
+        metrics.forEach { (label, value) ->
+            style.addMetric(NotificationCompat.Metric(NotificationCompat.Metric.FixedText(value), label))
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle(title)
-            .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setRequestPromotedOngoing(true)
-            .setStyle(
-                NotificationCompat.ProgressStyle()
-                    .setProgress(if (progress >= 0) progress else 0)
-                    .setProgressIndeterminate(progress < 0)
-            )
-        context.getSystemService(NotificationManager::class.java)?.notify(id, builder.build())
+            .setStyle(style)
+            .build()
+        context.getSystemService(NotificationManager::class.java)?.notify(id, notification)
+    }
+
+    /** 撤回一条通知（如关闭实时网速时清掉常驻通知）。 */
+    fun cancel(context: Context, id: Int) {
+        context.getSystemService(NotificationManager::class.java)?.cancel(id)
     }
 
     /**

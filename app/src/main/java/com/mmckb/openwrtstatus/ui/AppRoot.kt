@@ -99,6 +99,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     modifier = Modifier.fillMaxSize()
                 )
                 else -> SettingsScreen(
+                    viewModel = viewModel,
                     onOpenAbout = {
                         context.startActivity(Intent(context, AboutActivity::class.java))
                     },
