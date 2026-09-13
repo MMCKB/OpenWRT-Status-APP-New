@@ -1445,7 +1445,7 @@ private fun PopupLabel(label: String, tint: androidx.compose.ui.graphics.Color, 
     )
 }
 
-private fun queryDisplayName(context: Context, uri: Uri): String? =
+internal fun queryDisplayName(context: Context, uri: Uri): String? =
     context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
         if (cursor.moveToFirst()) cursor.getString(0) else null
     }
