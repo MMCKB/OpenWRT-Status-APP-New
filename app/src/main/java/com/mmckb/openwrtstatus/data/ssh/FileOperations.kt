@@ -30,6 +30,7 @@ class SshFileException(message: String) : IOException(message)
 object SshFiles {
 
     private const val TRANSFER_TIMEOUT_MS = 120_000
+    private const val MAX_TRANSFER_BYTES = 64L * 1024 * 1024
 
     /** Lists the contents of [path]; dotfiles included, `.`/`..` excluded. */
     suspend fun list(config: SshConfig, path: String): List<FileEntry> {
@@ -49,31 +50,26 @@ object SshFiles {
             timeoutMs = TRANSFER_TIMEOUT_MS
         )
 
-    /** Downloads a file through `base64`, returning its raw bytes. */
-    suspend fun download(config: SshConfig, path: String): ByteArray {
-        val encoded = exec(
+    /** Downloads a file with `cat`, returning its raw bytes (SSH channels are 8-bit clean). */
+    suspend fun download(config: SshConfig, path: String): ByteArray =
+        execBytes(
             config,
-            "base64 ${quote(shellSafe(path))}",
+            "cat ${quote(shellSafe(path))}",
+            maxBytes = MAX_TRANSFER_BYTES,
             timeoutMs = TRANSFER_TIMEOUT_MS
         )
-        return try {
-            java.util.Base64.getMimeDecoder().decode(encoded)
-        } catch (_: IllegalArgumentException) {
-            throw SshFileException("下载失败：远端返回了无效数据（可能缺少 base64 命令或文件不可读）。")
-        }
-    }
 
     /**
-     * Uploads [data] to [path]: base64 bytes are piped into one exec channel running
-     * `base64 -d > tmp`, then the temp file is moved into place.
+     * Uploads [data] to [path]: raw bytes are piped into one exec channel running
+     * `cat > tmp`, then the temp file is moved into place. `cat` exists in every
+     * BusyBox build, unlike base64.
      */
     suspend fun upload(config: SshConfig, path: String, data: ByteArray) {
-        val encoded = java.util.Base64.getEncoder().encodeToString(data)
         val tmp = "$path.upload.tmp"
         run(
             config,
-            command = "base64 -d > ${quote(shellSafe(tmp))}",
-            stdin = encoded.toByteArray(Charsets.US_ASCII),
+            command = "cat > ${quote(shellSafe(tmp))}",
+            stdin = data,
             timeoutMs = TRANSFER_TIMEOUT_MS
         )
         run(config, "mv -f ${quote(shellSafe(tmp))} ${quote(shellSafe(path))}", timeoutMs = TRANSFER_TIMEOUT_MS)
@@ -98,34 +94,51 @@ object SshFiles {
         stdin: ByteArray? = null,
         timeoutMs: Int = 15_000
     ) {
-        val result = execInternal(config, command, stdin, timeoutMs)
+        val result = execInternal(config, command, stdin, Long.MAX_VALUE, timeoutMs)
         if (result.exitStatus != 0) {
-            val detail = result.stderr.trim().lineSequence().firstOrNull().orEmpty()
-            throw SshFileException(detail.ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
+            throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
     }
 
-    /** Runs a command and returns stdout; failures carry stderr detail when present. */
+    /** Runs a command and returns stdout as text; failures carry stderr detail when present. */
     private suspend fun exec(
         config: SshConfig,
         command: String,
         stdin: ByteArray? = null,
         timeoutMs: Int = 15_000
     ): String {
-        val result = execInternal(config, command, stdin, timeoutMs)
-        if (result.exitStatus != 0 && result.stdout.isBlank()) {
-            val detail = result.stderr.trim().lineSequence().firstOrNull().orEmpty()
-            throw SshFileException(detail.ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
+        val result = execInternal(config, command, stdin, Long.MAX_VALUE, timeoutMs)
+        if (result.exitStatus != 0 && result.stdout.isEmpty()) {
+            throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
+        }
+        return String(result.stdout, Charsets.UTF_8)
+    }
+
+    /** Runs a command and returns raw stdout bytes, refusing output beyond [maxBytes]. */
+    private suspend fun execBytes(
+        config: SshConfig,
+        command: String,
+        maxBytes: Long,
+        timeoutMs: Int
+    ): ByteArray {
+        val result = execInternal(config, command, null, maxBytes, timeoutMs)
+        if (result.exitStatus != 0) {
+            throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
         return result.stdout
     }
 
-    private class ExecResult(val stdout: String, val stderr: String, val exitStatus: Int)
+    private class ExecResult(val stdout: ByteArray, val stderr: String, val exitStatus: Int) {
+        fun detail(): String = stderr.trim().lineSequence().firstOrNull().orEmpty()
+    }
+
+    private fun formatLimit(bytes: Long): String = "${bytes / (1024 * 1024)} MB"
 
     private suspend fun execInternal(
         config: SshConfig,
         command: String,
         stdin: ByteArray?,
+        maxBytes: Long,
         timeoutMs: Int
     ): ExecResult = withContext(Dispatchers.IO) {
         val session = try {
@@ -161,7 +174,7 @@ object SshFiles {
                 stdinDone.countDown()
             }
 
-            val out = StringBuilder()
+            val out = java.io.ByteArrayOutputStream()
             val err = StringBuilder()
             val chunk = ByteArray(8192)
             while (true) {
@@ -169,7 +182,10 @@ object SshFiles {
                 while (stdout.available() > 0) {
                     val count = stdout.read(chunk, 0, minOf(chunk.size, stdout.available()))
                     if (count < 0) break
-                    out.append(String(chunk, 0, count, Charsets.UTF_8))
+                    out.write(chunk, 0, count)
+                    if (out.size() > maxBytes) {
+                        throw SshFileException("文件超过 ${formatLimit(maxBytes)}，传输已中止。")
+                    }
                     progressed = true
                 }
                 while (stderr.available() > 0) {
@@ -182,10 +198,12 @@ object SshFiles {
                 if (!progressed) Thread.sleep(30)
             }
             stdinDone.await()
-            ExecResult(out.toString(), err.toString(), channel.exitStatus)
+            ExecResult(out.toByteArray(), err.toString(), channel.exitStatus)
         } catch (e: JSchException) {
             throw readableSshError(e, config)
         } catch (e: IOException) {
+            // The size-cap check above aborts with a SshFileException; keep it intact.
+            if (e is SshFileException) throw e
             throw SshFileException("SSH 传输中断：${e.message ?: e.javaClass.simpleName}")
         } finally {
             try { session.disconnect() } catch (_: Exception) {}
