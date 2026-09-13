@@ -17,6 +17,9 @@ data class FileEntry(
     val size: Long
 )
 
+/** Raised when a remote file operation fails; [message] is user-facing Chinese text. */
+class SshFileException(message: String) : IOException(message)
+
 /**
  * File management over plain SSH exec channels, so it works with stock OpenWrt
  * (dropbear) where no SFTP server is installed. Directory listings are parsed
@@ -26,14 +29,13 @@ object SshFiles {
 
     private const val TRANSFER_TIMEOUT_MS = 120_000
 
-    class SshFileException(message: String) : IOException(message)
-
     /** Lists the contents of [path]; dotfiles included, `.`/`..` excluded. */
     suspend fun list(config: SshConfig, path: String): List<FileEntry> {
         val output = exec(config, "ls -lA ${quote(shellSafe(path))}")
         return output.lineSequence()
             .filter { it.isNotBlank() && !it.startsWith("total ") }
             .mapNotNull { parseLsLine(it) }
+            .toList()
             .sortedWith(compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() })
     }
 
