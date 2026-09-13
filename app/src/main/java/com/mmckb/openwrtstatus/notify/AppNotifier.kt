@@ -11,8 +11,13 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 /**
- * 实时消息通知的接入骨架：渠道在应用启动时创建，权限请求与展示 API 预留于此。
- * 目前没有任何功能触发通知；后续的路由器事件推送直接调用 [show] 即可。
+ * 实时消息通知的接入骨架，按 Android Live Updates 官方要求实现：
+ * - 渠道重要性不得为 IMPORTANCE_MIN；
+ * - Live Update 通知必须 ongoing、使用标准样式（这里用 ProgressStyle）、
+ *   必须设置 contentTitle、通过 setRequestPromotedOngoing 请求系统提升；
+ * - 清单声明 POST_PROMOTED_NOTIFICATIONS 非运行时权限。
+ *
+ * 目前没有任何功能触发通知；后续的路由器事件推送调用 [showLiveUpdate] 或 [show] 即可。
  */
 object AppNotifier {
 
@@ -50,8 +55,44 @@ object AppNotifier {
     }
 
     /**
-     * 在 [CHANNEL_STATUS] 渠道上展示一条通知（预留 API，当前无调用方）。
-     * [id] 用于覆盖同一条持续更新的消息（如实时状态）。
+     * 系统是否愿意把该应用的通知提升为 Live Update（Android 16+，含用户开关）。
+     * 不满足时 [showLiveUpdate] 会自动降级为普通 ongoing 通知。
+     */
+    fun canPostPromoted(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= 36 &&
+            (context.getSystemService(NotificationManager::class.java)?.canPostPromotedNotifications() == true)
+
+    /**
+     * Live Update 通知（预留 API，当前无调用方）。
+     * 满足官方硬性条件：ongoing、ProgressStyle 标准样式、contentTitle、请求提升。
+     * [progress] 传 -1 表示不定进度；Android 16 以下自动降级为普通通知。
+     */
+    fun showLiveUpdate(
+        context: Context,
+        id: Int,
+        title: String,
+        text: String,
+        progress: Int = -1
+    ) {
+        if (!permissionGranted(context)) return
+        val builder = NotificationCompat.Builder(context, CHANNEL_STATUS)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setRequestPromotedOngoing(true)
+            .setStyle(
+                NotificationCompat.ProgressStyle()
+                    .setProgress(if (progress >= 0) progress else 0)
+                    .setProgressIndeterminate(progress < 0)
+            )
+        context.getSystemService(NotificationManager::class.java)?.notify(id, builder.build())
+    }
+
+    /**
+     * 普通通知（预留 API，当前无调用方）；也可作为 Live Update 在旧系统上的降级路径。
+     * [id] 用于覆盖同一条持续更新的消息。
      */
     fun show(context: Context, id: Int, title: String, text: String) {
         if (!permissionGranted(context)) return
