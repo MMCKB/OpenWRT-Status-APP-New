@@ -2,6 +2,8 @@ package com.mmckb.openwrtstatus.data.ssh
 
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.JSch
+import com.jcraft.jsch.JSchException
+import com.jcraft.jsch.Session
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -126,14 +128,12 @@ object SshFiles {
         stdin: ByteArray?,
         timeoutMs: Int
     ): ExecResult = withContext(Dispatchers.IO) {
-        val jsch = JSch()
-        val session = jsch.getSession(config.username, config.host, config.port)
+        val session = try {
+            openSession(config, timeoutMs)
+        } catch (e: JSchException) {
+            throw readableSshError(e, config)
+        }
         try {
-            session.setPassword(config.password)
-            session.setConfig(Properties().apply { put("StrictHostKeyChecking", "no") })
-            session.timeout = timeoutMs
-            session.connect(timeoutMs)
-
             val channel = session.openChannel("exec") as ChannelExec
             channel.setCommand(command)
             channel.setInputStream(null)
@@ -183,9 +183,48 @@ object SshFiles {
             }
             stdinDone.await()
             ExecResult(out.toString(), err.toString(), channel.exitStatus)
+        } catch (e: JSchException) {
+            throw readableSshError(e, config)
+        } catch (e: IOException) {
+            throw SshFileException("SSH 传输中断：${e.message ?: e.javaClass.simpleName}")
         } finally {
             try { session.disconnect() } catch (_: Exception) {}
         }
+    }
+
+    /** Creates and connects a session with password / keyboard-interactive auth. */
+    private fun openSession(config: SshConfig, timeoutMs: Int): Session {
+        val jsch = JSch()
+        val session = jsch.getSession(config.username, config.host, config.port)
+        session.setPassword(config.password)
+        session.setConfig(Properties().apply {
+            put("StrictHostKeyChecking", "no")
+            put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+        })
+        session.userInfo = PasswordUserInfo(config.password)
+        session.timeout = timeoutMs
+        session.connect(timeoutMs)
+        return session
+    }
+
+    private fun readableSshError(e: JSchException, config: SshConfig): SshFileException {
+        val message = e.message.orEmpty()
+        val target = "${config.username}@${config.host}:${config.port}"
+        return SshFileException(
+            when {
+                message.contains("Auth fail", ignoreCase = true) ||
+                    message.contains("auth cancel", ignoreCase = true) ->
+                    "SSH 认证失败（$target）：请到设备编辑页核对路由器密码 / SSH 密码。" +
+                        if (config.password.isBlank()) "当前 SSH 密码为空。" else ""
+                message.contains("UnknownHost", ignoreCase = true) ->
+                    "无法解析 SSH 主机地址：请检查主机是否填写正确。"
+                message.contains("timeout", ignoreCase = true) ->
+                    "SSH 连接超时：请确认路由器可达且已开启 SSH。"
+                message.contains("refused", ignoreCase = true) ->
+                    "SSH 连接被拒绝：请确认路由器已开启 SSH 且端口正确。"
+                else -> "SSH 连接失败：${message.ifBlank { e.javaClass.simpleName }}"
+            }
+        )
     }
 
     /** Single-quote shell escaping: `'` becomes `'\''`. */
