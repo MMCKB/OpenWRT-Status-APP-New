@@ -435,6 +435,27 @@ fun FileManagerScreen(
      * - zip 只拉文件末尾的中央目录（EOCD 技巧，通常仅几十 KB）即刻解析，
      *   解析不出时才回退整包下载 + 本地 ZipFile；全程可取消、带进度。
      */
+    suspend fun fetchZipListing(
+        fullPath: String,
+        totalSize: Long,
+        onProgress: (Long) -> Unit
+    ): List<FileEntry> {
+        val cancelled = { transferCancel.value }
+        if (totalSize > 0) {
+            for (tailLen in ZIP_TAIL_BYTES) {
+                if (cancelled()) throw SshCancelledException()
+                val len = minOf(totalSize, tailLen)
+                val data = SshFiles.tail(ssh, fullPath, len, cancelled)
+                onProgress(len)
+                val parsed = parseZipCentralDirectory(data, totalSize)
+                if (parsed != null) return parsed
+            }
+        }
+        // 兜底：整包下载后用本地 ZipFile 解析。
+        val bytes = SshFiles.download(ssh, fullPath, onProgress, cancelled)
+        return parseZipEntries(context, bytes)
+    }
+
     fun openArchive(fullPath: String, name: String) {
         val lower = name.lowercase()
         val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
@@ -460,27 +481,6 @@ fun FileManagerScreen(
                 }
             }
         }
-    }
-
-    suspend fun fetchZipListing(
-        fullPath: String,
-        totalSize: Long,
-        onProgress: (Long) -> Unit
-    ): List<FileEntry> {
-        val cancelled = { transferCancel.value }
-        if (totalSize > 0) {
-            for (tailLen in ZIP_TAIL_BYTES) {
-                if (cancelled()) throw SshCancelledException()
-                val len = minOf(totalSize, tailLen)
-                val data = SshFiles.tail(ssh, fullPath, len, cancelled)
-                onProgress(len)
-                val parsed = parseZipCentralDirectory(data, totalSize)
-                if (parsed != null) return parsed
-            }
-        }
-        // 兜底：整包下载后用本地 ZipFile 解析。
-        val bytes = SshFiles.download(ssh, fullPath, onProgress, cancelled)
-        return parseZipEntries(context, bytes)
     }
 
     fun openEntry(fullPath: String, name: String, isDir: Boolean) {
