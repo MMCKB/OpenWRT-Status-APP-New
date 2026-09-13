@@ -109,14 +109,26 @@ APK 产物位于 `app/build/outputs/apk/`。
 - Android SDK（Platform android-37.2、Build-Tools 36+）
 - Gradle 9.7.1（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
 
-## 统一签名
+## 签名
 
-`debug` 与 `release` 使用同一把密钥签名（安装互相覆盖不会冲突）：
+仓库不包含任何签名密钥（参照 InstallerX-Revived 的模式）：
 
-- 密钥库：`app/keystore/mmckb-release.p12`（PKCS12）
-- 别名：`mmckb`；有效期至 2056 年
-- 证书颁发者 / 所有者：`CN=MMCKB, OU=OpenWrt Status, O=MMCKB, L=Shenzhen, ST=Guangdong, C=CN`
-- 口令与路径通过 `gradle.properties` 的 `MMCKB_*` 项注入，CI 中无需额外配置
+- **正式签名**：由本地 `keystore.properties`（gitignore）或 CI Secrets 提供
+  `storeFile` / `storePassword` / `keyAlias` / `keyPassword`
+- **CI**：在仓库 Secrets 配置 `KEYSTORE_BASE64`（密钥库的 base64）、`KEYSTORE_PASSWORD`、
+  `KEY_ALIAS`、`KEY_PASSWORD`，构建时会自动还原为 `app/keystore/mmckb-release.p12` 与
+  `keystore.properties`
+- **无私钥的构建**（未配置 Secrets 的 fork/PR）：自动回退 debug 签名，并使用独立
+  applicationId（`com.mmckb.openwrtstatus.dev`），不会与正式版互相覆盖
+- 签名 scheme 跟随 AGP 默认（v2）
+- 本地开发：在根目录创建 `keystore.properties`：
+
+  ```properties
+  storeFile=keystore/mmckb-release.p12
+  storePassword=<你的密码>
+  keyAlias=mmckb
+  keyPassword=<你的密码>
+  ```
 
 ## 自动构建（CI）
 
@@ -146,7 +158,7 @@ GitHub Actions 会自动：
 ├── .github/workflows/build.yml   # GitHub Actions：构建 debug + release 并上传
 ├── app/
 │   ├── build.gradle.kts
-│   ├── keystore/                 # 统一签名密钥库（PKCS12）
+│   ├── keystore/                 # 签名密钥库（gitignore，不入库）
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       ├── java/com/mmckb/openwrtstatus/
