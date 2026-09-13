@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.mmckb.openwrtstatus.notify.AppNotifier
 import com.mmckb.openwrtstatus.ui.AppRoot
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 
@@ -13,6 +14,7 @@ class MainActivity : ComponentActivity() {
         // Edge-to-edge per the Android guide: draw behind system bars, handle insets
         // with Compose modifiers (statusBarsPadding / navigationBarsPadding / imePadding).
         enableEdgeToEdge()
+        AppNotifier.ensureChannels(this)
         setContent {
             OpenWrtStatusTheme {
                 AppRoot()

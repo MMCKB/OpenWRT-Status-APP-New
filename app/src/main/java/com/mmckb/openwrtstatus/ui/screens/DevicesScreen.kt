@@ -77,7 +77,7 @@ fun DevicesScreen(
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val activeId by viewModel.activeId.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
-    var openSwipeId by remember { mutableStateOf<String?>(null) }
+    var openSwipe by remember { mutableStateOf<Pair<String, String>?>(null) }
     val context = LocalContext.current
 
     val editLauncher = rememberLauncherForActivityResult(
@@ -137,8 +137,8 @@ fun DevicesScreen(
             DeviceCard(
                 device = device,
                 active = device.id == activeId,
-                isOpen = openSwipeId == device.id,
-                onOpenChange = { openSwipeId = if (it) device.id else null },
+                openSide = openSwipe?.takeIf { it.first == device.id }?.second,
+                onOpenChange = { side -> openSwipe = side?.let { device.id to it } },
                 onClick = { viewModel.selectDevice(device.id) },
                 onEdit = { launchEditor(device, isNew = false) },
                 onDelete = { pendingDelete = device }
@@ -153,7 +153,7 @@ fun DevicesScreen(
         }
         item {
             Text(
-                "点击设备即可切换当前连接；卡片往左滑可编辑或删除。",
+                "点击设备即可切换当前连接；卡片往左滑删除、往右滑编辑。",
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -180,8 +180,8 @@ fun DevicesScreen(
 private fun DeviceCard(
     device: RouterConfig,
     active: Boolean,
-    isOpen: Boolean,
-    onOpenChange: (Boolean) -> Unit,
+    openSide: String?,
+    onOpenChange: (String?) -> Unit,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -192,8 +192,13 @@ private fun DeviceCard(
     val offsetX = remember { Animatable(0f) }
     val snapSpec = spring<Float>(stiffness = Spring.StiffnessMediumLow)
 
-    LaunchedEffect(isOpen) {
-        if (!isOpen && offsetX.value != 0f) offsetX.animateTo(0f, snapSpec)
+    LaunchedEffect(openSide) {
+        if (openSide == null && offsetX.value != 0f) offsetX.animateTo(0f, snapSpec)
+    }
+
+    fun close() {
+        scope.launch { offsetX.animateTo(0f, snapSpec) }
+        onOpenChange(null)
     }
 
     Box(
@@ -201,10 +206,10 @@ private fun DeviceCard(
             .fillMaxWidth()
             .clip(AppShapes.card)
     ) {
-        // 滑动后露出的操作层：黄色编辑 + 红色删除。
+        // 右滑露出左侧的黄色编辑；左滑露出右侧的红色删除。
         Row(
             modifier = Modifier.matchParentSize(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeAction(
@@ -212,15 +217,21 @@ private fun DeviceCard(
                 container = SwipeEditColor,
                 modifier = Modifier.width(SwipeActionWidth)
             ) {
-                onOpenChange(false)
+                close()
                 onEdit()
             }
+        }
+        Row(
+            modifier = Modifier.matchParentSize(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             SwipeAction(
                 label = "删除",
                 container = colors.error,
                 modifier = Modifier.width(SwipeActionWidth)
             ) {
-                onOpenChange(false)
+                close()
                 onDelete()
             }
         }
@@ -236,26 +247,50 @@ private fun DeviceCard(
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             scope.launch {
-                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(-actionPx, 0f))
+                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(-actionPx, actionPx))
                             }
                         },
                         onDragEnd = {
                             scope.launch {
-                                val open = offsetX.value <= -actionPx / 2
-                                offsetX.animateTo(if (open) -actionPx else 0f, snapSpec)
-                                onOpenChange(open)
+                                val side = when {
+                                    offsetX.value <= -actionPx / 2 -> "delete"
+                                    offsetX.value >= actionPx / 2 -> "edit"
+                                    else -> null
+                                }
+                                offsetX.animateTo(
+                                    when (side) {
+                                        "delete" -> -actionPx
+                                        "edit" -> actionPx
+                                        else -> 0f
+                                    },
+                                    snapSpec
+                                )
+                                onOpenChange(side)
                             }
                         },
                         onDragCancel = {
                             scope.launch {
-                                val open = offsetX.value <= -actionPx / 2
-                                offsetX.animateTo(if (open) -actionPx else 0f, snapSpec)
-                                onOpenChange(open)
+                                val side = when {
+                                    offsetX.value <= -actionPx / 2 -> "delete"
+                                    offsetX.value >= actionPx / 2 -> "edit"
+                                    else -> null
+                                }
+                                offsetX.animateTo(
+                                    when (side) {
+                                        "delete" -> -actionPx
+                                        "edit" -> actionPx
+                                        else -> 0f
+                                    },
+                                    snapSpec
+                                )
+                                onOpenChange(side)
                             }
                         }
                     )
                 }
-                .clickable(onClick = onClick)
+                .clickable {
+                    if (offsetX.value != 0f) close() else onClick()
+                }
         ) {
             Row(
                 modifier = Modifier
@@ -319,6 +354,7 @@ private fun SwipeAction(
     Box(
         modifier = modifier
             .fillMaxHeight()
+            .background(container)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
