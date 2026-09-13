@@ -113,7 +113,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     backdrop = backdrop,
                     shape = { RectangleShape },
                     effects = { blur(18.dp.toPx()) },
-                    highlight = { Highlight.None }
+                    highlight = { Highlight(alpha = 0f) }
                 ),
             title = when (selectedTab) {
                 TAB_DASHBOARD -> "概览"
