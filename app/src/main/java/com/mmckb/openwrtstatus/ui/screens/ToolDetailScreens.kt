@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,10 +38,11 @@ import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
-/** 工具页：工具入口列表，当前提供路由器文件管理。 */
+/** 工具页：工具入口列表，提供路由器文件管理与 OpenClash 管理。 */
 @Composable
 fun ToolScreen(
     onOpenFileManager: () -> Unit,
+    onOpenOpenClash: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -68,6 +70,34 @@ fun ToolScreen(
                     )
                     Text(
                         "浏览路由器文件，支持查看、上传、下载、重命名与删除",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant
+                )
+            }
+        }
+        AppCard(modifier = Modifier.clickable(onClick = onOpenOpenClash)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Shield,
+                    contentDescription = null,
+                    tint = colors.primary
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "OpenClash",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "运行状态、策略组切换、配置与订阅管理、日志",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant
                     )
