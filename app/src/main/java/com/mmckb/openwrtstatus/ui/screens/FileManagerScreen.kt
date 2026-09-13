@@ -29,13 +29,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
@@ -43,8 +45,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -64,6 +64,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +73,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.FileEntry
 import com.mmckb.openwrtstatus.data.ssh.SshFileException
@@ -97,6 +100,70 @@ private data class TransferInfo(
     val sent: Long,
     val speedBps: Float
 )
+
+private val ARCHIVE_SORT = compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() }
+
+/** Lists zip entries from locally downloaded bytes (no remote unzip needed). */
+private fun parseZipEntries(context: Context, bytes: ByteArray): List<FileEntry> {
+    val tmp = java.io.File(context.cacheDir, "fm-archive-${System.currentTimeMillis()}.zip")
+    tmp.writeBytes(bytes)
+    try {
+        java.util.zip.ZipFile(tmp).use { zf ->
+            return zf.entries().asSequence()
+                .filter { it.name.isNotEmpty() && it.name != "/" }
+                .map { e ->
+                    if (e.isDirectory) FileEntry(e.name.removeSuffix("/"), true, 0L)
+                    else FileEntry(e.name, false, e.size)
+                }
+                .sortedWith(ARCHIVE_SORT)
+                .toList()
+        }
+    } finally {
+        tmp.delete()
+    }
+}
+
+/**
+ * Minimal tar reader over locally downloaded bytes (plain or already-gunzipped stream).
+ * Handles ustar name prefixes and skips data blocks padded to 512 bytes.
+ */
+private fun parseTarEntries(input: java.io.InputStream, limit: Int = 5000): List<FileEntry> {
+    val header = ByteArray(512)
+    val result = mutableListOf<FileEntry>()
+    input.use { stream ->
+        while (result.size < limit) {
+            if (!readTarBlock(stream, header)) break
+            if (header[0].toInt() == 0) break
+            var name = String(header, 0, 100, Charsets.UTF_8).trimEnd('\u0000', ' ')
+            val prefix = String(header, 345, 155, Charsets.UTF_8).trimEnd('\u0000', ' ')
+            if (prefix.isNotEmpty()) name = "$prefix/$name"
+            if (name.isEmpty()) break
+            val sizeField = String(header, 124, 12, Charsets.UTF_8).trim('\u0000', ' ')
+            val size = sizeField.toLongOrNull(8) ?: 0L
+            val typeChar = header[156].toInt().toChar()
+            val isDir = typeChar == '5' || name.endsWith("/")
+            result.add(FileEntry(name.removeSuffix("/"), isDir, if (isDir) 0L else size))
+            var remaining = ((size + 511) / 512) * 512
+            val sink = ByteArray(8192)
+            while (remaining > 0) {
+                val n = stream.read(sink, 0, minOf(sink.size.toLong(), remaining).toInt())
+                if (n < 0) return result
+                remaining -= n
+            }
+        }
+    }
+    return result.sortedWith(ARCHIVE_SORT)
+}
+
+private fun readTarBlock(stream: java.io.InputStream, buf: ByteArray): Boolean {
+    var off = 0
+    while (off < buf.size) {
+        val n = stream.read(buf, off, buf.size - off)
+        if (n < 0) return false
+        off += n
+    }
+    return true
+}
 
 /** Smooths periodic byte samples into a display-friendly transfer speed. */
 private class SpeedMeter {
@@ -304,8 +371,10 @@ fun FileManagerScreen(
                 op { sent ->
                     transfer = TransferInfo(name, total, isUpload, sent, transferMeter.sample(sent))
                 }
-                message = info
-                messageIsError = false
+                if (info.isNotEmpty()) {
+                    message = info
+                    messageIsError = false
+                }
                 if (refreshList) {
                     try {
                         entries = withContext(Dispatchers.IO) { SshFiles.list(ssh, currentPath) }
@@ -349,18 +418,42 @@ fun FileManagerScreen(
         }
     }
 
+    /**
+     * 打开压缩包：zip/tar/tgz 先下载到手机在本地解析（不依赖路由器上的 unzip），
+     * 带进度弹窗；bz2/xz 等冷门格式回退到远端 `tar -tvf`（BusyBox 必有 tar）。
+     */
     fun openArchive(fullPath: String, name: String) {
-        scope.launch {
-            busy = true
-            message = null
-            try {
-                val list = withContext(Dispatchers.IO) { SshFiles.listArchive(ssh, fullPath) }
-                archiveTarget = fullPath to list
-            } catch (e: Exception) {
-                message = e.message ?: "读取压缩包失败。"
-                messageIsError = true
-            } finally {
-                busy = false
+        val lower = name.lowercase()
+        val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
+        when {
+            lower.endsWith(".zip") -> runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
+                val bytes = SshFiles.download(ssh, fullPath, onProgress)
+                archiveTarget = fullPath to parseZipEntries(context, bytes)
+            }
+            lower.endsWith(".tar.gz") || lower.endsWith(".tgz") ->
+                runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
+                    val bytes = SshFiles.download(ssh, fullPath, onProgress)
+                    archiveTarget = fullPath to
+                        parseTarEntries(java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes)))
+                }
+            lower.endsWith(".tar") -> runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
+                val bytes = SshFiles.download(ssh, fullPath, onProgress)
+                archiveTarget = fullPath to parseTarEntries(java.io.ByteArrayInputStream(bytes))
+            }
+            else -> {
+                scope.launch {
+                    busy = true
+                    message = null
+                    try {
+                        val list = withContext(Dispatchers.IO) { SshFiles.listArchive(ssh, fullPath) }
+                        archiveTarget = fullPath to list
+                    } catch (e: Exception) {
+                        message = e.message ?: "读取压缩包失败。"
+                        messageIsError = true
+                    } finally {
+                        busy = false
+                    }
+                }
             }
         }
     }
@@ -567,27 +660,63 @@ fun FileManagerScreen(
                 }
             }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = {
-                    searchQuery = it
-                    searchHits = null
-                },
-                singleLine = true,
-                placeholder = { Text("搜索当前目录；键盘搜索键递归查找") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
+            // 紧凑圆角搜索条：输入即时过滤当前目录，键盘搜索键递归查找。
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.surfaceVariant,
+                border = BorderStroke(1.dp, colors.outline),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Search,
+                        contentDescription = null,
+                        tint = colors.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                "搜索",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = {
+                                searchQuery = it
+                                searchHits = null
+                            },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
+                            cursorBrush = SolidColor(colors.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = {
                             searchQuery = ""
                             searchHits = null
-                        }) { Icon(Icons.Filled.Close, contentDescription = "清除") }
+                        }) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "清除",
+                                tint = colors.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                modifier = Modifier.fillMaxWidth()
-            )
+                }
+            }
 
             if (selectionMode) {
                 Row(
@@ -834,7 +963,7 @@ fun FileManagerScreen(
                 .navigationBarsPadding()
                 .padding(20.dp)
         ) {
-            Icon(Icons.Filled.Add, contentDescription = "新建文件夹")
+            Icon(Icons.Filled.CreateNewFolder, contentDescription = "新建文件夹")
         }
     }
 
@@ -1019,12 +1148,14 @@ fun FileManagerScreen(
     }
 
     renameTarget?.let { entry ->
+        val newName = renameText.trim().trim('/')
+        val nameTaken = newName != entry.name && entries?.any { it.name == newName } == true
         AppDialog(
             title = "重命名",
-            confirmEnabled = renameText.isNotBlank() && renameText.trim() != entry.name,
+            confirmEnabled = renameText.isNotBlank() && newName != entry.name && !nameTaken,
             onConfirm = {
                 val from = joinPath(currentPath, entry.name)
-                val to = joinPath(currentPath, renameText.trim().trim('/'))
+                val to = joinPath(currentPath, newName)
                 renameTarget = null
                 runOp("已重命名。") { SshFiles.rename(ssh, from, to) }
             },
@@ -1037,16 +1168,26 @@ fun FileManagerScreen(
                 label = { Text("新名称") },
                 modifier = Modifier.fillMaxWidth()
             )
+            if (nameTaken) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "该名称已被占用，请换一个。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.error
+                )
+            }
         }
     }
 
     if (newFolderDialog) {
+        val folderName = folderText.trim().trim('/')
+        val folderTaken = entries?.any { it.name == folderName } == true
         AppDialog(
             title = "新建文件夹",
             confirmLabel = "创建",
-            confirmEnabled = folderText.isNotBlank(),
+            confirmEnabled = folderText.isNotBlank() && !folderTaken,
             onConfirm = {
-                val path = joinPath(currentPath, folderText.trim().trim('/'))
+                val path = joinPath(currentPath, folderName)
                 newFolderDialog = false
                 runOp("已创建文件夹。") { SshFiles.mkdir(ssh, path) }
             },
@@ -1059,6 +1200,14 @@ fun FileManagerScreen(
                 label = { Text("文件夹名称") },
                 modifier = Modifier.fillMaxWidth()
             )
+            if (folderTaken) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "该名称已被占用，请换一个。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.error
+                )
+            }
         }
     }
 
@@ -1190,29 +1339,47 @@ private fun FileRow(
                 IconButton(onClick = { menuOpen = true }, enabled = !busy) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    if (!entry.isDir) {
-                        DropdownMenuItem(
-                            text = { Text("查看 / 编辑") },
-                            onClick = { menuOpen = false; onView() }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("下载") },
-                            onClick = { menuOpen = false; onDownload() }
-                        )
+                if (menuOpen) {
+                    // 应用自己的弹层（扁平卡片风格），替代 Material3 DropdownMenu。
+                    Popup(
+                        alignment = Alignment.BottomEnd,
+                        onDismissRequest = { menuOpen = false },
+                        properties = PopupProperties(focusable = true)
+                    ) {
+                        Surface(
+                            shape = AppShapes.block,
+                            color = colors.surface,
+                            border = BorderStroke(1.dp, colors.outline),
+                            modifier = Modifier.widthIn(min = 150.dp)
+                        ) {
+                            Column(Modifier.padding(vertical = 4.dp)) {
+                                if (!entry.isDir) {
+                                    PopupLabel("查看 / 编辑", colors.onSurface) { menuOpen = false; onView() }
+                                    PopupLabel("下载", colors.onSurface) { menuOpen = false; onDownload() }
+                                }
+                                PopupLabel("重命名", colors.onSurface) { menuOpen = false; onRename() }
+                                PopupLabel("删除", colors.error) { menuOpen = false; onDelete() }
+                            }
+                        }
                     }
-                    DropdownMenuItem(
-                        text = { Text("重命名") },
-                        onClick = { menuOpen = false; onRename() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("删除", color = colors.error) },
-                        onClick = { menuOpen = false; onDelete() }
-                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun PopupLabel(label: String, tint: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Text(
+        label,
+        style = MaterialTheme.typography.bodyMedium,
+        color = tint,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 11.dp)
+    )
 }
 
 private fun queryDisplayName(context: Context, uri: Uri): String? =
