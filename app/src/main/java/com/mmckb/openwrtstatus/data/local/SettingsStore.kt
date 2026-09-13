@@ -36,6 +36,13 @@ class SettingsStore(context: Context) {
         return if (devices.any { it.id == stored }) stored else devices.firstOrNull()?.id.orEmpty()
     }
 
+    /** Whether the realtime network-speed Live Update notification is enabled. */
+    fun isSpeedNotificationEnabled(): Boolean = prefs.getBoolean(KEY_SPEED_NOTIFY, false)
+
+    fun saveSpeedNotificationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPEED_NOTIFY, enabled).apply()
+    }
+
     fun saveDevices(devices: List<RouterConfig>, activeId: String) {
         val array = JSONArray()
         devices.forEach { array.put(it.toJson()) }
@@ -100,5 +107,6 @@ class SettingsStore(context: Context) {
 
         private const val KEY_DEVICES = "devices_json"
         private const val KEY_ACTIVE = "activeDeviceId"
+        private const val KEY_SPEED_NOTIFY = "speed_notification_enabled"
     }
 }

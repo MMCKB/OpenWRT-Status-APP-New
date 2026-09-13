@@ -15,6 +15,8 @@ import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.data.repository.OpenWrtRepository
 import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
+import com.mmckb.openwrtstatus.notify.AppNotifier
+import com.mmckb.openwrtstatus.ui.Formatters.formatRate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -62,6 +64,10 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val _leaseError = MutableStateFlow<String?>(null)
     val leaseError: StateFlow<String?> = _leaseError
 
+    private val _speedNotificationEnabled =
+        MutableStateFlow(settingsStore.isSpeedNotificationEnabled())
+    val speedNotificationEnabled: StateFlow<Boolean> = _speedNotificationEnabled
+
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
     private var previousTime = 0L
@@ -103,6 +109,19 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
                 val totalRx = rates.sumOf { it.rxRate }
                 val totalTx = rates.sumOf { it.txRate }
+
+                // 实时网速 Live Update：每次轮询刷新一次通知内容（开关关闭时撤回）。
+                if (_speedNotificationEnabled.value) {
+                    AppNotifier.showLiveUpdate(
+                        getApplication(),
+                        AppNotifier.ID_REALTIME_SPEED,
+                        "实时网速 · ${cfg.displayName}",
+                        listOf(
+                            "下行" to formatRate(totalRx),
+                            "上行" to formatRate(totalTx)
+                        )
+                    )
+                }
                 _history.value = (_history.value + HistorySample(
                     at = now,
                     memoryPercent = memPct,
@@ -198,6 +217,15 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
     fun disconnectSsh() {
         terminal.disconnect()
+    }
+
+    /** 开关实时网速 Live Update 通知；关闭时立即撤回常驻通知。 */
+    fun setSpeedNotificationEnabled(enabled: Boolean) {
+        settingsStore.saveSpeedNotificationEnabled(enabled)
+        _speedNotificationEnabled.value = enabled
+        if (!enabled) {
+            AppNotifier.cancel(getApplication(), AppNotifier.ID_REALTIME_SPEED)
+        }
     }
 
     /** Adds a device and makes it the active one. */
