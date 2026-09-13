@@ -163,17 +163,17 @@ object SshFiles {
         return (dirs.map { it to true } + files.map { it to false }).take(limit)
     }
 
-    /** Lists archive contents via BusyBox unzip/tar (zip, tar, tar.gz, tgz, tar.bz2, tar.xz). */
+    /**
+     * Lists archive contents via BusyBox `tar -tvf` — the fallback for bz2/xz and other
+     * formats the app cannot parse locally (zip/tar/tgz are downloaded and parsed locally).
+     */
     suspend fun listArchive(config: SshConfig, path: String): List<FileEntry> {
-        val isZip = path.lowercase().endsWith(".zip")
-        val command =
-            if (isZip) "unzip -l ${quote(shellSafe(path))}" else "tar -tvf ${quote(shellSafe(path))}"
         val output = try {
-            exec(config, command, timeoutMs = TRANSFER_TIMEOUT_MS)
+            exec(config, "tar -tvf ${quote(shellSafe(path))}", timeoutMs = TRANSFER_TIMEOUT_MS)
         } catch (e: SshFileException) {
-            throw SshFileException("无法读取压缩包内容（路由器可能缺少 unzip/tar 命令）：${e.message}")
+            throw SshFileException("无法读取压缩包内容：${e.message}")
         }
-        val parsed = if (isZip) parseUnzipList(output) else parseTarList(output)
+        val parsed = parseTarList(output)
         if (parsed.isEmpty()) throw SshFileException("压缩包为空或无法解析其列表。")
         return parsed.sortedWith(compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() })
     }
@@ -348,21 +348,6 @@ object SshFiles {
     private fun tokenAt(line: String, index: Int): String? {
         val tokens = line.split(' ').filter { it.isNotEmpty() }
         return tokens.getOrNull(index)
-    }
-
-    /** `unzip -l` row: `12345  2024-01-01 10:00   name` (BusyBox and GNU share the shape). */
-    private fun parseUnzipList(output: String): List<FileEntry> {
-        val regex = Regex("^(\\d+)\\s+\\d{2,4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+(.+)$")
-        return output.lineSequence().mapNotNull { line ->
-            val m = regex.find(line.trim()) ?: return@mapNotNull null
-            val rawName = m.groupValues[2]
-            val isDir = rawName.endsWith("/")
-            FileEntry(
-                name = rawName.removeSuffix("/"),
-                isDir = isDir,
-                size = if (isDir) 0L else m.groupValues[1].toLongOrNull() ?: 0L
-            )
-        }.filter { it.name.isNotEmpty() }.toList()
     }
 
     /** `tar -tvf` row: `-rw-r--r-- root/root 1234 2024-01-01 10:00 name` (busybox/GNU alike). */
