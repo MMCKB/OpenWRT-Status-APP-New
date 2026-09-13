@@ -212,11 +212,10 @@ private fun DeviceCard(
             .fillMaxWidth()
             .clip(AppShapes.card)
     ) {
-        // 右滑露出左侧的编辑、左滑露出右侧的删除：纯色块 + 居中图标。
+        // 右滑露出左侧的编辑、左滑露出右侧的删除：纯色块只画在各自动作槽上，
+        // 两条层都不铺满背景，避免后绘制的层盖住先绘制的层。
         Row(
-            modifier = Modifier
-                .matchParentSize()
-                .background(SwipeEditColor),
+            modifier = Modifier.matchParentSize(),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -233,9 +232,7 @@ private fun DeviceCard(
             }
         }
         Row(
-            modifier = Modifier
-                .matchParentSize()
-                .background(SwipeDeleteColor),
+            modifier = Modifier.matchParentSize(),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
