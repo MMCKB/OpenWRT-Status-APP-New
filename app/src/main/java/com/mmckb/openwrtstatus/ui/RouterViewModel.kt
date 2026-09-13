@@ -16,7 +16,7 @@ import com.mmckb.openwrtstatus.data.repository.OpenWrtRepository
 import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.notify.AppNotifier
-import com.mmckb.openwrtstatus.ui.Formatters.formatRate
+import com.mmckb.openwrtstatus.ui.formatRate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
