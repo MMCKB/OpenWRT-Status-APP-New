@@ -27,7 +27,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -45,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -201,20 +206,26 @@ private fun DeviceCard(
         onOpenChange(null)
     }
 
+    val revealProgress = (kotlin.math.abs(offsetX.value) / actionPx).coerceIn(0f, 1f)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(AppShapes.card)
     ) {
-        // 右滑露出左侧的黄色编辑；左滑露出右侧的红色删除。
+        // 右滑露出左侧的编辑、左滑露出右侧的删除：条带与卡片同色，芯片浅色圆角随进度缩放。
         Row(
-            modifier = Modifier.matchParentSize(),
+            modifier = Modifier
+                .matchParentSize()
+                .background(colors.surface),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeAction(
                 label = "编辑",
-                container = SwipeEditColor,
+                tint = SwipeEditColor,
+                icon = Icons.Filled.Edit,
+                progress = revealProgress,
                 modifier = Modifier.width(SwipeActionWidth)
             ) {
                 close()
@@ -222,13 +233,17 @@ private fun DeviceCard(
             }
         }
         Row(
-            modifier = Modifier.matchParentSize(),
+            modifier = Modifier
+                .matchParentSize()
+                .background(colors.surface),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             SwipeAction(
                 label = "删除",
-                container = colors.error,
+                tint = colors.error,
+                icon = Icons.Filled.Delete,
+                progress = revealProgress,
                 modifier = Modifier.width(SwipeActionWidth)
             ) {
                 close()
@@ -347,23 +362,41 @@ private fun DeviceCard(
 @Composable
 private fun SwipeAction(
     label: String,
-    container: Color,
+    tint: Color,
+    icon: ImageVector,
+    progress: Float,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .background(container)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White
-        )
+    Box(modifier = modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
+        // 浅色圆角芯片：背景为主题色 16% 透明度，随滑动进度缩放淡入。
+        Row(
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = 0.25f + 0.75f * progress
+                    scaleX = 0.7f + 0.3f * progress
+                    scaleY = 0.7f + 0.3f * progress
+                }
+                .clip(RoundedCornerShape(16.dp))
+                .background(tint.copy(alpha = 0.16f))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = tint
+            )
+        }
     }
 }
 
