@@ -177,6 +177,9 @@ fun OpenClashScreen(
                 block()
                 message = info
                 messageIsError = false
+            } catch (e: com.mmckb.openwrtstatus.data.remote.RouterException) {
+                message = listOfNotNull(e.message, e.hint).joinToString("\n")
+                messageIsError = true
             } catch (e: Exception) {
                 message = e.message ?: "操作失败。"
                 messageIsError = true

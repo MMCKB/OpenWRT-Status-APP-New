@@ -213,7 +213,7 @@ class UbusRpcClient {
         }
 
         val result = root["result"]
-        if (result !is JsonArray || result.size < 2) {
+        if (result !is JsonArray || result.isEmpty()) {
             val err = root["error"]?.takeIf { it !is JsonNull }?.toString()
             throw RouterException("路由器拒绝了请求。", err ?: "请检查用户名、密码与 rpcd 权限。")
         }
@@ -222,7 +222,8 @@ class UbusRpcClient {
         if (code != 0) {
             throw RouterException("ubus 调用 $target.$method 失败（代码 $code）。", ubusHint(code))
         }
-        return result[1]
+        // result 只有状态码（如 uci set/commit、rc init 的 [0]）表示成功且无返回体。
+        return if (result.size >= 2) result[1] else JsonNull
     }
 
     private fun httpError(code: Int, endpoint: String): RouterException = when (code) {
