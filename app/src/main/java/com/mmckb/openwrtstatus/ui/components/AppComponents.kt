@@ -23,7 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -54,6 +57,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -482,16 +486,21 @@ fun FloatingTabBar(
  * App-styled modal dialog: the same flat bordered card language as [AppCard] instead of
  * the Material3 AlertDialog look. Hosted in a raw [androidx.compose.ui.window.Dialog] so
  * only the visual style is ours.
+ *
+ * Pass [content] for custom bodies (input fields, scrollable previews); otherwise
+ * [message] is shown. An empty [dismissLabel] hides the dismiss button.
  */
 @Composable
 fun AppDialog(
     title: String,
-    message: String,
+    message: String = "",
     confirmLabel: String = "确定",
     dismissLabel: String = "取消",
     confirmColor: Color? = null,
+    confirmEnabled: Boolean = true,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    content: (@Composable ColumnScope.() -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
     Dialog(onDismissRequest = onDismiss) {
@@ -499,37 +508,61 @@ fun AppDialog(
             shape = AppShapes.card,
             color = colors.surface,
             border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
-            modifier = Modifier.widthIn(min = 280.dp, max = 340.dp)
+            modifier = Modifier.widthIn(min = 280.dp, max = 360.dp)
         ) {
             Column(Modifier.padding(22.dp)) {
                 Text(
                     title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
+                    color = colors.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(10.dp))
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant
-                )
+                if (content != null) {
+                    content()
+                } else {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.height(20.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) {
-                        Text(dismissLabel, color = colors.onSurfaceVariant)
+                    if (dismissLabel.isNotEmpty()) {
+                        TextButton(onClick = onDismiss) {
+                            Text(dismissLabel, color = colors.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.width(8.dp))
                     }
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = onConfirm) {
-                        Text(confirmLabel, color = confirmColor ?: colors.primary)
+                    TextButton(onClick = onConfirm, enabled = confirmEnabled) {
+                        Text(
+                            confirmLabel,
+                            color = if (confirmEnabled) (confirmColor ?: colors.primary) else colors.onSurfaceVariant
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+/** 统一的二级页返回按钮：系统返回箭头图标，替代各页各自的文字“返回”。 */
+@Composable
+fun AppBackButton(onBack: () -> Unit) {
+    val colors = LocalAppColors.current
+    IconButton(onClick = onBack) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "返回",
+            tint = colors.onSurface
+        )
     }
 }
 

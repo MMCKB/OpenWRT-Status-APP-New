@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus.ui.screens
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -61,6 +61,8 @@ import com.mmckb.openwrtstatus.data.ssh.FileEntry
 import com.mmckb.openwrtstatus.data.ssh.SshFileException
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.formatBytes
+import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -126,7 +128,12 @@ fun FileManagerScreen(
 
     LaunchedEffect(currentPath) { load(currentPath) }
 
-    fun runOp(info: String?, block: suspend () -> Unit) {
+    // 系统返回：在子目录时先逐级返回上级，到根目录后才退出页面。
+    BackHandler(enabled = currentPath != "/") {
+        currentPath = parentOf(currentPath) ?: "/"
+    }
+
+    fun runOp(info: String?, refreshList: Boolean = true, block: suspend () -> Unit) {
         scope.launch {
             busy = true
             message = null
@@ -134,6 +141,15 @@ fun FileManagerScreen(
                 withContext(Dispatchers.IO) { block() }
                 message = info
                 messageIsError = false
+                // 就地重取目录，新建/删除/重命名/上传后立刻可见。
+                if (refreshList) {
+                    try {
+                        entries = withContext(Dispatchers.IO) { SshFiles.list(ssh, currentPath) }
+                    } catch (e: Exception) {
+                        message = e.message ?: "刷新目录失败。"
+                        messageIsError = true
+                    }
+                }
             } catch (e: Exception) {
                 message = e.message ?: "操作失败。"
                 messageIsError = true
@@ -168,7 +184,7 @@ fun FileManagerScreen(
     ) { uri ->
         val name = pendingDownloadName
         if (uri != null && name != null) {
-            runOp("已保存到手机。") {
+            runOp("已保存到手机。", refreshList = false) {
                 val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
                 if (size > MAX_DOWNLOAD_BYTES) {
                     throw SshFileException("文件过大（${formatBytes(size)}），暂不支持超过 ${formatBytes(MAX_DOWNLOAD_BYTES)} 的下载。")
@@ -207,7 +223,7 @@ fun FileManagerScreen(
                 .padding(top = 8.dp, bottom = 12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("返回") }
+                AppBackButton(onBack = onBack)
                 Spacer(Modifier.weight(1f))
                 TextButton(
                     onClick = { uploadLauncher.launch(arrayOf("*/*")) },
@@ -370,108 +386,91 @@ fun FileManagerScreen(
     // ---- Dialogs ----
 
     viewTarget?.let { (entry, content) ->
-        AlertDialog(
-            onDismissRequest = { viewTarget = null },
-            title = { Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .height(360.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    if (entry.size > PREVIEW_BYTES) {
-                        Text(
-                            "文件较大，仅显示前 64 KB。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                    }
+        AppDialog(
+            title = entry.name,
+            confirmLabel = "关闭",
+            dismissLabel = "",
+            onConfirm = { viewTarget = null },
+            onDismiss = { viewTarget = null }
+        ) {
+            Column(
+                modifier = Modifier
+                    .height(360.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (entry.size > PREVIEW_BYTES) {
                     Text(
-                        content,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = colors.onSurface
+                        "文件较大，仅显示前 64 KB。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(8.dp))
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { viewTarget = null }) { Text("关闭") }
+                Text(
+                    content,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = colors.onSurface
+                )
             }
-        )
+        }
     }
 
     deleteTarget?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text("删除${if (entry.isDir) "文件夹" else "文件"}") },
-            text = { Text("确定删除 “${entry.name}” 吗？${if (entry.isDir) "文件夹及其全部内容将被删除。" else "此操作不可恢复。"}") },
-            confirmButton = {
-                TextButton(onClick = {
-                    deleteTarget = null
-                    runOp("已删除。") { SshFiles.delete(ssh, joinPath(currentPath, entry.name), entry.isDir) }
-                }) { Text("删除", color = colors.error) }
+        AppDialog(
+            title = "删除${if (entry.isDir) "文件夹" else "文件"}",
+            message = "确定删除 “${entry.name}” 吗？${if (entry.isDir) "文件夹及其全部内容将被删除。" else "此操作不可恢复。"}",
+            confirmLabel = "删除",
+            confirmColor = colors.error,
+            onConfirm = {
+                deleteTarget = null
+                runOp("已删除。") { SshFiles.delete(ssh, joinPath(currentPath, entry.name), entry.isDir) }
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
-            }
+            onDismiss = { deleteTarget = null }
         )
     }
 
     renameTarget?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { renameTarget = null },
-            title = { Text("重命名") },
-            text = {
-                OutlinedTextField(
-                    value = renameText,
-                    onValueChange = { renameText = it },
-                    singleLine = true,
-                    label = { Text("新名称") }
-                )
+        AppDialog(
+            title = "重命名",
+            confirmEnabled = renameText.isNotBlank() && renameText.trim() != entry.name,
+            onConfirm = {
+                val from = joinPath(currentPath, entry.name)
+                val to = joinPath(currentPath, renameText.trim().trim('/'))
+                renameTarget = null
+                runOp("已重命名。") { SshFiles.rename(ssh, from, to) }
             },
-            confirmButton = {
-                TextButton(
-                    enabled = renameText.isNotBlank() && renameText != entry.name,
-                    onClick = {
-                        val from = joinPath(currentPath, entry.name)
-                        val to = joinPath(currentPath, renameText.trim().trim('/'))
-                        renameTarget = null
-                        runOp("已重命名。") { SshFiles.rename(ssh, from, to) }
-                    }
-                ) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("取消") }
-            }
-        )
+            onDismiss = { renameTarget = null }
+        ) {
+            OutlinedTextField(
+                value = renameText,
+                onValueChange = { renameText = it },
+                singleLine = true,
+                label = { Text("新名称") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 
     if (newFolderDialog) {
-        AlertDialog(
-            onDismissRequest = { newFolderDialog = false },
-            title = { Text("新建文件夹") },
-            text = {
-                OutlinedTextField(
-                    value = folderText,
-                    onValueChange = { folderText = it },
-                    singleLine = true,
-                    label = { Text("文件夹名称") }
-                )
+        AppDialog(
+            title = "新建文件夹",
+            confirmLabel = "创建",
+            confirmEnabled = folderText.isNotBlank(),
+            onConfirm = {
+                val path = joinPath(currentPath, folderText.trim().trim('/'))
+                newFolderDialog = false
+                runOp("已创建文件夹。") { SshFiles.mkdir(ssh, path) }
             },
-            confirmButton = {
-                TextButton(
-                    enabled = folderText.isNotBlank(),
-                    onClick = {
-                        val path = joinPath(currentPath, folderText.trim().trim('/'))
-                        newFolderDialog = false
-                        runOp("已创建文件夹。") { SshFiles.mkdir(ssh, path) }
-                    }
-                ) { Text("创建") }
-            },
-            dismissButton = {
-                TextButton(onClick = { newFolderDialog = false }) { Text("取消") }
-            }
-        )
+            onDismiss = { newFolderDialog = false }
+        ) {
+            OutlinedTextField(
+                value = folderText,
+                onValueChange = { folderText = it },
+                singleLine = true,
+                label = { Text("文件夹名称") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
 
