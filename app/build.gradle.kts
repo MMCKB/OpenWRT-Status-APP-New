@@ -1,7 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// 签名凭据解析（参照 InstallerX-Revived 的模式）：优先本地 keystore.properties
+// （gitignore），CI 上来自 KEYSTORE_* 环境变量（GitHub Secrets 注入）。
+// 仓库本身不包含任何签名密钥。
+val keystoreProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { load(it) }
+    }
+}
+val signingStoreFile = keystoreProperties.getProperty("storeFile") ?: System.getenv("KEYSTORE_FILE")
+val signingStorePassword = keystoreProperties.getProperty("storePassword") ?: System.getenv("KEYSTORE_PASSWORD")
+val signingKeyAlias = keystoreProperties.getProperty("keyAlias") ?: System.getenv("KEY_ALIAS")
+val signingKeyPassword = keystoreProperties.getProperty("keyPassword") ?: System.getenv("KEY_PASSWORD")
+val hasCustomSigning = listOf(signingStoreFile, signingStorePassword, signingKeyAlias, signingKeyPassword).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.mmckb.openwrtstatus"
@@ -10,7 +27,12 @@ android {
     compileSdkExtension = 2
 
     defaultConfig {
-        applicationId = "com.mmckb.openwrtstatus"
+        // 无私钥的构建回退 debug 签名并使用独立 applicationId，不会与正式版互相覆盖。
+        applicationId = if (hasCustomSigning) {
+            "com.mmckb.openwrtstatus"
+        } else {
+            "com.mmckb.openwrtstatus.dev"
+        }
         minSdk = 24
         targetSdk = 37
         versionCode = 2
@@ -19,21 +41,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Unified signing: debug and release are signed with the same MMCKB key so that
-    // installing a debug build over a release build (and vice versa) never conflicts.
     signingConfigs {
-        create("mmckb") {
-            storeFile = file(project.findProperty("MMCKB_STORE_FILE") as String? ?: "keystore/mmckb-release.p12")
-            storePassword = project.findProperty("MMCKB_STORE_PASSWORD") as String? ?: "MMCKB_openwrt_2026"
-            keyAlias = project.findProperty("MMCKB_KEY_ALIAS") as String? ?: "mmckb"
-            keyPassword = project.findProperty("MMCKB_KEY_PASSWORD") as String? ?: "MMCKB_openwrt_2026"
+        if (hasCustomSigning) {
+            create("mmckb") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword!!
+                keyAlias = signingKeyAlias!!
+                keyPassword = signingKeyPassword!!
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("mmckb")
+            signingConfig = if (hasCustomSigning) {
+                signingConfigs.getByName("mmckb")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -41,7 +67,11 @@ android {
         }
         debug {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("mmckb")
+            signingConfig = if (hasCustomSigning) {
+                signingConfigs.getByName("mmckb")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

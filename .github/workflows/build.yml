@@ -37,6 +37,25 @@ jobs:
           unzip -q /tmp/gradle.zip -d /opt
           echo "/opt/gradle-9.7.1/bin" >> "$GITHUB_PATH"
 
+      # 还原签名密钥（来自仓库 Secrets）。未配置 Secrets 时跳过：
+      # 构建会自动回退 debug 签名并使用 .dev 后缀的 applicationId。
+      - name: Restore signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            mkdir -p app/keystore
+            echo "$KEYSTORE_BASE64" | base64 -d > app/keystore/mmckb-release.p12
+            printf 'storeFile=keystore/mmckb-release.p12\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+            echo "Signing credentials restored."
+          else
+            echo "No signing secrets configured; the build will fall back to debug signing."
+          fi
+
       - name: Build APK (release, unified MMCKB signing)
         run: gradle :app:assembleRelease --no-daemon
 
