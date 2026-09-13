@@ -1,5 +1,6 @@
 package com.mmckb.openwrtstatus.ui.components
 
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseOut
@@ -37,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -80,6 +82,7 @@ import com.mmckb.openwrtstatus.ui.glass.LiquidTab
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -503,12 +506,30 @@ fun AppDialog(
     content: (@Composable ColumnScope.() -> Unit)? = null
 ) {
     val colors = LocalAppColors.current
+    var backProgress by remember { mutableStateOf(0f) }
     Dialog(onDismissRequest = onDismiss) {
+        // 预测性返回：手势中跟随系统规范缩放淡出（一级页面返回同款动效），取消则回弹，提交则关闭。
+        PredictiveBackHandler {
+            try {
+                it.collect { event -> backProgress = event.progress }
+                backProgress = 1f
+                onDismiss()
+            } catch (_: CancellationException) {
+                backProgress = 0f
+            }
+        }
+        val p = PredictiveBackEasing.transform(backProgress).coerceIn(0f, 1f)
         Surface(
-            shape = AppShapes.card,
+            shape = RoundedCornerShape(24.dp + 20.dp * p),
             color = colors.surface,
             border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
-            modifier = Modifier.widthIn(min = 280.dp, max = 360.dp)
+            modifier = Modifier
+                .widthIn(min = 280.dp, max = 360.dp)
+                .graphicsLayer {
+                    scaleX = 1f - 0.1f * p
+                    scaleY = 1f - 0.1f * p
+                    alpha = 1f - 0.4f * p
+                }
         ) {
             Column(Modifier.padding(22.dp)) {
                 Text(

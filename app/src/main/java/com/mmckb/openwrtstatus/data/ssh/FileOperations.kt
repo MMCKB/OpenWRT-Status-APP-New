@@ -30,7 +30,6 @@ class SshFileException(message: String) : IOException(message)
 object SshFiles {
 
     private const val TRANSFER_TIMEOUT_MS = 120_000
-    private const val MAX_TRANSFER_BYTES = 64L * 1024 * 1024
     private const val PROGRESS_INTERVAL_MS = 100L
 
     /** Lists the contents of [path]; dotfiles included, `.`/`..` excluded. */
@@ -43,13 +42,9 @@ object SshFiles {
             .sortedWith(compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() })
     }
 
-    /** Reads the first [maxBytes] bytes of a file as text for preview. */
-    suspend fun readText(config: SshConfig, path: String, maxBytes: Int = 64 * 1024): String =
-        exec(
-            config,
-            "head -c $maxBytes ${quote(shellSafe(path))}",
-            timeoutMs = TRANSFER_TIMEOUT_MS
-        )
+    /** Reads a file as text for the built-in editor (no size cap; NUL bytes mark binary). */
+    suspend fun readText(config: SshConfig, path: String): String =
+        exec(config, "cat ${quote(shellSafe(path))}", timeoutMs = TRANSFER_TIMEOUT_MS)
 
     /** Downloads a file with `cat`, returning its raw bytes (SSH channels are 8-bit clean). */
     suspend fun download(
@@ -60,7 +55,6 @@ object SshFiles {
         execBytes(
             config,
             "cat ${quote(shellSafe(path))}",
-            maxBytes = MAX_TRANSFER_BYTES,
             timeoutMs = TRANSFER_TIMEOUT_MS,
             onProgress = onProgress
         )
@@ -107,7 +101,7 @@ object SshFiles {
         timeoutMs: Int = 15_000,
         onProgress: (Long) -> Unit = {}
     ) {
-        val result = execInternal(config, command, stdin, Long.MAX_VALUE, timeoutMs, onProgress)
+        val result = execInternal(config, command, stdin, timeoutMs, onProgress)
         if (result.exitStatus != 0) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
@@ -120,39 +114,78 @@ object SshFiles {
         stdin: ByteArray? = null,
         timeoutMs: Int = 15_000
     ): String {
-        val result = execInternal(config, command, stdin, Long.MAX_VALUE, timeoutMs)
+        val result = execInternal(config, command, stdin, timeoutMs)
         if (result.exitStatus != 0 && result.stdout.isEmpty()) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
         return String(result.stdout, Charsets.UTF_8)
     }
 
-    /** Runs a command and returns raw stdout bytes, refusing output beyond [maxBytes]. */
+    /** Runs a command and returns raw stdout bytes (no size cap). */
     private suspend fun execBytes(
         config: SshConfig,
         command: String,
-        maxBytes: Long,
         timeoutMs: Int,
         onProgress: (Long) -> Unit = {}
     ): ByteArray {
-        val result = execInternal(config, command, null, maxBytes, timeoutMs, onProgress)
+        val result = execInternal(config, command, null, timeoutMs, onProgress)
         if (result.exitStatus != 0) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
         return result.stdout
     }
 
+    /** Copies a file or directory into [destDir], keeping its basename. */
+    suspend fun copy(config: SshConfig, from: String, destDir: String) {
+        run(config, "cp -R ${quote(shellSafe(from))} ${quote(shellSafe(destDir))}")
+    }
+
+    /**
+     * Searches [root] recursively for names containing [query]; returns (absolutePath, isDir).
+     * Two `find` passes (dirs/files) keep the result type without a stat per hit.
+     */
+    suspend fun find(
+        config: SshConfig,
+        root: String,
+        query: String,
+        limit: Int = 200
+    ): List<Pair<String, Boolean>> {
+        // Escape glob metacharacters so user input stays a literal substring.
+        val glob = "*" + query.replace(Regex("[*?\\[\\\\]")) { "\\${it.value}" } + "*"
+        val dirs = exec(
+            config,
+            "find ${quote(shellSafe(root))} -type d -name ${quote(glob)} -print 2>/dev/null | head -n $limit"
+        ).lines().filter { it.isNotBlank() && it != root }
+        val files = exec(
+            config,
+            "find ${quote(shellSafe(root))} -type f -name ${quote(glob)} -print 2>/dev/null | head -n $limit"
+        ).lines().filter { it.isNotBlank() }
+        return (dirs.map { it to true } + files.map { it to false }).take(limit)
+    }
+
+    /** Lists archive contents via BusyBox unzip/tar (zip, tar, tar.gz, tgz, tar.bz2, tar.xz). */
+    suspend fun listArchive(config: SshConfig, path: String): List<FileEntry> {
+        val isZip = path.lowercase().endsWith(".zip")
+        val command =
+            if (isZip) "unzip -l ${quote(shellSafe(path))}" else "tar -tvf ${quote(shellSafe(path))}"
+        val output = try {
+            exec(config, command, timeoutMs = TRANSFER_TIMEOUT_MS)
+        } catch (e: SshFileException) {
+            throw SshFileException("无法读取压缩包内容（路由器可能缺少 unzip/tar 命令）：${e.message}")
+        }
+        val parsed = if (isZip) parseUnzipList(output) else parseTarList(output)
+        if (parsed.isEmpty()) throw SshFileException("压缩包为空或无法解析其列表。")
+        return parsed.sortedWith(compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() })
+    }
+
     private class ExecResult(val stdout: ByteArray, val stderr: String, val exitStatus: Int) {
         fun detail(): String = stderr.trim().lineSequence().firstOrNull().orEmpty()
     }
-
-    private fun formatLimit(bytes: Long): String = "${bytes / (1024 * 1024)} MB"
 
     private suspend fun execInternal(
         config: SshConfig,
         command: String,
         stdin: ByteArray?,
-        maxBytes: Long,
         timeoutMs: Int,
         onProgress: (Long) -> Unit = {}
     ): ExecResult = withContext(Dispatchers.IO) {
@@ -212,9 +245,6 @@ object SshFiles {
                     val count = stdout.read(chunk, 0, minOf(chunk.size, stdout.available()))
                     if (count < 0) break
                     out.write(chunk, 0, count)
-                    if (out.size() > maxBytes) {
-                        throw SshFileException("文件超过 ${formatLimit(maxBytes)}，传输已中止。")
-                    }
                     val now = System.currentTimeMillis()
                     if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
                         lastProgressAt = now
@@ -318,5 +348,35 @@ object SshFiles {
     private fun tokenAt(line: String, index: Int): String? {
         val tokens = line.split(' ').filter { it.isNotEmpty() }
         return tokens.getOrNull(index)
+    }
+
+    /** `unzip -l` row: `12345  2024-01-01 10:00   name` (BusyBox and GNU share the shape). */
+    private fun parseUnzipList(output: String): List<FileEntry> {
+        val regex = Regex("^(\\d+)\\s+\\d{2,4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+(.+)$")
+        return output.lineSequence().mapNotNull { line ->
+            val m = regex.find(line.trim()) ?: return@mapNotNull null
+            val rawName = m.groupValues[2]
+            val isDir = rawName.endsWith("/")
+            FileEntry(
+                name = rawName.removeSuffix("/"),
+                isDir = isDir,
+                size = if (isDir) 0L else m.groupValues[1].toLongOrNull() ?: 0L
+            )
+        }.filter { it.name.isNotEmpty() }.toList()
+    }
+
+    /** `tar -tvf` row: `-rw-r--r-- root/root 1234 2024-01-01 10:00 name` (busybox/GNU alike). */
+    private fun parseTarList(output: String): List<FileEntry> {
+        val regex = Regex("^([dbc-lps@-][rwxst-]{9})\\s+\\S+\\s+(\\d+)\\s+\\S+\\s+\\S+\\s+(.+)$")
+        return output.lineSequence().mapNotNull { line ->
+            val m = regex.find(line) ?: return@mapNotNull null
+            val rawName = m.groupValues[3]
+            val isDir = rawName.endsWith("/") || m.groupValues[1].startsWith("d")
+            FileEntry(
+                name = rawName.removeSuffix("/"),
+                isDir = isDir,
+                size = if (isDir) 0L else m.groupValues[2].toLongOrNull() ?: 0L
+            )
+        }.filter { it.name.isNotEmpty() && it.name != "." }.toList()
     }
 }
