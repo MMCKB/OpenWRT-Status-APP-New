@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -82,6 +83,7 @@ import com.mmckb.openwrtstatus.ui.glass.LiquidTab
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
