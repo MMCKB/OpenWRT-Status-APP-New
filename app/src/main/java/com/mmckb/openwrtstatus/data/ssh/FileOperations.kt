@@ -12,7 +12,12 @@ import java.util.Properties
 import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
 
-/** One row in the remote file browser. */
+/** Raised when the user cancels a transfer; the UI shows it as info, not an error. */
+class SshCancelledException(message: String = "传输已取消") : Exception(message)
+
+/**
+ * One row in the remote file browser.
+ */
 data class FileEntry(
     val name: String,
     val isDir: Boolean,
@@ -50,13 +55,29 @@ object SshFiles {
     suspend fun download(
         config: SshConfig,
         path: String,
-        onProgress: (Long) -> Unit = {}
+        onProgress: (Long) -> Unit = {},
+        cancelled: () -> Boolean = { false }
     ): ByteArray =
         execBytes(
             config,
             "cat ${quote(shellSafe(path))}",
             timeoutMs = TRANSFER_TIMEOUT_MS,
-            onProgress = onProgress
+            onProgress = onProgress,
+            cancelled = cancelled
+        )
+
+    /** Fetches the last [bytes] of a file (`tail -c`) — used to read the zip central directory. */
+    suspend fun tail(
+        config: SshConfig,
+        path: String,
+        bytes: Long,
+        cancelled: () -> Boolean = { false }
+    ): ByteArray =
+        execBytes(
+            config,
+            "tail -c $bytes ${quote(shellSafe(path))}",
+            timeoutMs = TRANSFER_TIMEOUT_MS,
+            cancelled = cancelled
         )
 
     /**
@@ -68,16 +89,24 @@ object SshFiles {
         config: SshConfig,
         path: String,
         data: ByteArray,
-        onProgress: (Long) -> Unit = {}
+        onProgress: (Long) -> Unit = {},
+        cancelled: () -> Boolean = { false }
     ) {
         val tmp = "$path.upload.tmp"
-        run(
-            config,
-            command = "cat > ${quote(shellSafe(tmp))}",
-            stdin = data,
-            timeoutMs = TRANSFER_TIMEOUT_MS,
-            onProgress = onProgress
-        )
+        try {
+            run(
+                config,
+                command = "cat > ${quote(shellSafe(tmp))}",
+                stdin = data,
+                timeoutMs = TRANSFER_TIMEOUT_MS,
+                onProgress = onProgress,
+                cancelled = cancelled
+            )
+        } catch (e: Exception) {
+            // 取消或失败都清掉路由器上残留的部分临时文件。
+            runCatching { run(config, "rm -f ${quote(shellSafe(tmp))}") }
+            throw e
+        }
         run(config, "mv -f ${quote(shellSafe(tmp))} ${quote(shellSafe(path))}", timeoutMs = TRANSFER_TIMEOUT_MS)
     }
 
@@ -99,9 +128,10 @@ object SshFiles {
         command: String,
         stdin: ByteArray? = null,
         timeoutMs: Int = 15_000,
-        onProgress: (Long) -> Unit = {}
+        onProgress: (Long) -> Unit = {},
+        cancelled: () -> Boolean = { false }
     ) {
-        val result = execInternal(config, command, stdin, timeoutMs, onProgress)
+        val result = execInternal(config, command, stdin, timeoutMs, onProgress, cancelled)
         if (result.exitStatus != 0) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
@@ -126,9 +156,10 @@ object SshFiles {
         config: SshConfig,
         command: String,
         timeoutMs: Int,
-        onProgress: (Long) -> Unit = {}
+        onProgress: (Long) -> Unit = {},
+        cancelled: () -> Boolean = { false }
     ): ByteArray {
-        val result = execInternal(config, command, null, timeoutMs, onProgress)
+        val result = execInternal(config, command, null, timeoutMs, onProgress, cancelled)
         if (result.exitStatus != 0) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
@@ -187,7 +218,8 @@ object SshFiles {
         command: String,
         stdin: ByteArray?,
         timeoutMs: Int,
-        onProgress: (Long) -> Unit = {}
+        onProgress: (Long) -> Unit = {},
+        cancelled: () -> Boolean = { false }
     ): ExecResult = withContext(Dispatchers.IO) {
         val session = try {
             openSession(config, timeoutMs)
@@ -213,6 +245,7 @@ object SshFiles {
                         var written = 0
                         var lastAt = 0L
                         while (written < stdin.size) {
+                            if (cancelled()) break
                             val len = minOf(32 * 1024, stdin.size - written)
                             stdinPipe.write(stdin, written, len)
                             written += len
@@ -222,8 +255,10 @@ object SshFiles {
                                 runCatching { onProgress(written.toLong()) }
                             }
                         }
-                        stdinPipe.flush()
-                        runCatching { onProgress(stdin.size.toLong()) }
+                        if (written >= stdin.size) {
+                            stdinPipe.flush()
+                            runCatching { onProgress(stdin.size.toLong()) }
+                        }
                     } catch (_: Exception) {
                     } finally {
                         try { stdinPipe.close() } catch (_: Exception) {}
@@ -237,9 +272,10 @@ object SshFiles {
 
             val out = java.io.ByteArrayOutputStream()
             val err = StringBuilder()
-            val chunk = ByteArray(8192)
+            val chunk = ByteArray(65536)
             var lastProgressAt = 0L
             while (true) {
+                if (cancelled()) throw SshCancelledException()
                 var progressed = false
                 while (stdout.available() > 0) {
                     val count = stdout.read(chunk, 0, minOf(chunk.size, stdout.available()))

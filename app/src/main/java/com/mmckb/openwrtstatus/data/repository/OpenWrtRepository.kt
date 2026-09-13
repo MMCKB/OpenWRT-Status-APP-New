@@ -103,6 +103,19 @@ class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
             leases = emptyList(),
             firmware = firmware,
             model = boardObj?.get("model")?.str() ?: boardObj?.get("system")?.str(),
+            boardName = boardObj?.get("board_name")?.str(),
+            cpuInfo = boardObj?.get("system")?.str(),
+            kernel = boardObj?.get("kernel")?.str(),
+            rootfsType = boardObj?.get("rootfs_type")?.str(),
+            distribution = release?.get("distribution")?.str(),
+            releaseVersion = release?.get("version")?.str(),
+            releaseRevision = release?.get("revision")?.str(),
+            target = release?.get("target")?.str(),
+            localtime = infoObj?.get("localtime")?.long(),
+            rootFsTotalBytes = infoObj?.get("root").obj()?.get("total")?.long() ?: 0L,
+            rootFsFreeBytes = infoObj?.get("root").obj()?.get("free")?.long() ?: 0L,
+            tmpTotalBytes = infoObj?.get("tmp").obj()?.get("total")?.long() ?: 0L,
+            tmpFreeBytes = infoObj?.get("tmp").obj()?.get("free")?.long() ?: 0L,
             warnings = warnings
         )
     }
