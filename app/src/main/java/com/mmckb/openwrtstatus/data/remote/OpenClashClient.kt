@@ -95,7 +95,7 @@ class OpenClashClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     suspend fun readSettings(config: RouterConfig): OpenClashSettings? {
         val res = call(config, "uci", "get", buildJsonObject { put("config", JsonPrimitive("openclash")) })
         val sections = (res as? JsonObject)?.sectionValues() ?: return null
-        val main = sections.firstOrNull { it.second[".type"]?.str() == "openclash" } ?: return null
+        val main = sections.firstOrNull { it.second[".type"]?.strValue() == "openclash" } ?: return null
         val s = main.second
         return OpenClashSettings(
             section = main.first,
@@ -144,7 +144,7 @@ class OpenClashClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         val res = call(config, "uci", "get", buildJsonObject { put("config", JsonPrimitive("openclash")) })
         val sections = (res as? JsonObject)?.sectionValues() ?: return emptyList()
         return sections.mapNotNull { (name, obj) ->
-            if (obj[".type"]?.str() != "subscribe") return@mapNotNull null
+            if (obj[".type"]?.strValue() != "subscribe") return@mapNotNull null
             OpenClashSubscribe(
                 section = name,
                 name = obj.str("name") ?: "未命名订阅",
@@ -257,8 +257,10 @@ class OpenClashClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         }
     }
 
-    private fun JsonObject.str(key: String): String? =
-        (this[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+    private fun JsonObject.str(key: String): String? = this[key].strValue()
+
+    private fun JsonElement?.strValue(): String? =
+        (this as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
 
     private fun JsonObject.boolAny(key: String): Boolean = when (val v = this[key]) {
         is JsonPrimitive -> v.content.toBooleanStrictOrNull() ?: (v.content == "1")
