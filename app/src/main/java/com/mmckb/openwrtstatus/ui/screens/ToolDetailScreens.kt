@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
+import com.mmckb.openwrtstatus.ui.formatBytes
+import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /** 工具页：工具入口列表，当前提供路由器文件管理。 */
@@ -165,7 +167,7 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
                     .format(java.util.Date(it * 1000))
             }
         )
-        DetailRow("运行时长", com.mmckb.openwrtstatus.ui.Formatters.formatUptime(data.uptimeSeconds))
+        DetailRow("运行时长", formatUptime(data.uptimeSeconds))
         if (data.loadAverage.isNotEmpty()) {
             DetailRow(
                 "平均负载",
@@ -175,16 +177,16 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
         if (data.rootFsTotalBytes > 0) {
             DetailRow(
                 "根文件系统",
-                "${com.mmckb.openwrtstatus.ui.Formatters.formatBytes(data.rootFsTotalBytes - data.rootFsFreeBytes)} / " +
-                    com.mmckb.openwrtstatus.ui.Formatters.formatBytes(data.rootFsTotalBytes) +
+                "${formatBytes(data.rootFsTotalBytes - data.rootFsFreeBytes)} / " +
+                    formatBytes(data.rootFsTotalBytes) +
                     (data.rootfsType?.let { "（$it）" } ?: "")
             )
         }
         if (data.tmpTotalBytes > 0) {
             DetailRow(
                 "临时目录",
-                "${com.mmckb.openwrtstatus.ui.Formatters.formatBytes(data.tmpTotalBytes - data.tmpFreeBytes)} / " +
-                    com.mmckb.openwrtstatus.ui.Formatters.formatBytes(data.tmpTotalBytes)
+                "${formatBytes(data.tmpTotalBytes - data.tmpFreeBytes)} / " +
+                    formatBytes(data.tmpTotalBytes)
             )
         }
         if (data.warnings.isNotEmpty()) {
@@ -231,11 +233,11 @@ private fun InterfaceCard(interfaces: List<com.mmckb.openwrtstatus.data.model.In
             }
             Spacer(Modifier.height(4.dp))
             DetailRow("IPv4", iface.ipv4.joinToString("、").ifBlank { "—" })
-            DetailRow("已运行", com.mmckb.openwrtstatus.ui.Formatters.formatUptime(iface.uptimeSeconds))
+            DetailRow("已运行", formatUptime(iface.uptimeSeconds))
             DetailRow(
                 "累计流量",
-                "收 ${com.mmckb.openwrtstatus.ui.Formatters.formatBytes(iface.rxBytes)} · " +
-                    "发 ${com.mmckb.openwrtstatus.ui.Formatters.formatBytes(iface.txBytes)}"
+                "收 ${formatBytes(iface.rxBytes)} · " +
+                    "发 ${formatBytes(iface.txBytes)}"
             )
         }
     }

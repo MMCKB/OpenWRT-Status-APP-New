@@ -462,7 +462,7 @@ fun FileManagerScreen(
         }
     }
 
-    private suspend fun fetchZipListing(
+    suspend fun fetchZipListing(
         fullPath: String,
         totalSize: Long,
         onProgress: (Long) -> Unit
