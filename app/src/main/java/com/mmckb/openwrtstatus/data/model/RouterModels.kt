@@ -24,7 +24,7 @@ data class RouterConfig(
     val sshPort: Int = 22,
     val sshUsername: String = "root",
     val sshPassword: String = ""
-) {
+) : java.io.Serializable {
     /** Label shown in device lists. */
     val displayName: String get() = name.ifBlank { ip }
 }
