@@ -64,6 +64,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -77,6 +78,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.FileEntry
+import com.mmckb.openwrtstatus.data.ssh.SshCancelledException
 import com.mmckb.openwrtstatus.data.ssh.SshFileException
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
@@ -103,6 +105,52 @@ private data class TransferInfo(
 
 private val ARCHIVE_SORT = compareByDescending<FileEntry> { it.isDir }.thenBy { it.name.lowercase() }
 
+/** Zip 中央目录只存在于文件末尾；先小后大拉取尾部尝试解析。 */
+private val ZIP_TAIL_BYTES = longArrayOf(256L * 1024, 4L * 1024 * 1024)
+
+/**
+ * 从 zip 尾部数据里解析中央目录（EOCD → 中央目录条目）。
+ * 返回 null 表示尾部不够（目录被截断）或 zip64，需要换更大的尾部/整包下载。
+ */
+private fun parseZipCentralDirectory(data: ByteArray, fileTotalSize: Long): List<FileEntry>? {
+    fun u16(off: Int): Int = (data[off].toInt() and 0xFF) or ((data[off + 1].toInt() and 0xFF) shl 8)
+    fun u32(off: Int): Long = (u16(off).toLong() and 0xFFFF) or ((u16(off + 2).toLong() and 0xFFFF) shl 16)
+
+    // 从末尾向前找 EOCD 签名 PK\x05\x06（注释最长 64KB）。
+    var i = data.size - 22
+    val scanFloor = maxOf(0, data.size - 22 - 65535 - 16)
+    while (i >= scanFloor) {
+        if (data[i] == 0x50.toByte() && data[i + 1] == 0x4B.toByte() &&
+            data[i + 2] == 0x05.toByte() && data[i + 3] == 0x06.toByte()
+        ) break
+        i--
+    }
+    if (i < 0) return null
+    val entriesTotal = u16(i + 10)
+    val cdSize = u32(i + 12)
+    val cdOffset = u32(i + 16)
+    if (entriesTotal == 0 || entriesTotal == 0xFFFF || cdSize == 0xFFFFFFFFL || cdOffset == 0xFFFFFFFFL) return null
+
+    var pos = (cdOffset - (fileTotalSize - data.size)).toInt()
+    if (pos < 0 || pos >= data.size) return null
+    val end = minOf(data.size.toLong(), pos.toLong() + cdSize).toInt()
+
+    val result = mutableListOf<FileEntry>()
+    while (pos + 46 <= end && result.size < entriesTotal) {
+        if (u32(pos) != 0x02014B50L) break
+        val nameLen = u16(pos + 28)
+        val extraLen = u16(pos + 30)
+        val commentLen = u16(pos + 32)
+        val uncompSize = u32(pos + 24)
+        if (pos + 46 + nameLen > data.size) break
+        val name = String(data, pos + 46, nameLen, Charsets.UTF_8)
+        val isDir = name.endsWith("/")
+        result.add(FileEntry(name.removeSuffix("/"), isDir, if (isDir) 0L else uncompSize))
+        pos += 46 + nameLen + extraLen + commentLen
+    }
+    return if (result.isEmpty()) null else result.sortedWith(ARCHIVE_SORT)
+}
+
 /** Lists zip entries from locally downloaded bytes (no remote unzip needed). */
 private fun parseZipEntries(context: Context, bytes: ByteArray): List<FileEntry> {
     val tmp = java.io.File(context.cacheDir, "fm-archive-${System.currentTimeMillis()}.zip")
@@ -121,48 +169,6 @@ private fun parseZipEntries(context: Context, bytes: ByteArray): List<FileEntry>
     } finally {
         tmp.delete()
     }
-}
-
-/**
- * Minimal tar reader over locally downloaded bytes (plain or already-gunzipped stream).
- * Handles ustar name prefixes and skips data blocks padded to 512 bytes.
- */
-private fun parseTarEntries(input: java.io.InputStream, limit: Int = 5000): List<FileEntry> {
-    val header = ByteArray(512)
-    val result = mutableListOf<FileEntry>()
-    input.use { stream ->
-        while (result.size < limit) {
-            if (!readTarBlock(stream, header)) break
-            if (header[0].toInt() == 0) break
-            var name = String(header, 0, 100, Charsets.UTF_8).trimEnd('\u0000', ' ')
-            val prefix = String(header, 345, 155, Charsets.UTF_8).trimEnd('\u0000', ' ')
-            if (prefix.isNotEmpty()) name = "$prefix/$name"
-            if (name.isEmpty()) break
-            val sizeField = String(header, 124, 12, Charsets.UTF_8).trim('\u0000', ' ')
-            val size = sizeField.toLongOrNull(8) ?: 0L
-            val typeChar = header[156].toInt().toChar()
-            val isDir = typeChar == '5' || name.endsWith("/")
-            result.add(FileEntry(name.removeSuffix("/"), isDir, if (isDir) 0L else size))
-            var remaining = ((size + 511) / 512) * 512
-            val sink = ByteArray(8192)
-            while (remaining > 0) {
-                val n = stream.read(sink, 0, minOf(sink.size.toLong(), remaining).toInt())
-                if (n < 0) return result
-                remaining -= n
-            }
-        }
-    }
-    return result.sortedWith(ARCHIVE_SORT)
-}
-
-private fun readTarBlock(stream: java.io.InputStream, buf: ByteArray): Boolean {
-    var off = 0
-    while (off < buf.size) {
-        val n = stream.read(buf, off, buf.size - off)
-        if (n < 0) return false
-        off += n
-    }
-    return true
 }
 
 /** Smooths periodic byte samples into a display-friendly transfer speed. */
@@ -223,6 +229,7 @@ fun FileManagerScreen(
     var messageIsError by remember { mutableStateOf(false) }
     var transfer by remember { mutableStateOf<TransferInfo?>(null) }
     val transferMeter = remember { SpeedMeter() }
+    val transferCancel = remember { mutableStateOf(false) }
 
     // Dialog targets.
     var viewTarget by remember { mutableStateOf<String?>(null) }
@@ -366,6 +373,7 @@ fun FileManagerScreen(
             busy = true
             message = null
             transferMeter.reset()
+            transferCancel.value = false
             transfer = TransferInfo(name, total, isUpload, 0L, 0f)
             try {
                 op { sent ->
@@ -383,6 +391,9 @@ fun FileManagerScreen(
                         messageIsError = true
                     }
                 }
+            } catch (e: SshCancelledException) {
+                message = "已取消。"
+                messageIsError = false
             } catch (e: Exception) {
                 message = e.message ?: "传输失败。"
                 messageIsError = true
@@ -395,7 +406,7 @@ fun FileManagerScreen(
 
     fun startUpload(name: String, bytes: ByteArray) {
         runTransfer("上传完成。", name, bytes.size.toLong(), isUpload = true, refreshList = true) { onProgress ->
-            SshFiles.upload(ssh, joinPath(currentPath, name), bytes, onProgress)
+            SshFiles.upload(ssh, joinPath(currentPath, name), bytes, onProgress) { transferCancel.value }
         }
     }
 
@@ -419,26 +430,19 @@ fun FileManagerScreen(
     }
 
     /**
-     * 打开压缩包：zip/tar/tgz 先下载到手机在本地解析（不依赖路由器上的 unzip），
-     * 带进度弹窗；bz2/xz 等冷门格式回退到远端 `tar -tvf`（BusyBox 必有 tar）。
+     * 打开压缩包：
+     * - tar/tgz/bz2/xz 走远端 `tar -tvf`（BusyBox 必有 tar，秒出列表）；
+     * - zip 只拉文件末尾的中央目录（EOCD 技巧，通常仅几十 KB）即刻解析，
+     *   解析不出时才回退整包下载 + 本地 ZipFile；全程可取消、带进度。
      */
     fun openArchive(fullPath: String, name: String) {
         val lower = name.lowercase()
         val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
         when {
-            lower.endsWith(".zip") -> runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
-                val bytes = SshFiles.download(ssh, fullPath, onProgress)
-                archiveTarget = fullPath to parseZipEntries(context, bytes)
-            }
-            lower.endsWith(".tar.gz") || lower.endsWith(".tgz") ->
-                runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
-                    val bytes = SshFiles.download(ssh, fullPath, onProgress)
-                    archiveTarget = fullPath to
-                        parseTarEntries(java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes)))
-                }
-            lower.endsWith(".tar") -> runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
-                val bytes = SshFiles.download(ssh, fullPath, onProgress)
-                archiveTarget = fullPath to parseTarEntries(java.io.ByteArrayInputStream(bytes))
+            lower.endsWith(".zip") -> runTransfer(
+                "", name, minOf(size, ZIP_TAIL_BYTES.first()), isUpload = false, refreshList = false
+            ) { onProgress ->
+                archiveTarget = fullPath to fetchZipListing(fullPath, size, onProgress)
             }
             else -> {
                 scope.launch {
@@ -456,6 +460,27 @@ fun FileManagerScreen(
                 }
             }
         }
+    }
+
+    private suspend fun fetchZipListing(
+        fullPath: String,
+        totalSize: Long,
+        onProgress: (Long) -> Unit
+    ): List<FileEntry> {
+        val cancelled = { transferCancel.value }
+        if (totalSize > 0) {
+            for (tailLen in ZIP_TAIL_BYTES) {
+                if (cancelled()) throw SshCancelledException()
+                val len = minOf(totalSize, tailLen)
+                val data = SshFiles.tail(ssh, fullPath, len, cancelled)
+                onProgress(len)
+                val parsed = parseZipCentralDirectory(data, totalSize)
+                if (parsed != null) return parsed
+            }
+        }
+        // 兜底：整包下载后用本地 ZipFile 解析。
+        val bytes = SshFiles.download(ssh, fullPath, onProgress, cancelled)
+        return parseZipEntries(context, bytes)
     }
 
     fun openEntry(fullPath: String, name: String, isDir: Boolean) {
@@ -539,7 +564,7 @@ fun FileManagerScreen(
         if (uri != null && name != null) {
             val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
             runTransfer("已保存到手机。", name, size, isUpload = false, refreshList = false) { onProgress ->
-                val bytes = SshFiles.download(ssh, joinPath(currentPath, name), onProgress)
+                val bytes = SshFiles.download(ssh, joinPath(currentPath, name), onProgress) { transferCancel.value }
                 context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
                     ?: throw SshFileException("无法写入所选位置。")
             }
@@ -620,8 +645,9 @@ fun FileManagerScreen(
                         color = if (segments.isEmpty()) colors.primary else colors.onSurfaceVariant,
                         fontWeight = if (segments.isEmpty()) FontWeight.SemiBold else FontWeight.Normal,
                         modifier = Modifier
+                            .clip(AppShapes.pill)
                             .clickable(enabled = segments.isNotEmpty()) { navigate("/") }
-                            .padding(vertical = 8.dp)
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
                     )
                     segments.forEachIndexed { index, segment ->
                         Icon(
@@ -639,8 +665,9 @@ fun FileManagerScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
+                                .clip(AppShapes.pill)
                                 .clickable(enabled = !isLast) { navigate("/" + segments.take(index + 1).joinToString("/")) }
-                                .padding(vertical = 8.dp)
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
                         )
                     }
                 }
@@ -1019,6 +1046,18 @@ fun FileManagerScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.onSurfaceVariant
                         )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = { transferCancel.value = true },
+                            enabled = !transferCancel.value
+                        ) {
+                            Text(if (transferCancel.value) "正在取消…" else "取消")
+                        }
                     }
                 }
             }

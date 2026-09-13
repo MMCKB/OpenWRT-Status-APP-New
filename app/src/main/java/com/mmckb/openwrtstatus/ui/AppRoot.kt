@@ -94,7 +94,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-                TAB_DETAIL -> DetailScreen(modifier = Modifier.fillMaxSize())
+                TAB_DETAIL -> DetailScreen(
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxSize()
+                )
                 else -> SettingsScreen(
                     onOpenAbout = {
                         context.startActivity(Intent(context, AboutActivity::class.java))
