@@ -175,11 +175,18 @@ class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 }
                 ?: emptyList()
 
+            val ipv6 = (item["ipv6-address"] as? JsonArray)
+                ?.mapNotNull { entry ->
+                    entry.obj()?.get("address")?.str() ?: entry.str()
+                }
+                ?: emptyList()
+
             InterfaceInfo(
                 name = name,
                 device = device,
                 up = item["up"]?.bool() ?: false,
                 ipv4 = ipv4,
+                ipv6 = ipv6,
                 uptimeSeconds = item["uptime"]?.long() ?: 0L,
                 rxBytes = rx,
                 txBytes = tx

@@ -6,6 +6,10 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -66,6 +70,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -1379,19 +1385,37 @@ private fun FileRow(
                     Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
                 }
                 if (menuOpen) {
-                    // 应用自己的弹层（扁平卡片风格），替代 Material3 DropdownMenu。
+                    // 应用自己的弹层（扁平卡片风格），出现动画与尺寸对齐 MD3 菜单。
                     Popup(
                         alignment = Alignment.BottomEnd,
                         onDismissRequest = { menuOpen = false },
                         properties = PopupProperties(focusable = true)
                     ) {
+                        val appearScale = remember { Animatable(0.85f) }
+                        val appearAlpha = remember { Animatable(0f) }
+                        LaunchedEffect(Unit) {
+                            launch {
+                                appearScale.animateTo(
+                                    1f,
+                                    spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = 0.001f)
+                                )
+                            }
+                            launch { appearAlpha.animateTo(1f, tween(140)) }
+                        }
                         Surface(
-                            shape = AppShapes.block,
+                            shape = RoundedCornerShape(22.dp),
                             color = colors.surface,
                             border = BorderStroke(1.dp, colors.outline),
-                            modifier = Modifier.widthIn(min = 150.dp)
+                            modifier = Modifier
+                                .widthIn(min = 170.dp)
+                                .graphicsLayer {
+                                    scaleX = appearScale.value
+                                    scaleY = appearScale.value
+                                    alpha = appearAlpha.value
+                                    transformOrigin = TransformOrigin(1f, 0f)
+                                }
                         ) {
-                            Column(Modifier.padding(vertical = 4.dp)) {
+                            Column(Modifier.padding(vertical = 8.dp)) {
                                 if (!entry.isDir) {
                                     PopupLabel("查看 / 编辑", colors.onSurface) { menuOpen = false; onView() }
                                     PopupLabel("下载", colors.onSurface) { menuOpen = false; onDownload() }
@@ -1417,7 +1441,7 @@ private fun PopupLabel(label: String, tint: androidx.compose.ui.graphics.Color, 
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     )
 }
 

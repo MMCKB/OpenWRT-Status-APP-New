@@ -149,17 +149,10 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
         Spacer(Modifier.height(10.dp))
         DetailRow("主机名", data.hostname)
         DetailRow("设备型号", data.model)
-        DetailRow("主板设备", data.boardName)
         DetailRow("处理器", data.cpuInfo)
         DetailRow("内核版本", data.kernel)
         DetailRow("目标平台", data.target)
-        val release = buildString {
-            data.distribution?.let { append(it) }
-            data.releaseVersion?.let { if (isNotEmpty()) append(" "); append(it) }
-            data.releaseRevision?.let { if (isNotEmpty()) append(" ($it)") }
-        }
-        DetailRow("发行版", release.ifBlank { data.firmware })
-        DetailRow("固件描述", data.firmware)
+        DetailRow("固件版本", data.firmware)
         DetailRow(
             "本地时间",
             data.localtime?.let {
@@ -172,21 +165,6 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
             DetailRow(
                 "平均负载",
                 data.loadAverage.take(3).joinToString(" / ") { String.format(java.util.Locale.US, "%.2f", it) }
-            )
-        }
-        if (data.rootFsTotalBytes > 0) {
-            DetailRow(
-                "根文件系统",
-                "${formatBytes(data.rootFsTotalBytes - data.rootFsFreeBytes)} / " +
-                    formatBytes(data.rootFsTotalBytes) +
-                    (data.rootfsType?.let { "（$it）" } ?: "")
-            )
-        }
-        if (data.tmpTotalBytes > 0) {
-            DetailRow(
-                "临时目录",
-                "${formatBytes(data.tmpTotalBytes - data.tmpFreeBytes)} / " +
-                    formatBytes(data.tmpTotalBytes)
             )
         }
         if (data.warnings.isNotEmpty()) {
@@ -233,6 +211,7 @@ private fun InterfaceCard(interfaces: List<com.mmckb.openwrtstatus.data.model.In
             }
             Spacer(Modifier.height(4.dp))
             DetailRow("IPv4", iface.ipv4.joinToString("、").ifBlank { "—" })
+            DetailRow("IPv6", iface.ipv6.joinToString("、").ifBlank { null })
             DetailRow("已运行", formatUptime(iface.uptimeSeconds))
             DetailRow(
                 "累计流量",
