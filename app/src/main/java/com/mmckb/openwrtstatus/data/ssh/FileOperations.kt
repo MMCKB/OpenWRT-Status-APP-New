@@ -31,6 +31,7 @@ object SshFiles {
 
     private const val TRANSFER_TIMEOUT_MS = 120_000
     private const val MAX_TRANSFER_BYTES = 64L * 1024 * 1024
+    private const val PROGRESS_INTERVAL_MS = 100L
 
     /** Lists the contents of [path]; dotfiles included, `.`/`..` excluded. */
     suspend fun list(config: SshConfig, path: String): List<FileEntry> {
@@ -51,12 +52,17 @@ object SshFiles {
         )
 
     /** Downloads a file with `cat`, returning its raw bytes (SSH channels are 8-bit clean). */
-    suspend fun download(config: SshConfig, path: String): ByteArray =
+    suspend fun download(
+        config: SshConfig,
+        path: String,
+        onProgress: (Long) -> Unit = {}
+    ): ByteArray =
         execBytes(
             config,
             "cat ${quote(shellSafe(path))}",
             maxBytes = MAX_TRANSFER_BYTES,
-            timeoutMs = TRANSFER_TIMEOUT_MS
+            timeoutMs = TRANSFER_TIMEOUT_MS,
+            onProgress = onProgress
         )
 
     /**
@@ -64,13 +70,19 @@ object SshFiles {
      * `cat > tmp`, then the temp file is moved into place. `cat` exists in every
      * BusyBox build, unlike base64.
      */
-    suspend fun upload(config: SshConfig, path: String, data: ByteArray) {
+    suspend fun upload(
+        config: SshConfig,
+        path: String,
+        data: ByteArray,
+        onProgress: (Long) -> Unit = {}
+    ) {
         val tmp = "$path.upload.tmp"
         run(
             config,
             command = "cat > ${quote(shellSafe(tmp))}",
             stdin = data,
-            timeoutMs = TRANSFER_TIMEOUT_MS
+            timeoutMs = TRANSFER_TIMEOUT_MS,
+            onProgress = onProgress
         )
         run(config, "mv -f ${quote(shellSafe(tmp))} ${quote(shellSafe(path))}", timeoutMs = TRANSFER_TIMEOUT_MS)
     }
@@ -92,9 +104,10 @@ object SshFiles {
         config: SshConfig,
         command: String,
         stdin: ByteArray? = null,
-        timeoutMs: Int = 15_000
+        timeoutMs: Int = 15_000,
+        onProgress: (Long) -> Unit = {}
     ) {
-        val result = execInternal(config, command, stdin, Long.MAX_VALUE, timeoutMs)
+        val result = execInternal(config, command, stdin, Long.MAX_VALUE, timeoutMs, onProgress)
         if (result.exitStatus != 0) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
@@ -119,9 +132,10 @@ object SshFiles {
         config: SshConfig,
         command: String,
         maxBytes: Long,
-        timeoutMs: Int
+        timeoutMs: Int,
+        onProgress: (Long) -> Unit = {}
     ): ByteArray {
-        val result = execInternal(config, command, null, maxBytes, timeoutMs)
+        val result = execInternal(config, command, null, maxBytes, timeoutMs, onProgress)
         if (result.exitStatus != 0) {
             throw SshFileException(result.detail().ifBlank { "远端命令执行失败（退出码 ${result.exitStatus}）。" })
         }
@@ -139,7 +153,8 @@ object SshFiles {
         command: String,
         stdin: ByteArray?,
         maxBytes: Long,
-        timeoutMs: Int
+        timeoutMs: Int,
+        onProgress: (Long) -> Unit = {}
     ): ExecResult = withContext(Dispatchers.IO) {
         val session = try {
             openSession(config, timeoutMs)
@@ -156,13 +171,26 @@ object SshFiles {
             channel.connect(timeoutMs)
 
             // Feed stdin from a side thread so the stdout/stderr drain below never
-            // deadlocks against a full pipe window (large uploads).
+            // deadlocks against a full pipe window (large uploads). Progress is
+            // reported per 32KB chunk, throttled to ~10 Hz.
             val stdinDone = CountDownLatch(1)
             if (stdin != null) {
                 thread {
                     try {
-                        stdinPipe.write(stdin)
+                        var written = 0
+                        var lastAt = 0L
+                        while (written < stdin.size) {
+                            val len = minOf(32 * 1024, stdin.size - written)
+                            stdinPipe.write(stdin, written, len)
+                            written += len
+                            val now = System.currentTimeMillis()
+                            if (now - lastAt >= PROGRESS_INTERVAL_MS) {
+                                lastAt = now
+                                runCatching { onProgress(written.toLong()) }
+                            }
+                        }
                         stdinPipe.flush()
+                        runCatching { onProgress(stdin.size.toLong()) }
                     } catch (_: Exception) {
                     } finally {
                         try { stdinPipe.close() } catch (_: Exception) {}
@@ -177,6 +205,7 @@ object SshFiles {
             val out = java.io.ByteArrayOutputStream()
             val err = StringBuilder()
             val chunk = ByteArray(8192)
+            var lastProgressAt = 0L
             while (true) {
                 var progressed = false
                 while (stdout.available() > 0) {
@@ -185,6 +214,11 @@ object SshFiles {
                     out.write(chunk, 0, count)
                     if (out.size() > maxBytes) {
                         throw SshFileException("文件超过 ${formatLimit(maxBytes)}，传输已中止。")
+                    }
+                    val now = System.currentTimeMillis()
+                    if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
+                        lastProgressAt = now
+                        runCatching { onProgress(out.size().toLong()) }
                     }
                     progressed = true
                 }
