@@ -39,6 +39,7 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
+import com.mmckb.openwrtstatus.OpenClashActivity
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
@@ -90,6 +91,12 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         context.startActivity(
                             Intent(context, FileManagerActivity::class.java)
                                 .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
+                        )
+                    },
+                    onOpenOpenClash = {
+                        context.startActivity(
+                            Intent(context, OpenClashActivity::class.java)
+                                .putExtra(OpenClashActivity.EXTRA_CONFIG, config)
                         )
                     },
                     modifier = Modifier.fillMaxSize()
