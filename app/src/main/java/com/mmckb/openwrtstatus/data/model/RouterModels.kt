@@ -47,6 +47,7 @@ data class InterfaceInfo(
     val device: String,
     val up: Boolean,
     val ipv4: List<String>,
+    val ipv6: List<String> = emptyList(),
     val uptimeSeconds: Long,
     val rxBytes: Long,
     val txBytes: Long
