@@ -36,13 +36,11 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
     override fun showMessage(message: String?) {}
     override fun promptPassword(message: String?): Boolean = true
     override fun promptPassphrase(message: String?): Boolean = true
-    override fun prompt(destination: String?, name: String?, instruction: String?): Array<String>? = null
     override fun promptKeyboardInteractive(
         destination: String?,
         name: String?,
         instruction: String?,
-        lang: String?,
-        prompts: Array<String>?,
+        prompts: Array<out String>?,
         echo: BooleanArray?
     ): Array<String>? = prompts?.map { password }?.toTypedArray()
 }
