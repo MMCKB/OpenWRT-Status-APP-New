@@ -186,7 +186,7 @@ class OpenClashClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         val res = call(config, "file", "list", buildJsonObject { put("path", JsonPrimitive(CONFIG_DIR)) })
         val entries = (res as? JsonObject)?.get("entries") as? kotlinx.serialization.json.JsonArray ?: return emptyList()
         return entries.mapNotNull { entry ->
-            (entry as? JsonObject)?.get("name")?.str()
+            (entry as? JsonObject)?.get("name").strValue()
         }.filter { it.endsWith(".yaml") || it.endsWith(".yml") }.sorted()
     }
 
