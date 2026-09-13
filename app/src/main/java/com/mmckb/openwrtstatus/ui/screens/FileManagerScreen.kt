@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -38,8 +40,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,13 +60,17 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.FileEntry
 import com.mmckb.openwrtstatus.data.ssh.SshFileException
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.formatBytes
+import com.mmckb.openwrtstatus.ui.formatRate
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -91,6 +99,8 @@ fun FileManagerScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
+    var transfer by remember { mutableStateOf<TransferInfo?>(null) }
+    val transferMeter = remember { SpeedMeter() }
 
     // Dialog targets.
     var viewTarget by remember { mutableStateOf<Pair<FileEntry, String>?>(null) }
@@ -159,6 +169,44 @@ fun FileManagerScreen(
         }
     }
 
+    /** Runs a transfer with the modal progress dialog (live speed + progress bar). */
+    fun runTransfer(
+        info: String,
+        name: String,
+        total: Long,
+        isUpload: Boolean,
+        refreshList: Boolean,
+        op: suspend ((Long) -> Unit) -> Unit
+    ) {
+        scope.launch {
+            busy = true
+            message = null
+            transferMeter.reset()
+            transfer = TransferInfo(name, total, isUpload, 0L, 0f)
+            try {
+                op { sent ->
+                    transfer = TransferInfo(name, total, isUpload, sent, transferMeter.sample(sent))
+                }
+                message = info
+                messageIsError = false
+                if (refreshList) {
+                    try {
+                        entries = withContext(Dispatchers.IO) { SshFiles.list(ssh, currentPath) }
+                    } catch (e: Exception) {
+                        message = e.message ?: "刷新目录失败。"
+                        messageIsError = true
+                    }
+                }
+            } catch (e: Exception) {
+                message = e.message ?: "传输失败。"
+                messageIsError = true
+            } finally {
+                transfer = null
+                busy = false
+            }
+        }
+    }
+
     fun viewFile(entry: FileEntry) {
         scope.launch {
             busy = true
@@ -184,14 +232,16 @@ fun FileManagerScreen(
     ) { uri ->
         val name = pendingDownloadName
         if (uri != null && name != null) {
-            runOp("已保存到手机。", refreshList = false) {
-                val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
-                if (size > MAX_DOWNLOAD_BYTES) {
-                    throw SshFileException("文件过大（${formatBytes(size)}），暂不支持超过 ${formatBytes(MAX_DOWNLOAD_BYTES)} 的下载。")
+            val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
+            if (size > MAX_DOWNLOAD_BYTES) {
+                message = "文件过大（${formatBytes(size)}），暂不支持超过 ${formatBytes(MAX_DOWNLOAD_BYTES)} 的下载。"
+                messageIsError = true
+            } else {
+                runTransfer("已保存到手机。", name, size, isUpload = false, refreshList = false) { onProgress ->
+                    val bytes = SshFiles.download(ssh, joinPath(currentPath, name), onProgress)
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: throw SshFileException("无法写入所选位置。")
                 }
-                val bytes = SshFiles.download(ssh, joinPath(currentPath, name))
-                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    ?: throw SshFileException("无法写入所选位置。")
             }
         }
         pendingDownloadName = null
@@ -200,16 +250,27 @@ fun FileManagerScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            runOp("上传完成。") {
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: throw SshFileException("无法读取所选文件。")
+            scope.launch {
+                // 先在本地读取并校验，再进入带进度弹窗的网络传输。
+                val bytes = try {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: throw SshFileException("无法读取所选文件。")
+                    }
+                } catch (e: Exception) {
+                    message = e.message ?: "读取所选文件失败。"
+                    messageIsError = true
+                    return@launch
                 }
                 if (bytes.size > MAX_UPLOAD_BYTES) {
-                    throw SshFileException("文件过大（${formatBytes(bytes.size.toLong())}），暂支持不超过 ${formatBytes(MAX_UPLOAD_BYTES.toLong())} 的上传。")
+                    message = "文件过大（${formatBytes(bytes.size.toLong())}），暂支持不超过 ${formatBytes(MAX_UPLOAD_BYTES.toLong())} 的上传。"
+                    messageIsError = true
+                    return@launch
                 }
-                val name = queryDisplayName(context, uri) ?: "upload.bin"
-                SshFiles.upload(ssh, joinPath(currentPath, name), bytes)
+                val name = withContext(Dispatchers.IO) { queryDisplayName(context, uri) } ?: "upload.bin"
+                runTransfer("上传完成。", name, bytes.size.toLong(), isUpload = true, refreshList = true) { onProgress ->
+                    SshFiles.upload(ssh, joinPath(currentPath, name), bytes, onProgress)
+                }
             }
         }
     }
@@ -385,6 +446,62 @@ fun FileManagerScreen(
 
     // ---- Dialogs ----
 
+    // 传输进度弹窗：模态显示实时进度与速度，传输期间不可关闭。
+    transfer?.let { t ->
+        val fraction = if (t.total > 0) (t.sent.toFloat() / t.total).coerceIn(0f, 1f) else 0f
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        ) {
+            Surface(
+                shape = AppShapes.card,
+                color = colors.surface,
+                border = BorderStroke(1.dp, colors.outline),
+                modifier = Modifier.widthIn(min = 280.dp, max = 360.dp)
+            ) {
+                Column(Modifier.padding(22.dp)) {
+                    Text(
+                        if (t.isUpload) "正在上传" else "正在下载",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        t.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = colors.primary,
+                        trackColor = colors.surfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "${(fraction * 100).toInt()}%　${formatBytes(t.sent)} / ${formatBytes(t.total)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                        Text(
+                            formatRate(t.speedBps.toDouble()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     viewTarget?.let { (entry, content) ->
         AppDialog(
             title = entry.name,
@@ -547,3 +664,39 @@ private fun queryDisplayName(context: Context, uri: Uri): String? =
     context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
         if (cursor.moveToFirst()) cursor.getString(0) else null
     }
+
+/** Live transfer state shown in the progress dialog; updates come from SSH callback threads. */
+private data class TransferInfo(
+    val name: String,
+    val total: Long,
+    val isUpload: Boolean,
+    val sent: Long,
+    val speedBps: Float
+)
+
+/** Smooths periodic byte samples into a display-friendly transfer speed. */
+private class SpeedMeter {
+    private var lastAt = 0L
+    private var lastBytes = 0L
+    private var smoothed = 0f
+
+    fun sample(bytes: Long): Float {
+        val now = System.currentTimeMillis()
+        if (lastAt > 0) {
+            val dt = now - lastAt
+            if (dt > 0) {
+                val instant = (bytes - lastBytes).coerceAtLeast(0) * 1000f / dt
+                smoothed = if (smoothed == 0f) instant else smoothed * 0.65f + instant * 0.35f
+            }
+        }
+        lastAt = now
+        lastBytes = bytes
+        return smoothed
+    }
+
+    fun reset() {
+        lastAt = 0
+        lastBytes = 0
+        smoothed = 0f
+    }
+}

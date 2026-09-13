@@ -36,6 +36,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
@@ -103,14 +104,16 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             }
         }
 
-        // Top bar: a plain Gaussian blur of the live content - no tint on top of it.
+        // Top bar: a plain Gaussian blur of the live content - no tint on top of it,
+        // and no default edge highlight (that reads as a white border on a full-width bar).
         AppTopBar(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RectangleShape },
-                    effects = { blur(18.dp.toPx()) }
+                    effects = { blur(18.dp.toPx()) },
+                    highlight = { Highlight.None }
                 ),
             title = when (selectedTab) {
                 TAB_DASHBOARD -> "概览"
