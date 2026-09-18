@@ -65,13 +65,14 @@ object AppNotifier {
 
     /**
      * Live Update 通知（官方要求的 ongoing + 标准样式 + setRequestPromotedOngoing）。
-     * [metrics] 为 指标值 to 标签 的有序列表，以 MetricStyle 呈现（网速等实时指标）。
-     * Android 16 以下系统自动降级为普通 ongoing 通知。
+     * [body] 是普通文本正文——MetricStyle 仅在 Android 16+ 生效，旧系统/未提升时
+     * 靠它显示网速；[metrics] 在支持提升的系统上以指标样式呈现。
      */
     fun showLiveUpdate(
         context: Context,
         id: Int,
         title: String,
+        body: String,
         metrics: List<Pair<CharSequence, CharSequence>>
     ) {
         if (!permissionGranted(context)) return
@@ -82,10 +83,11 @@ object AppNotifier {
         val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(style)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setRequestPromotedOngoing(true)
-            .setStyle(style)
             .build()
         context.getSystemService(NotificationManager::class.java)?.notify(id, notification)
     }

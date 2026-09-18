@@ -112,14 +112,14 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
                 // 实时网速 Live Update：每次轮询刷新一次通知内容（开关关闭时撤回）。
                 if (_speedNotificationEnabled.value) {
+                    val rx = formatRate(totalRx)
+                    val tx = formatRate(totalTx)
                     AppNotifier.showLiveUpdate(
                         getApplication(),
                         AppNotifier.ID_REALTIME_SPEED,
                         "实时网速 · ${cfg.displayName}",
-                        listOf(
-                            "下行" to formatRate(totalRx),
-                            "上行" to formatRate(totalTx)
-                        )
+                        "↓ $rx　↑ $tx",
+                        listOf("下行" to rx, "上行" to tx)
                     )
                 }
                 _history.value = (_history.value + HistorySample(
