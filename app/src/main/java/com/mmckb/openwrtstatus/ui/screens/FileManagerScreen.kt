@@ -603,6 +603,77 @@ fun FileManagerScreen(
         }
     }
 
+    // 分享：下载到缓存后交给系统分享面板（LocalSend、微信、邮箱任选）。
+    var shareTarget by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(shareTarget) {
+        val name = shareTarget ?: return@LaunchedEffect
+        shareTarget = null
+        val size = entries?.firstOrNull { it.name == name }?.size ?: 0L
+        runTransfer("", name, size, isUpload = false, refreshList = false) { onProgress ->
+            val bytes = SshFiles.download(ssh, joinPath(currentPath, name), onProgress) { transferCancel.value }
+            val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+            val file = java.io.File(dir, name)
+            file.writeBytes(bytes)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                context.packageName + ".fileprovider",
+                file
+            )
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = shareMime(name)
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                android.content.Intent.createChooser(send, "分享 $name")
+            )
+        }
+    }
+
+    // 修改权限 / 所有者。
+    var permsTarget by remember { mutableStateOf<FileEntry?>(null) }
+    var permsText by remember { mutableStateOf("") }
+    var ownerText by remember { mutableStateOf("") }
+    var statLoading by remember { mutableStateOf(false) }
+    fun startChmod(entry: FileEntry) {
+        permsTarget = entry
+        permsText = ""
+        ownerText = ""
+        statLoading = true
+        scope.launch {
+            try {
+                val info = withContext(Dispatchers.IO) { SshFiles.stat(ssh, joinPath(currentPath, entry.name)) }
+                permsText = info.perms
+                ownerText = info.owner
+            } catch (e: Exception) {
+                // 读取失败也允许手动填写。
+            } finally {
+                statLoading = false
+            }
+        }
+    }
+
+    // 修改时间。
+    var mtimeTarget by remember { mutableStateOf<FileEntry?>(null) }
+    var mtimeText by remember { mutableStateOf("") }
+    var mtimeError by remember { mutableStateOf<String?>(null) }
+    val mtimeFormat = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()) }
+    fun startMtime(entry: FileEntry) {
+        mtimeTarget = entry
+        mtimeError = null
+        statLoading = true
+        scope.launch {
+            try {
+                val info = withContext(Dispatchers.IO) { SshFiles.stat(ssh, joinPath(currentPath, entry.name)) }
+                mtimeText = mtimeFormat.format(java.util.Date(info.modifiedAt * 1000))
+            } catch (e: Exception) {
+                mtimeText = mtimeFormat.format(java.util.Date())
+            } finally {
+                statLoading = false
+            }
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -969,10 +1040,13 @@ fun FileManagerScreen(
                                             pendingDownloadName = entry.name
                                             downloadLauncher.launch(entry.name)
                                         },
+                                        onShare = { shareTarget = entry.name },
                                         onRename = {
                                             renameTarget = entry
                                             renameText = entry.name
                                         },
+                                        onChmod = { startChmod(entry) },
+                                        onMtime = { startMtime(entry) },
                                         onDelete = { deleteTarget = entry }
                                     )
                                     HorizontalDivider(color = colors.outline)
@@ -1277,6 +1351,88 @@ fun FileManagerScreen(
         }
     }
 
+    permsTarget?.let { entry ->
+        val permsValid = Regex("^\\d{3,4}$").matches(permsText.trim())
+        val ownerValid = ownerText.isBlank() ||
+            Regex("^[A-Za-z0-9_.-]+(:[A-Za-z0-9_.-]+)?$").matches(ownerText.trim())
+        AppDialog(
+            title = "修改权限",
+            confirmLabel = "保存",
+            confirmEnabled = permsValid && ownerValid && !statLoading,
+            onConfirm = {
+                val path = joinPath(currentPath, entry.name)
+                val perms = permsText.trim()
+                val owner = ownerText.trim()
+                permsTarget = null
+                runOp("已保存。") {
+                    SshFiles.chmod(ssh, path, perms)
+                    if (owner.isNotEmpty()) SshFiles.chown(ssh, path, owner)
+                }
+            },
+            onDismiss = { permsTarget = null }
+        ) {
+            if (statLoading) {
+                Text(
+                    "读取当前属性…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
+            OutlinedTextField(
+                value = permsText,
+                onValueChange = { permsText = it.filter { c -> c.isDigit() }.take(4) },
+                singleLine = true,
+                label = { Text("权限（八进制，如 755）") },
+                isError = permsText.isNotBlank() && !permsValid,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = ownerText,
+                onValueChange = { ownerText = it },
+                singleLine = true,
+                label = { Text("所有者 user:group") },
+                isError = !ownerValid,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+
+    mtimeTarget?.let { entry ->
+        AppDialog(
+            title = "修改时间",
+            confirmLabel = "保存",
+            confirmEnabled = mtimeText.isNotBlank() && mtimeError == null && !statLoading,
+            onConfirm = {
+                val parsed = runCatching {
+                    mtimeFormat.apply { isLenient = false }.parse(mtimeText.trim())
+                }.getOrNull()
+                if (parsed == null) {
+                    mtimeError = "格式应为 yyyy-MM-dd HH:mm"
+                } else {
+                    val path = joinPath(currentPath, entry.name)
+                    val epoch = parsed.time / 1000
+                    mtimeTarget = null
+                    runOp("已更新修改时间。") { SshFiles.setModifiedTime(ssh, path, epoch) }
+                }
+            },
+            onDismiss = { mtimeTarget = null }
+        ) {
+            OutlinedTextField(
+                value = mtimeText,
+                onValueChange = {
+                    mtimeText = it
+                    mtimeError = null
+                },
+                singleLine = true,
+                label = { Text("yyyy-MM-dd HH:mm") },
+                isError = mtimeError != null,
+                supportingText = { mtimeError?.let { Text(it) } },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+
     // 上传同名冲突：覆盖 / 重命名 / 取消。
     uploadConflict?.let { c ->
         Dialog(onDismissRequest = { uploadConflict = null }) {
@@ -1339,11 +1495,16 @@ private fun FileRow(
     onToggleSelect: () -> Unit,
     onView: () -> Unit,
     onDownload: () -> Unit,
+    onShare: () -> Unit,
     onRename: () -> Unit,
+    onChmod: () -> Unit,
+    onMtime: () -> Unit,
     onDelete: () -> Unit
 ) {
     val colors = LocalAppColors.current
     var menuOpen by remember { mutableStateOf(false) }
+    var menuClosing by remember { mutableStateOf(false) }
+    var pendingMenuAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Row(
         modifier = Modifier
@@ -1385,12 +1546,16 @@ private fun FileRow(
                     Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
                 }
                 if (menuOpen) {
-                    // 应用自己的弹层（扁平卡片风格），出现动画与尺寸对齐 MD3 菜单。
+                    // 应用弹层：MD3 尺寸与出入场动画（出现弹簧缩放淡入，消失反向收起）。
                     Popup(
                         alignment = Alignment.BottomEnd,
-                        onDismissRequest = { menuOpen = false },
+                        onDismissRequest = {
+                            // 点击外部关闭也走消失动画。
+                            menuClosing = true
+                        },
                         properties = PopupProperties(focusable = true)
                     ) {
+                        val scope = rememberCoroutineScope()
                         val appearScale = remember { Animatable(0.85f) }
                         val appearAlpha = remember { Animatable(0f) }
                         LaunchedEffect(Unit) {
@@ -1402,12 +1567,22 @@ private fun FileRow(
                             }
                             launch { appearAlpha.animateTo(1f, tween(140)) }
                         }
+                        LaunchedEffect(menuClosing) {
+                            if (menuClosing) {
+                                appearAlpha.animateTo(0f, tween(80))
+                                appearScale.animateTo(0.9f, tween(80))
+                                menuOpen = false
+                                menuClosing = false
+                                pendingMenuAction?.invoke()
+                                pendingMenuAction = null
+                            }
+                        }
                         Surface(
-                            shape = RoundedCornerShape(22.dp),
+                            shape = RoundedCornerShape(20.dp),
                             color = colors.surface,
                             border = BorderStroke(1.dp, colors.outline),
                             modifier = Modifier
-                                .widthIn(min = 170.dp)
+                                .widthIn(min = 130.dp)
                                 .graphicsLayer {
                                     scaleX = appearScale.value
                                     scaleY = appearScale.value
@@ -1415,13 +1590,21 @@ private fun FileRow(
                                     transformOrigin = TransformOrigin(1f, 0f)
                                 }
                         ) {
-                            Column(Modifier.padding(vertical = 8.dp)) {
-                                if (!entry.isDir) {
-                                    PopupLabel("查看 / 编辑", colors.onSurface) { menuOpen = false; onView() }
-                                    PopupLabel("下载", colors.onSurface) { menuOpen = false; onDownload() }
+                            Column(Modifier.padding(vertical = 6.dp)) {
+                                fun close(action: () -> Unit) {
+                                    menuClosing = true
+                                    // 菜单收起后再执行动作，避免动画期间列表已变化。
+                                    pendingMenuAction = action
                                 }
-                                PopupLabel("重命名", colors.onSurface) { menuOpen = false; onRename() }
-                                PopupLabel("删除", colors.error) { menuOpen = false; onDelete() }
+                                if (!entry.isDir) {
+                                    PopupLabel("查看 / 编辑", colors.onSurface) { close { onView() } }
+                                    PopupLabel("下载", colors.onSurface) { close { onDownload() } }
+                                    PopupLabel("分享", colors.onSurface) { close { onShare() } }
+                                }
+                                PopupLabel("重命名", colors.onSurface) { close { onRename() } }
+                                PopupLabel("修改权限", colors.onSurface) { close { onChmod() } }
+                                PopupLabel("修改时间", colors.onSurface) { close { onMtime() } }
+                                PopupLabel("删除", colors.error) { close { onDelete() } }
                             }
                         }
                     }
@@ -1441,7 +1624,7 @@ private fun PopupLabel(label: String, tint: androidx.compose.ui.graphics.Color, 
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     )
 }
 
@@ -1449,3 +1632,25 @@ internal fun queryDisplayName(context: Context, uri: Uri): String? =
     context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
         if (cursor.moveToFirst()) cursor.getString(0) else null
     }
+
+/** Minimal extension → MIME mapping for the system share sheet. */
+internal fun shareMime(name: String): String {
+    val ext = name.substringAfterLast('.', "").lowercase()
+    return when (ext) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png", "gif", "webp", "bmp" -> "image/${if (ext == "jpg") "jpeg" else ext}"
+        "svg" -> "image/svg+xml"
+        "mp4", "mkv", "mov" -> "video/mp4"
+        "mp3", "m4a" -> "audio/mpeg"
+        "wav", "ogg", "flac" -> "audio/$ext"
+        "pdf" -> "application/pdf"
+        "apk" -> "application/vnd.android.package-archive"
+        "zip" -> "application/zip"
+        "gz" -> "application/gzip"
+        "tar" -> "application/x-tar"
+        "json", "xml" -> "application/$ext"
+        "html", "htm" -> "text/html"
+        "txt", "log", "conf", "cfg", "ini", "sh", "md" -> "text/plain"
+        else -> "application/octet-stream"
+    }
+}

@@ -15,6 +15,13 @@ import kotlin.concurrent.thread
 /** Raised when the user cancels a transfer; the UI shows it as info, not an error. */
 class SshCancelledException(message: String = "传输已取消") : Exception(message)
 
+/** Permissions/owner/mtime of a remote file, read via BusyBox `stat -c`. */
+data class FileStatInfo(
+    val perms: String,
+    val owner: String,
+    val modifiedAt: Long
+)
+
 /**
  * One row in the remote file browser.
  */
@@ -120,6 +127,36 @@ object SshFiles {
 
     suspend fun delete(config: SshConfig, path: String, isDir: Boolean) {
         run(config, if (isDir) "rm -rf ${quote(shellSafe(path))}" else "rm -f ${quote(shellSafe(path))}")
+    }
+
+    /** Reads permissions (`755`), owner (`user:group`) and mtime (epoch seconds). */
+    suspend fun stat(config: SshConfig, path: String): FileStatInfo {
+        val out = exec(config, "stat -c '%a|%U|%G|%Y' ${quote(shellSafe(path))}").trim()
+        val parts = out.split('|')
+        if (parts.size < 4) throw SshFileException("无法读取文件属性。")
+        return FileStatInfo(
+            perms = parts[0],
+            owner = "${parts[1]}:${parts[2]}",
+            modifiedAt = parts[3].toLongOrNull() ?: 0L
+        )
+    }
+
+    /** Sets permissions; [perms] must be 3-4 octal digits (validated by the caller). */
+    suspend fun chmod(config: SshConfig, path: String, perms: String) {
+        run(config, "chmod ${quote(perms)} ${quote(shellSafe(path))}")
+    }
+
+    /** Sets owner and/or group as `user:group`; either side may be empty (`:group`/`user:`). */
+    suspend fun chown(config: SshConfig, path: String, owner: String) {
+        run(config, "chown ${quote(owner)} ${quote(shellSafe(path))}")
+    }
+
+    /** Sets the modification time via BusyBox `touch -t` (date renders the stamp). */
+    suspend fun setModifiedTime(config: SshConfig, path: String, epochSeconds: Long) {
+        run(
+            config,
+            "touch -t \"\$(date -d @$epochSeconds '+%Y%m%d%H%M.%S')\" ${quote(shellSafe(path))}"
+        )
     }
 
     /** Runs a command and fails when the remote exit status is non-zero. */
