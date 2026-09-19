@@ -84,6 +84,7 @@ fun PackageManagerScreen(
     var available by remember { mutableStateOf<List<PkgInfo>?>(null) }
     var upgradable by remember { mutableStateOf<List<PkgInfo>?>(null) }
     var storage by remember { mutableStateOf<MountInfo?>(null) }
+    var backend by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf("") }
     var installName by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -112,6 +113,9 @@ fun PackageManagerScreen(
         scope.launch {
             busy = true
             try {
+                backend = withContext(Dispatchers.IO) {
+                    runCatching { client.backend(ssh) }.getOrNull() ?: "opkg"
+                }
                 // 四路并行：已安装、可升级、存储、可用（最大最慢的一路单独跑）。
                 val installedJob = scope.async {
                     runCatching { withContext(Dispatchers.IO) { client.listInstalled(ssh) } }
@@ -220,7 +224,7 @@ fun PackageManagerScreen(
                     opResult = null
                     reloadOnOpClose = true
                     val result = withContext(Dispatchers.IO) {
-                        client.install(ssh, UPLOAD_TMP_PATH)
+                        client.install(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH)
                     }
                     opRunning = false
                     opResult = result
@@ -229,7 +233,7 @@ fun PackageManagerScreen(
                     reloadOnOpClose = false
                 } finally {
                     runCatching {
-                        withContext(Dispatchers.IO) { SshFiles.delete(ssh, UPLOAD_TMP_PATH, isDir = false) }
+                        withContext(Dispatchers.IO) { SshFiles.delete(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH, isDir = false) }
                     }
                     busy = false
                     opRunning = false
@@ -298,6 +302,14 @@ fun PackageManagerScreen(
             fontWeight = FontWeight.SemiBold,
             color = colors.onSurface
         )
+        backend?.let {
+            Text(
+                "$it 后端 · SSH",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+            )
+        }
 
         if (busy) {
             Row(
