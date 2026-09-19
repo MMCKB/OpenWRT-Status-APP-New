@@ -49,7 +49,6 @@ import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
 import com.mmckb.openwrtstatus.ui.screens.ToolScreen
-import com.mmckb.openwrtstatus.ui.theme.AppBackground
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 private const val TAB_DASHBOARD = 0
@@ -70,8 +69,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     // the bottom tab strip blur the live content behind them.
     val backdrop = rememberLayerBackdrop()
 
-    AppBackground(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(colors.background)) {
         // Page layer fills the whole screen; the top bar overlays it.
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             when (selectedTab) {
@@ -184,6 +182,5 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 .navigationBarsPadding()
                 .padding(bottom = 22.dp)
         )
-        }
     }
 }

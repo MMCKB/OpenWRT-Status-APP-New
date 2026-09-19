@@ -8,7 +8,6 @@ import androidx.activity.compose.setContent
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
-import com.mmckb.openwrtstatus.ui.theme.AppBackground
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 
 /**
@@ -30,12 +29,10 @@ class FileManagerActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
-                AppBackground {
-                    FileManagerScreen(
-                        ssh = ssh,
-                        onBack = { finish() }
-                    )
-                }
+                FileManagerScreen(
+                    ssh = ssh,
+                    onBack = { finish() }
+                )
             }
         }
     }
