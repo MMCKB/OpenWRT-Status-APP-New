@@ -159,7 +159,7 @@ class PackageClient {
 
         val writes = normalized.map { it.source }.toSet().map { source ->
             val entries = normalized.filter { it.source == source }
-            val quotedSource = quoteShell(source)
+            val quotedSource = quoteShell(source!!)
             if (entries.isEmpty()) {
                 "rm -f $quotedSource"
             } else {
