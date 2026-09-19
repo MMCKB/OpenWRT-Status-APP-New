@@ -1148,7 +1148,7 @@ fun FileManagerScreen(
                     shape = RoundedCornerShape(16.dp),
                     color = colors.surface,
                     border = BorderStroke(1.dp, colors.outline),
-                    modifier = Modifier.widthIn(min = 100.dp)
+                    modifier = Modifier.widthIn(min = 88.dp)
                 ) {
                     Column(Modifier.padding(vertical = 4.dp)) {
                         if (!menuEntry.isDir) {
@@ -1529,8 +1529,8 @@ fun FileManagerScreen(
                         SshFiles.setModifiedTime(ssh, path, epoch)
                         // 回读校验，把真实生效的修改时间反馈出来（防止个别
                         // BusyBox 的 touch -t 静默回落到当前时间）。
-                        val actual = SshFiles.stat(ssh, path).modifiedAt
-                        if (kotlin.math.abs(actual - epoch) > 90) {
+                        val actual = SshFiles.statExact(ssh, path)?.modifiedAt
+                        if (actual != null && kotlin.math.abs(actual - epoch) > 90) {
                             throw com.mmckb.openwrtstatus.data.ssh.SshFileException(
                                 "修改时间未生效（实际为 ${mtimeFormat.format(java.util.Date(actual * 1000))}）。"
                             )
@@ -1678,7 +1678,7 @@ private fun MenuLabel(label: String, tint: androidx.compose.ui.graphics.Color, o
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp)
+            .padding(horizontal = 10.dp, vertical = 7.dp)
     )
 }
 

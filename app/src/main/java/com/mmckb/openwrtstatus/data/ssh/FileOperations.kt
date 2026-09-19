@@ -129,16 +129,74 @@ object SshFiles {
         run(config, if (isDir) "rm -rf ${quote(shellSafe(path))}" else "rm -f ${quote(shellSafe(path))}")
     }
 
-    /** Reads permissions (`755`), owner (`user:group`) and mtime (epoch seconds). */
-    suspend fun stat(config: SshConfig, path: String): FileStatInfo {
+    /**
+     * Reads permissions, owner and mtime via `stat -c`. Returns null when the router's
+     * shell has no `stat` applet (common on slim BusyBox builds) — use [stat] for the
+     * auto-fallback version.
+     */
+    suspend fun statExact(config: SshConfig, path: String): FileStatInfo? = try {
         val out = exec(config, "stat -c '%a|%U|%G|%Y' ${quote(shellSafe(path))}").trim()
         val parts = out.split('|')
-        if (parts.size < 4) throw SshFileException("无法读取文件属性。")
-        return FileStatInfo(
-            perms = parts[0],
-            owner = "${parts[1]}:${parts[2]}",
-            modifiedAt = parts[3].toLongOrNull() ?: 0L
-        )
+        if (parts.size >= 4 && parts[0].isNotEmpty()) {
+            FileStatInfo(parts[0], "${parts[1]}:${parts[2]}", parts[3].toLongOrNull() ?: 0L)
+        } else {
+            null
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Reads permissions/owner/mtime, falling back to `ls -ld` parsing when the
+     * BusyBox build has no `stat` applet. The fallback mtime has minute precision
+     * (seconds are unknown), which is fine for prefilling edit dialogs.
+     */
+    suspend fun stat(config: SshConfig, path: String): FileStatInfo {
+        statExact(config, path)?.let { return it }
+        val line = exec(config, "ls -ld ${quote(shellSafe(path))}").trim()
+        val tokens = line.split(' ').filter { it.isNotEmpty() }
+        if (tokens.size < 8) throw SshFileException("无法读取文件属性。")
+        val perms = lsPermsToOctal(tokens[0])
+        val owner = "${tokens.getOrElse(2) { "root" }}:${tokens.getOrElse(3) { "root" }}"
+        val modifiedAt = runCatching {
+            parseLsDate(tokens[5], tokens[6], tokens[7])
+        }.getOrDefault(0L)
+        return FileStatInfo(perms, owner, modifiedAt)
+    }
+
+    /** `-rw-r--r--` style string → octal like `644` (4 digits with setuid/setgid/sticky). */
+    private fun lsPermsToOctal(perms: String): String {
+        if (perms.length < 10) return "644"
+        val setuid = perms[3] in "sS"
+        val setgid = perms[6] in "sS"
+        val sticky = perms[9] in "tT"
+        fun triple(read: Char, write: Char, execOr: Char, exec: Char): Int =
+            (if (read == 'r') 4 else 0) + (if (write == 'w') 2 else 0) +
+                (if (execOr == exec || execOr == 'x') 1 else 0)
+        val user = triple(perms[1], perms[2], perms[3], 's')
+        val group = triple(perms[4], perms[5], perms[6], 's')
+        val other = triple(perms[7], perms[8], perms[9], 't')
+        val special = (if (setuid) 4 else 0) + (if (setgid) 2 else 0) + (if (sticky) 1 else 0)
+        return if (special > 0) "$special$user$group$other" else "$user$group$other"
+    }
+
+    /** BusyBox `ls -l` date ("Sep 19 14:30" or "Sep 19 2025") → epoch seconds. */
+    private fun parseLsDate(month: String, day: String, timeOrYear: String): Long {
+        val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        val m = months.indexOf(month.take(3)).coerceAtLeast(0)
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        if (':' in timeOrYear) {
+            val (hh, mm) = timeOrYear.split(':').map { it.toIntOrNull() ?: 0 }
+            cal.set(cal.get(java.util.Calendar.YEAR), m, day.toIntOrNull() ?: 1, hh, mm, 0)
+            // ls 省略了年份；结果在未来超过一天时按上一年处理。
+            if (cal.timeInMillis > System.currentTimeMillis() + 86_400_000L) {
+                cal.add(java.util.Calendar.YEAR, -1)
+            }
+        } else {
+            cal.set(timeOrYear.toIntOrNull() ?: cal.get(java.util.Calendar.YEAR), m, day.toIntOrNull() ?: 1, 0, 0, 0)
+        }
+        return cal.timeInMillis / 1000
     }
 
     /** Sets permissions; [perms] must be 3-4 octal digits (validated by the caller). */
