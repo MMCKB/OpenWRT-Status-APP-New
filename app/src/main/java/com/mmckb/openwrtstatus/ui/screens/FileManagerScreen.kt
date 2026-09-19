@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
@@ -89,6 +90,7 @@ import com.mmckb.openwrtstatus.data.ssh.SshFileException
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatRate
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
@@ -96,6 +98,7 @@ import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 private const val SEARCH_LIMIT = 200
 private val ARCHIVE_EXTENSIONS = listOf(".zip", ".tar", ".tgz", ".tar.gz", ".tar.bz2", ".tar.xz")
@@ -1546,11 +1549,11 @@ private fun FileRow(
                     Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
                 }
                 if (menuOpen) {
-                    // 应用弹层：MD3 尺寸与出入场动画（出现弹簧缩放淡入，消失反向收起）。
+                    // 应用弹层：MD3 尺寸与出入场动画，并按官方预测性返回规范——
+                    // 返回手势中跟随进度缩放淡出，提交关闭，取消回弹。
                     Popup(
                         alignment = Alignment.BottomEnd,
                         onDismissRequest = {
-                            // 点击外部关闭也走消失动画。
                             menuClosing = true
                         },
                         properties = PopupProperties(focusable = true)
@@ -1577,12 +1580,30 @@ private fun FileRow(
                                 pendingMenuAction = null
                             }
                         }
+                        PredictiveBackHandler(enabled = !menuClosing) { events ->
+                            try {
+                                events.collect { ev ->
+                                    val p = PredictiveBackEasing.transform(ev.progress).coerceIn(0f, 1f)
+                                    appearScale.snapTo(1f - 0.12f * p)
+                                    appearAlpha.snapTo(1f - 0.6f * p)
+                                }
+                                menuClosing = true
+                            } catch (_: CancellationException) {
+                                scope.launch {
+                                    appearScale.animateTo(
+                                        1f,
+                                        spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = 0.001f)
+                                    )
+                                    appearAlpha.animateTo(1f, tween(120))
+                                }
+                            }
+                        }
                         Surface(
                             shape = RoundedCornerShape(20.dp),
                             color = colors.surface,
                             border = BorderStroke(1.dp, colors.outline),
                             modifier = Modifier
-                                .widthIn(min = 130.dp)
+                                .widthIn(min = 118.dp)
                                 .graphicsLayer {
                                     scaleX = appearScale.value
                                     scaleY = appearScale.value
@@ -1590,7 +1611,7 @@ private fun FileRow(
                                     transformOrigin = TransformOrigin(1f, 0f)
                                 }
                         ) {
-                            Column(Modifier.padding(vertical = 6.dp)) {
+                            Column(Modifier.padding(vertical = 4.dp)) {
                                 fun close(action: () -> Unit) {
                                     menuClosing = true
                                     // 菜单收起后再执行动作，避免动画期间列表已变化。
@@ -1624,7 +1645,7 @@ private fun PopupLabel(label: String, tint: androidx.compose.ui.graphics.Color, 
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     )
 }
 

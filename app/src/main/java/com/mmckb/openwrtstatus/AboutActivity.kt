@@ -2,6 +2,7 @@ package com.mmckb.openwrtstatus
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
@@ -10,6 +11,7 @@ import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 class AboutActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 AboutScreen(onBack = { finish() })
