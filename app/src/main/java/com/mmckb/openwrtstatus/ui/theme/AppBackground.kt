@@ -118,6 +118,7 @@ fun copyPickedImageToBackground(context: android.content.Context, uri: android.n
         val targetH = (metrics.heightPixels * 1.5f).toInt()
         // 第一遍只读图片尺寸：inJustDecodeBounds 模式下 decodeStream 固定返回 null，
         // 不能把返回值当作失败依据。
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val boundsStream = context.contentResolver.openInputStream(uri) ?: return false
         boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false
