@@ -72,7 +72,10 @@ private data class ToastData(
  * （自动消失计时暂停），松手后未过阈值则回弹，过阈值则滑走消失。
  */
 @Composable
-fun ConnectionToastHost(modifier: Modifier = Modifier) {
+fun ConnectionToastHost(
+    modifier: Modifier = Modifier,
+    slideFromTop: Boolean = false
+) {
     val status by ConnectionMonitor.status.collectAsState()
     var toast by remember { mutableStateOf<ToastData?>(null) }
     var lastToast by remember { mutableStateOf(ToastData("路由器连接已断开", OfflineColor, true)) }
@@ -106,10 +109,22 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
         }
     }
 
+    // 横屏：从顶部滑入滑出；竖屏：保持从右侧滑入滑出。
+    val enter = if (slideFromTop) {
+        androidx.compose.animation.slideInVertically(initialOffsetY = { -it }) + fadeIn()
+    } else {
+        slideInHorizontally(initialOffsetX = { it }) + fadeIn()
+    }
+    val exit = if (slideFromTop) {
+        androidx.compose.animation.slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+    } else {
+        slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+    }
+
     AnimatedVisibility(
         visible = toast != null,
-        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+        enter = enter,
+        exit = exit,
         modifier = modifier
             .padding(end = 16.dp)
             .offset(y = 40.dp)

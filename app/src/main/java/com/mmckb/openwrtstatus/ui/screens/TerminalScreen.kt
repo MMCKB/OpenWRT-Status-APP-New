@@ -4,13 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,10 +47,14 @@ import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
  * Remote shell over SSH. The connection lives in the top bar (connect / disconnect
  * button); everything below is a rounded pure-black terminal area with the command
  * input sitting above the floating tab bar.
+ *
+ * [hideOutput]：横屏双栏时隐藏左侧的输出区（输出渲染在右栏的
+ * [TerminalOutputPane]），输入框与发送按钮位置保持不变。
  */
 @Composable
 fun TerminalScreen(
     viewModel: RouterViewModel,
+    hideOutput: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.terminal.state.collectAsStateWithLifecycle()
@@ -79,29 +87,37 @@ fun TerminalScreen(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(Color.Black, AppShapes.card)
-                .padding(14.dp)
-        ) {
-            Text(
-                text = output.ifEmpty { "未连接。点击右上角「连接」开始 SSH 会话。" },
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
-                color = Color(0xFFE6E8EB),
-                modifier = Modifier.verticalScroll(scrollState)
-            )
+        if (!hideOutput) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(Color.Black, AppShapes.card)
+                    .padding(14.dp)
+            ) {
+                Text(
+                    text = output.ifEmpty { "未连接。点击右上角「连接」开始 SSH 会话。" },
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = Color(0xFFE6E8EB),
+                    modifier = Modifier.verticalScroll(scrollState)
+                )
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 输入框与发送按钮同高同圆角。
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
                 singleLine = true,
+                shape = RoundedCornerShape(14.dp),
                 placeholder = {
                     Text("输入命令后回车", style = MaterialTheme.typography.bodySmall)
                 },
@@ -118,11 +134,60 @@ fun TerminalScreen(
                         input = ""
                     }
                 },
-                enabled = connected
+                enabled = connected,
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+                modifier = Modifier.height(52.dp)
             ) { Text("发送") }
         }
 
         // Keeps the input clear of the floating glass tab pill.
         Spacer(Modifier.height(76.dp))
+    }
+}
+
+/** 横屏右栏的独立命令输出面板（与左侧共享同一个 SSH 会话流）。 */
+@Composable
+fun TerminalOutputPane(
+    viewModel: RouterViewModel,
+    modifier: Modifier = Modifier
+) {
+    val output by viewModel.terminal.output.collectAsStateWithLifecycle()
+    val scrollState = rememberScrollState()
+    val colors = LocalAppColors.current
+
+    LaunchedEffect(output) {
+        scrollState.animateScrollTo(scrollState.maxValue)
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(top = rememberTopBarPadding())
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(
+            "终端输出",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface,
+            modifier = Modifier.padding(bottom = 10.dp)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black, AppShapes.card)
+                .padding(14.dp)
+        ) {
+            Text(
+                text = output.ifEmpty { "未连接。在左侧点击「连接」开始 SSH 会话。" },
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = Color(0xFFE6E8EB),
+                modifier = Modifier.verticalScroll(scrollState)
+            )
+        }
     }
 }
