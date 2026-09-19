@@ -61,6 +61,7 @@ import com.mmckb.openwrtstatus.ui.components.TabItem
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
 import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
+import com.mmckb.openwrtstatus.ui.screens.DetailScreen
 import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
