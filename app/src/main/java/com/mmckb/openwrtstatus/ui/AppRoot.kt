@@ -42,6 +42,7 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
+import com.mmckb.openwrtstatus.PackageManagerActivity
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
@@ -90,6 +91,12 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     modifier = Modifier.fillMaxSize()
                 )
                 TAB_TOOL -> ToolScreen(
+                    onOpenPackageManager = {
+                        context.startActivity(
+                            Intent(context, PackageManagerActivity::class.java)
+                                .putExtra(PackageManagerActivity.EXTRA_CONFIG, config)
+                        )
+                    },
                     onOpenFileManager = {
                         context.startActivity(
                             Intent(context, FileManagerActivity::class.java)
