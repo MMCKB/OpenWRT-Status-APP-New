@@ -21,6 +21,7 @@ import com.mmckb.openwrtstatus.ui.formatRate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.delay
 import kotlin.math.max
 
@@ -73,6 +74,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
     private var previousTime = 0L
+    private val refreshMutex = Mutex()
 
     init {
         refresh()
@@ -92,6 +94,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         if (_uiState.value !is StatusUiState.Success) {
             _uiState.value = StatusUiState.Loading
         }
+        if (!refreshMutex.tryLock()) return@launch
         try {
                 val status = repository.fetchStatus(cfg)
                 val now = System.currentTimeMillis()
@@ -190,6 +193,8 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 _uiState.value = StatusUiState.Error(e.message ?: "未知错误", null)
                 ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
+            } finally {
+                refreshMutex.unlock()
             }
         }
     }
