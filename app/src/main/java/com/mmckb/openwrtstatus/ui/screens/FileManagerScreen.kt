@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1150,7 +1151,13 @@ fun FileManagerScreen(
                     border = BorderStroke(1.dp, colors.outline),
                     modifier = Modifier.widthIn(min = 88.dp)
                 ) {
-                    Column(Modifier.padding(vertical = 2.dp)) {
+                    // IntrinsicSize.Max：菜单宽度收缩到最宽菜单项的实际宽度，
+                    // 而不是被页面层的最大约束撑成整屏宽。
+                    Column(
+                        Modifier
+                            .width(IntrinsicSize.Max)
+                            .padding(vertical = 2.dp)
+                    ) {
                         if (!menuEntry.isDir) {
                             MenuLabel("查看 / 编辑", colors.onSurface) {
                                 runMenuAction { openEntry(joinPath(currentPath, menuEntry.name), menuEntry.name, false) }
