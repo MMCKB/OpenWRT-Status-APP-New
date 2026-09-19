@@ -84,12 +84,17 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
     val dismissPx = with(density) { 96.dp.toPx() }
 
     LaunchedEffect(status) {
-        toast = when {
+        val next = when {
             previous == ConnectionMonitor.Status.Online && status == ConnectionMonitor.Status.Offline ->
                 ToastData("路由器连接已断开", OfflineColor, true)
             previous == ConnectionMonitor.Status.Offline && status == ConnectionMonitor.Status.Online ->
                 ToastData("路由器已连接", OnlineColor, false)
-            else -> toast
+            else -> null
+        }
+        if (next != null) {
+            lastToast = next
+            toast = next
+            if (!isHeld) dragX.snapTo(0f)
         }
         previous = status
     }
@@ -130,7 +135,6 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
                             scope.launch {
                                 if (abs(dragX.value) > dismissPx) {
                                     toast = null
-                                    dragX.snapTo(0f)
                                 } else {
                                     dragX.animateTo(
                                         0f,
@@ -139,7 +143,12 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
                                 }
                             }
                         },
-                        onDragCancel = { isHeld = false }
+                        onDragCancel = {
+                            isHeld = false
+                            scope.launch {
+                                dragX.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                            }
+                        }
                     )
                 }
         ) {
