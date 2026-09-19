@@ -539,6 +539,16 @@ fun FileManagerScreen(
         }
     }
 
+    // 输入防抖后自动递归搜索：结果覆盖当前目录及全部子文件夹。
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isBlank()) {
+            searchHits = null
+        } else {
+            kotlinx.coroutines.delay(600)
+            runSearch()
+        }
+    }
+
     fun pasteClipboard() {
         val clip = clipboard ?: return
         runOp(if (clip.isMove) "已移动 ${clip.names.size} 项。" else "已复制 ${clip.names.size} 项。") {
@@ -849,7 +859,7 @@ fun FileManagerScreen(
                 }
             }
 
-            // 紧凑圆角搜索条：输入即时过滤当前目录，键盘搜索键递归查找。
+            // 紧凑圆角搜索条：输入即时递归搜索当前目录下的全部内容（含子文件夹）。
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = colors.surfaceVariant,

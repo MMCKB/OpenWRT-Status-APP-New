@@ -53,8 +53,53 @@ class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
             rpc.call(endpoint, token, "network.wireless", "status", EMPTY, config.allowInsecureTls)
         }.onFailure { warnings += "无线状态暂不可用。" }.getOrElse { JsonNull }
 
-        return buildStatus(board, info, dump, devices, wireless, warnings)
+        var result = buildStatus(board, info, dump, devices, wireless, warnings)
+
+        // 部分设备（如 25.x NSS 构建）不提供 network.wireless status，但有 UCI 无线配置：
+        // 无线列表为空时回退解析 /etc/config/wireless 的 wifi-iface 段（同旧版方案），
+        // 并撤掉「无线状态暂不可用」警告。
+        if (result.wireless.isEmpty()) {
+            runCatching {
+                rpc.call(
+                    endpoint,
+                    token,
+                    "uci",
+                    "get",
+                    buildJsonObject { put("config", JsonPrimitive("wireless")) },
+                    config.allowInsecureTls
+                )
+            }.getOrNull()?.let { uciPayload ->
+                val fallback = readWirelessUciFallback(uciPayload)
+                if (fallback.isNotEmpty()) {
+                    result = result.copy(
+                        wireless = fallback,
+                        warnings = result.warnings.filterNot { it == "无线状态暂不可用。" }
+                    )
+                }
+            }
+        }
+
+        return result
     }
+
+    /** 从 `uci get wireless` 的配置解析无线接口（只读回退：SSID/开关/接口名）。 */
+    private fun readWirelessUciFallback(payload: JsonElement): List<WirelessInfo> {
+        val root = payload.obj() ?: return emptyList()
+        val values = (root["values"] ?: payload).obj() ?: return emptyList()
+        return values.entries.mapNotNull { (sectionName, el) ->
+            val section = el.obj() ?: return@mapNotNull null
+            val sectionType = (section[".type"] as? JsonPrimitive)?.content
+                ?: (section["type"] as? JsonPrimitive)?.content
+            val ssid = (section["ssid"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+            if (sectionType != "wifi-iface" || ssid == null) return@mapNotNull null
+            val disabled = (section["disabled"] as? JsonPrimitive)?.content == "1"
+            val name = (section["ifname"] as? JsonPrimitive)?.content
+                ?: (section["device"] as? JsonPrimitive)?.content
+                ?: (section[".name"] as? JsonPrimitive)?.content
+                ?: sectionName
+            val channel = (section["channel"] as? JsonPrimitive)?.content ?: "配置"
+            WirelessInfo(name = name, ssid = ssid, up = !disabled, channel = channel, clients = null)
+        }
 
     private fun buildStatus(
         board: JsonElement,
@@ -196,7 +241,21 @@ class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     private fun readWireless(payload: JsonElement): List<WirelessInfo> {
         val root = payload.obj() ?: return emptyList()
-        return root.entries.flatMap { (radioName, radioValue) ->
+        // 兼容不同固件的外层包装：radios/wireless/radio 键或直接是 radio map。
+        val candidates = listOf(root["radios"], root["wireless"], root["radio"], payload)
+        val radiosElement = candidates.firstOrNull { candidate ->
+            when (candidate) {
+                is JsonArray -> candidate.isNotEmpty()
+                is JsonObject -> candidate.isNotEmpty()
+                else -> false
+            }
+        } ?: payload
+        val radioEntries: List<Pair<String, JsonElement>> = when (radiosElement) {
+            is JsonArray -> radiosElement.mapIndexed { index, value -> "radio$index" to value }
+            is JsonObject -> radiosElement.entries.map { it.key to it.value }
+            else -> emptyList()
+        }
+        return radioEntries.flatMap { (radioName, radioValue) ->
             val radio = radioValue.obj() ?: return@flatMap emptyList()
             val radioConfig = radio["config"].obj()
             val rawInterfaces = radio["interfaces"] ?: radio["interface"]
@@ -224,10 +283,14 @@ class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 val up = !disabled && (state?.truthy() ?: hasConfig)
 
                 val stations = item["stations"] as? JsonArray
+                val assocArray = item["assoclist"] as? JsonArray
                 val assoc = item["assoclist"].obj()
+                val clientsArray = item["clients"] as? JsonArray
                 val clients = when {
                     stations != null -> stations.size
+                    assocArray != null -> assocArray.size
                     assoc != null -> assoc.size
+                    clientsArray != null -> clientsArray.size
                     else -> null
                 }
 
