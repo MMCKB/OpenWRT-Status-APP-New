@@ -23,9 +23,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.remote.ApkRepository
 import com.mmckb.openwrtstatus.data.remote.MountInfo
 import com.mmckb.openwrtstatus.data.remote.PackageClient
 import com.mmckb.openwrtstatus.data.remote.PkgInfo
@@ -47,8 +51,8 @@ import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
-import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.formatBytes
+import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -58,9 +62,10 @@ import kotlinx.coroutines.withContext
 private const val UPLOAD_TMP_PATH = "/tmp/upload.apk"
 
 /**
- * 软件包管理页（二级页，独立 Activity）：与 LuCI 的 package-manager 功能对齐——
- * 已安装/可用/可升级三个视图、过滤、更新列表、按名安装、上传安装、
- * 删除/升级，操作结果显示，以及根分区存储占用进度条。
+ * 软件包管理页（二级页，独立 Activity）：与旧版 OpenWRT-Status-APP 相同的方式——
+ * 通过 SSH 直接执行原生 apk 命令（info -v / list -u / search / add / del /
+ * upgrade / update），提供已安装/可用/可升级三个视图、过滤、按名安装、
+ * 上传安装、软件源管理，以及根分区存储占用进度条。
  */
 @Composable
 fun PackageManagerScreen(
@@ -77,6 +82,7 @@ fun PackageManagerScreen(
     var mode by remember { mutableStateOf("installed") }
     var installed by remember { mutableStateOf<List<PkgInfo>?>(null) }
     var available by remember { mutableStateOf<List<PkgInfo>?>(null) }
+    var upgradable by remember { mutableStateOf<List<PkgInfo>?>(null) }
     var storage by remember { mutableStateOf<MountInfo?>(null) }
     var filter by remember { mutableStateOf("") }
     var installName by remember { mutableStateOf("") }
@@ -92,6 +98,11 @@ fun PackageManagerScreen(
     var pendingRemove by remember { mutableStateOf<PkgInfo?>(null) }
     var confirmInstallName by remember { mutableStateOf<String?>(null) }
 
+    // 软件源管理
+    var showSources by remember { mutableStateOf(false) }
+    var sources by remember { mutableStateOf<List<ApkRepository>?>(null) }
+    var sourcesBusy by remember { mutableStateOf(false) }
+
     fun setMsg(text: String?, isError: Boolean) {
         message = text
         messageIsError = isError
@@ -101,23 +112,41 @@ fun PackageManagerScreen(
         scope.launch {
             busy = true
             try {
-                // 三个请求并行（各自独立 SSH 会话），先到先显示，大幅缩短加载时间。
+                // 四路并行：已安装、可升级、存储、可用（最大最慢的一路单独跑）。
                 val installedJob = scope.async {
                     runCatching { withContext(Dispatchers.IO) { client.listInstalled(ssh) } }
                 }
-                val availableJob = scope.async {
-                    runCatching { withContext(Dispatchers.IO) { client.listAvailable(ssh) } }
+                val upgradableJob = scope.async {
+                    runCatching { withContext(Dispatchers.IO) { client.listUpgradable(ssh) } }
                 }
                 val storageJob = scope.async {
                     runCatching { withContext(Dispatchers.IO) { client.mountInfo(ssh) } }
                 }
-                installed = installedJob.await().getOrElse { installed }
-                available = availableJob.await().getOrElse { available }
-                storage = storageJob.await().getOrElse { storage }
-                if (installedJob.await().isFailure || availableJob.await().isFailure) {
-                    setMsg("部分列表读取失败，请重试或检查 SSH 连接。", true)
-                } else {
-                    setMsg(null, false)
+                val availableJob = scope.async {
+                    runCatching { withContext(Dispatchers.IO) { client.listAvailable(ssh, emptySet()) } }
+                }
+
+                val installedResult = installedJob.await()
+                installed = installedResult.getOrNull()
+                upgradable = upgradableJob.await().getOrNull()
+                storage = storageJob.await().getOrNull()
+                val installedNames = installed.orEmpty().map { it.name }.toSet()
+                val availableResult = availableJob.await()
+                // 可用列表到达后，用已安装名单就地标记安装状态。
+                available = availableResult.getOrNull()?.map {
+                    it.copy(installed = installedNames.contains(it.name))
+                }
+
+                val failures = listOf(
+                    installedResult,
+                    upgradableJob.await(),
+                    storageJob.await(),
+                    availableResult
+                ).count { it.isFailure }
+                when {
+                    failures == 4 -> setMsg("读取软件包列表失败，请检查 SSH 连接。", true)
+                    failures > 0 -> setMsg("部分信息读取失败，请重试。", true)
+                    else -> setMsg(null, false)
                 }
             } finally {
                 busy = false
@@ -125,24 +154,29 @@ fun PackageManagerScreen(
         }
     }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (sshEnabled) loadLists()
-    }
-
     fun runOp(action: String, pkgs: List<String>, info: String) {
         scope.launch {
             busy = true
             opRunning = true
             opResult = null
+            opDialogHidden = false
             reloadOnOpClose = true
             try {
-                val result = withContext(Dispatchers.IO) { client.op(ssh, action, pkgs) }
+                val result = withContext(Dispatchers.IO) {
+                    when (action) {
+                        "update" -> client.update(ssh)
+                        "install" -> client.install(ssh, pkgs.first())
+                        "remove" -> client.remove(ssh, pkgs.first())
+                        "upgrade-all" -> client.upgradeAll(ssh)
+                        else -> client.upgradePackage(ssh, pkgs.first())
+                    }
+                }
                 opRunning = false
                 opResult = result
-                // 用户已选「后台等待」时不再弹结果框，用消息条反馈并自动刷新。
                 if (opDialogHidden) {
+                    // 用户已选「后台等待」：用消息条反馈并自动刷新。
                     setMsg(
-                        if (result.success) "$info 完成。" else "${info}失败：${result.stderr?.lineSequence()?.firstOrNull() ?: "退出码 ${result.code}"}",
+                        if (result.success) "$info 完成。" else "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
                         !result.success
                     )
                     loadLists()
@@ -186,8 +220,9 @@ fun PackageManagerScreen(
                     opResult = null
                     reloadOnOpClose = true
                     val result = withContext(Dispatchers.IO) {
-                        client.op(ssh, "install", listOf(UPLOAD_TMP_PATH))
+                        client.install(ssh, UPLOAD_TMP_PATH)
                     }
+                    opRunning = false
                     opResult = result
                 } catch (e: Exception) {
                     setMsg(e.message ?: "上传安装失败。", true)
@@ -205,11 +240,7 @@ fun PackageManagerScreen(
 
     val installedList = installed.orEmpty()
     val availableList = available.orEmpty()
-    val updatesList = installedList.filter { inst ->
-        val avail = availableList.firstOrNull { it.name == inst.name }
-        avail != null && avail.version != null && inst.version != null &&
-            PackageClient.compareVersion(avail.version!!, inst.version!!) > 0
-    }
+    val updatesList = upgradable.orEmpty()
     val listForMode = when (mode) {
         "available" -> availableList
         "updates" -> updatesList
@@ -235,15 +266,31 @@ fun PackageManagerScreen(
             AppBackButton(onBack = onBack)
             Spacer(Modifier.weight(1f))
             TextButton(
-                onClick = {
-                    runOp("update", emptyList(), "更新列表")
-                },
+                onClick = { runOp("update", emptyList(), "更新列表") },
                 enabled = !busy && sshEnabled
             ) { Text("更新列表") }
             TextButton(
                 onClick = { uploadLauncher.launch(arrayOf("*/*")) },
                 enabled = !busy && sshEnabled
             ) { Text("上传安装") }
+            TextButton(
+                onClick = {
+                    showSources = true
+                    if (sources == null) {
+                        sourcesBusy = true
+                        scope.launch {
+                            try {
+                                sources = withContext(Dispatchers.IO) { client.repositoriesSnapshot(ssh) }
+                            } catch (e: Exception) {
+                                setMsg(e.message ?: "读取软件源失败。", true)
+                            } finally {
+                                sourcesBusy = false
+                            }
+                        }
+                    }
+                },
+                enabled = !busy && sshEnabled
+            ) { Text("软件源") }
         }
         Text(
             "软件包",
@@ -346,8 +393,7 @@ fun PackageManagerScreen(
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(top = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
+                    .padding(top = 6.dp)
             ) {
                 if (filtered.isEmpty() && !busy) {
                     item {
@@ -363,11 +409,6 @@ fun PackageManagerScreen(
                     PackageRow(
                         pkg = pkg,
                         mode = mode,
-                        newVersion = if (mode == "updates") {
-                            availableList.firstOrNull { it.name == pkg.name }?.version
-                        } else {
-                            null
-                        },
                         busy = busy,
                         onRemove = { pendingRemove = pkg },
                         onInstall = { runOp("install", listOf(pkg.name), "安装") },
@@ -415,6 +456,90 @@ fun PackageManagerScreen(
         )
     }
 
+    // 软件源管理（读取 distfeed / customfeeds，开关启用状态，保存后自动 apk update）。
+    if (showSources) {
+        AppDialog(
+            title = "软件源",
+            confirmLabel = if (sourcesBusy) "保存中…" else "保存",
+            dismissLabel = "关闭",
+            confirmEnabled = !sourcesBusy && sources != null,
+            onConfirm = {
+                val repos = sources.orEmpty()
+                scope.launch {
+                    sourcesBusy = true
+                    try {
+                        withContext(Dispatchers.IO) { client.saveRepositories(ssh, repos) }
+                        setMsg("软件源已保存并更新索引。", false)
+                        showSources = false
+                        loadLists()
+                    } catch (e: Exception) {
+                        setMsg(e.message ?: "保存软件源失败。", true)
+                    } finally {
+                        sourcesBusy = false
+                    }
+                }
+            },
+            onDismiss = { if (!sourcesBusy) showSources = false }
+        ) {
+            if (sources == null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .height(320.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    sources.orEmpty().forEach { repo ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    repo.url,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (repo.enabled) colors.onSurface else colors.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    repo.source?.substringAfterLast('/') ?: "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = repo.enabled,
+                                onCheckedChange = { enabled ->
+                                    sources = sources.orEmpty().map {
+                                        if (it.line == repo.line && it.source == repo.source) {
+                                            it.copy(enabled = enabled)
+                                        } else {
+                                            it
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    Text(
+                        "保存后会备份原文件并自动更新索引；至少保留并启用一个仓库。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+
     // 操作结果弹窗（对应 LuCI 的输出模态框）。
     if ((opRunning && !opDialogHidden) || opResult != null) {
         AppDialog(
@@ -442,14 +567,8 @@ fun PackageManagerScreen(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
-                    val body = listOf(
-                        res.stdout?.takeIf { it.isNotBlank() },
-                        res.stderr?.takeIf { it.isNotBlank() }?.let { "错误输出：\n$it" }
-                    ).filterNotNull().joinToString("\n").ifBlank {
-                        if (res.success) "操作成功完成。" else "操作失败。"
-                    }
                     Text(
-                        body,
+                        res.stdout?.takeIf { it.isNotBlank() } ?: if (res.success) "操作成功完成。" else "操作失败。",
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                         color = if (res.success) colors.onSurface else colors.error,
                         modifier = Modifier
@@ -490,7 +609,7 @@ private fun TabChip(label: String, selected: Boolean, modifier: Modifier = Modif
                 .fillMaxWidth(),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -499,7 +618,6 @@ private fun TabChip(label: String, selected: Boolean, modifier: Modifier = Modif
 private fun PackageRow(
     pkg: PkgInfo,
     mode: String,
-    newVersion: String?,
     busy: Boolean,
     onRemove: () -> Unit,
     onInstall: () -> Unit,
@@ -523,11 +641,7 @@ private fun PackageRow(
                 )
                 Text(
                     buildString {
-                        append(if (mode == "updates" && newVersion != null) {
-                            "${pkg.version ?: "-"} » $newVersion"
-                        } else {
-                            pkg.version ?: "-"
-                        })
+                        append(pkg.version ?: "-")
                         if (pkg.size > 0) append("　·　${formatBytes(pkg.size)}")
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -535,14 +649,22 @@ private fun PackageRow(
                 )
             }
             when (mode) {
-                "available" -> Button(
-                    onClick = onInstall,
-                    enabled = !busy,
-                    shape = AppShapes.pill,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 14.dp, vertical = 4.dp
+                "available" -> if (pkg.installed) {
+                    Text(
+                        "已安装",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.onSurfaceVariant
                     )
-                ) { Text("安装") }
+                } else {
+                    Button(
+                        onClick = onInstall,
+                        enabled = !busy,
+                        shape = AppShapes.pill,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 14.dp, vertical = 4.dp
+                        )
+                    ) { Text("安装") }
+                }
                 "updates" -> Button(
                     onClick = onUpgrade,
                     enabled = !busy,
