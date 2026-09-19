@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
@@ -25,6 +26,7 @@ class FileManagerActivity : ComponentActivity() {
             password = config.sshPassword
         )
 
+        enableEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 FileManagerScreen(

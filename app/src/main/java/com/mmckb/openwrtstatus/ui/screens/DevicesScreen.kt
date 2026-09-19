@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -212,8 +214,8 @@ private fun DeviceCard(
             .fillMaxWidth()
             .clip(AppShapes.card)
     ) {
-        // 右滑露出左侧的编辑、左滑露出右侧的删除：纯色块只画在各自动作槽上，
-        // 两条层都不铺满背景，避免后绘制的层盖住先绘制的层。
+        // 右滑露出左侧的编辑、左滑露出右侧的删除：色块外侧两角与卡片同款圆角，
+        // 露出时与卡片轮廓完全贴合。
         Row(
             modifier = Modifier.matchParentSize(),
             horizontalArrangement = Arrangement.Start,
@@ -224,6 +226,7 @@ private fun DeviceCard(
                 container = SwipeEditColor,
                 iconTint = SwipeEditIconColor,
                 icon = Icons.Filled.Edit,
+                shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
                 progress = revealProgress,
                 modifier = Modifier.width(SwipeActionWidth)
             ) {
@@ -241,6 +244,7 @@ private fun DeviceCard(
                 container = SwipeDeleteColor,
                 iconTint = Color.White,
                 icon = Icons.Filled.Delete,
+                shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
                 progress = revealProgress,
                 modifier = Modifier.width(SwipeActionWidth)
             ) {
@@ -363,6 +367,7 @@ private fun SwipeAction(
     container: Color,
     iconTint: Color,
     icon: ImageVector,
+    shape: Shape,
     progress: Float,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -370,6 +375,7 @@ private fun SwipeAction(
     Box(
         modifier = modifier
             .fillMaxHeight()
+            .clip(shape)
             .background(container)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -391,7 +397,7 @@ private fun SwipeAction(
 
 private val SwipeActionWidth = 72.dp
 
-/** 纯红（删除）与纯黄（编辑）的滑动操作底色，图标颜色随底色定。 */
+/** 纯红（删除）与柔和黄（编辑）的滑动操作底色，图标颜色随底色定。 */
 private val SwipeDeleteColor = Color(0xFFE53935)
-private val SwipeEditColor = Color(0xFFFFEB3B)
+private val SwipeEditColor = Color(0xFFE9C46A)
 private val SwipeEditIconColor = Color(0xFF1A1C1E)

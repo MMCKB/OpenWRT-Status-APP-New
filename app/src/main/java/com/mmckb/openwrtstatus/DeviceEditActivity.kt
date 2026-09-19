@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
@@ -20,6 +21,7 @@ class DeviceEditActivity : ComponentActivity() {
         val isNew = intent.getBooleanExtra(EXTRA_IS_NEW, true)
         val existingNames = intent.getStringArrayListExtra(EXTRA_EXISTING) ?: arrayListOf()
 
+        enableEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 DeviceEditScreen(
