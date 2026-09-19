@@ -51,6 +51,7 @@ import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -84,6 +85,7 @@ fun PackageManagerScreen(
     var messageIsError by remember { mutableStateOf(false) }
 
     var opRunning by remember { mutableStateOf(false) }
+    var opDialogHidden by remember { mutableStateOf(false) }
     var opResult by remember { mutableStateOf<PkgOpResult?>(null) }
     var reloadOnOpClose by remember { mutableStateOf(false) }
 
@@ -99,11 +101,24 @@ fun PackageManagerScreen(
         scope.launch {
             busy = true
             try {
-                installed = withContext(Dispatchers.IO) { client.listInstalled(ssh) }
-                available = withContext(Dispatchers.IO) { client.listAvailable(ssh) }
-                storage = withContext(Dispatchers.IO) { client.mountInfo(ssh) }
-            } catch (e: Exception) {
-                setMsg(e.message ?: "读取软件包列表失败。", true)
+                // 三个请求并行（各自独立 SSH 会话），先到先显示，大幅缩短加载时间。
+                val installedJob = scope.async {
+                    runCatching { withContext(Dispatchers.IO) { client.listInstalled(ssh) } }
+                }
+                val availableJob = scope.async {
+                    runCatching { withContext(Dispatchers.IO) { client.listAvailable(ssh) } }
+                }
+                val storageJob = scope.async {
+                    runCatching { withContext(Dispatchers.IO) { client.mountInfo(ssh) } }
+                }
+                installed = installedJob.await().getOrElse { installed }
+                available = availableJob.await().getOrElse { available }
+                storage = storageJob.await().getOrElse { storage }
+                if (installedJob.await().isFailure || availableJob.await().isFailure) {
+                    setMsg("部分列表读取失败，请重试或检查 SSH 连接。", true)
+                } else {
+                    setMsg(null, false)
+                }
             } finally {
                 busy = false
             }
@@ -122,10 +137,15 @@ fun PackageManagerScreen(
             reloadOnOpClose = true
             try {
                 val result = withContext(Dispatchers.IO) { client.op(ssh, action, pkgs) }
+                opRunning = false
                 opResult = result
-                if (!result.success) {
-                    // 失败信息保留在结果弹窗里展示。
-                    setMsg(null, false)
+                // 用户已选「后台等待」时不再弹结果框，用消息条反馈并自动刷新。
+                if (opDialogHidden) {
+                    setMsg(
+                        if (result.success) "$info 完成。" else "${info}失败：${result.stderr?.lineSequence()?.firstOrNull() ?: "退出码 ${result.code}"}",
+                        !result.success
+                    )
+                    loadLists()
                 }
             } catch (e: Exception) {
                 opRunning = false
@@ -137,9 +157,14 @@ fun PackageManagerScreen(
         }
     }
 
-    fun closeOpAndReload() {
-        opResult = null
-        if (reloadOnOpClose) loadLists()
+    fun closeOpDialog() {
+        if (opRunning) {
+            // 「后台等待」：隐藏弹窗，操作继续在后台执行。
+            opDialogHidden = true
+        } else {
+            opResult = null
+            if (reloadOnOpClose) loadLists()
+        }
     }
 
     val uploadLauncher = rememberLauncherForActivityResult(
@@ -157,6 +182,7 @@ fun PackageManagerScreen(
                     withContext(Dispatchers.IO) { SshFiles.upload(ssh, UPLOAD_TMP_PATH, bytes) }
                     busy = false
                     opRunning = true
+                    opDialogHidden = false
                     opResult = null
                     reloadOnOpClose = true
                     val result = withContext(Dispatchers.IO) {
@@ -390,13 +416,13 @@ fun PackageManagerScreen(
     }
 
     // 操作结果弹窗（对应 LuCI 的输出模态框）。
-    if (opRunning || opResult != null) {
+    if ((opRunning && !opDialogHidden) || opResult != null) {
         AppDialog(
             title = "软件包操作",
             confirmLabel = if (opRunning) "后台等待" else "关闭",
             dismissLabel = "",
-            onConfirm = { closeOpAndReload() },
-            onDismiss = { closeOpAndReload() }
+            onConfirm = { closeOpDialog() },
+            onDismiss = { closeOpDialog() }
         ) {
             if (opRunning) {
                 Row(
