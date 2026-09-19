@@ -95,7 +95,6 @@ fun PackageManagerScreen(
     var backend by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf("") }
     var showFilter by remember { mutableStateOf(false) }
-    var installName by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
@@ -103,6 +102,7 @@ fun PackageManagerScreen(
     var availableLoading by remember { mutableStateOf(false) }
     var upgradableLoading by remember { mutableStateOf(false) }
     var storageLoading by remember { mutableStateOf(false) }
+    var opInfo by remember { mutableStateOf("") }
 
     var opRunning by remember { mutableStateOf(false) }
     var opDialogHidden by remember { mutableStateOf(false) }
@@ -170,6 +170,7 @@ fun PackageManagerScreen(
     }
 
     fun runOp(action: String, pkgs: List<String>, info: String) {
+        opInfo = info
         scope.launch {
             busy = true
             opRunning = true
@@ -281,6 +282,24 @@ fun PackageManagerScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
+            Spacer(Modifier.width(8.dp))
+            // 搜索按钮：纯色椭圆实心，比其它按钮短一些。
+            Surface(
+                onClick = {
+                    showFilter = !showFilter
+                    if (!showFilter) filter = ""
+                },
+                enabled = sshEnabled,
+                shape = AppShapes.pill,
+                color = colors.primary,
+                contentColor = colors.onPrimary
+            ) {
+                Icon(
+                    Icons.Outlined.Search,
+                    contentDescription = "搜索",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp).size(18.dp)
+                )
+            }
             Spacer(Modifier.weight(1f))
             TextButton(
                 onClick = { runOp("update", emptyList(), "更新列表") },
@@ -309,12 +328,43 @@ fun PackageManagerScreen(
                 enabled = !busy && sshEnabled
             ) { Text("软件源") }
         }
-        Text(
-            "软件包",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onSurface
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "软件包",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.weight(1f))
+            // 更新列表后台执行时：标题右侧的实心胶囊状态（转圈 + 文案）。
+            androidx.compose.animation.AnimatedVisibility(
+                visible = opRunning && opDialogHidden,
+                enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut()
+            ) {
+                Surface(
+                    shape = AppShapes.pill,
+                    color = colors.primary,
+                    contentColor = colors.onPrimary
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.onPrimary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "正在$opInfo",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
+        }
 
         message?.let {
             Text(
@@ -354,30 +404,24 @@ fun PackageManagerScreen(
                 }
             }
 
-            // 视图切换 + 搜索开关
+            // 视图切换
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 TabChip("已安装 ${installedList.size}", mode == "installed", Modifier.weight(1f)) { mode = "installed" }
                 TabChip("可用 ${availableList.size}", mode == "available", Modifier.weight(1f)) { mode = "available" }
                 TabChip("可升级 ${updatesList.size}", mode == "updates", Modifier.weight(1f)) { mode = "updates" }
-                IconButton(onClick = {
-                    showFilter = !showFilter
-                    if (!showFilter) filter = ""
-                }) {
-                    Icon(
-                        Icons.Outlined.Search,
-                        contentDescription = "搜索",
-                        tint = if (showFilter) colors.primary else colors.onSurfaceVariant
-                    )
-                }
             }
-            // 紧凑圆角搜索框：点搜索图标后展开。
-            if (showFilter) {
+            // 紧凑圆角搜索/安装框：点搜索胶囊后展开收起（带动画）。
+            // 可用视图下，输入的内容既是过滤条件也可以直接安装。
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showFilter,
+                enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut()
+            ) {
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = colors.surfaceVariant,
@@ -401,7 +445,7 @@ fun PackageManagerScreen(
                         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                             if (filter.isEmpty()) {
                                 Text(
-                                    "搜索",
+                                    if (mode == "available") "搜索，或输入包名安装" else "搜索",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colors.onSurfaceVariant
                                 )
@@ -424,28 +468,18 @@ fun PackageManagerScreen(
                                 )
                             }
                         }
+                        if (mode == "available") {
+                            Spacer(Modifier.width(6.dp))
+                            Button(
+                                onClick = { confirmInstallName = filter.trim() },
+                                enabled = filter.isNotBlank() && !busy,
+                                shape = AppShapes.pill,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 12.dp, vertical = 4.dp
+                                )
+                            ) { Text("安装") }
+                        }
                     }
-                }
-            }
-            if (mode == "available") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = installName,
-                        onValueChange = { installName = it },
-                        singleLine = true,
-                        placeholder = { Text("输入包名或 URL 安装") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = { confirmInstallName = installName.trim() },
-                        enabled = !busy && installName.isNotBlank()
-                    ) { Text("安装") }
                 }
             }
 
@@ -526,15 +560,15 @@ fun PackageManagerScreen(
             confirmLabel = "安装",
             onConfirm = {
                 confirmInstallName = null
-                installName = ""
                 runOp("install", listOf(nameOrUrl), "安装")
             },
             onDismiss = { confirmInstallName = null }
         )
     }
 
-    // 软件源管理（读取 distfeed / customfeeds，开关启用状态，保存后自动 apk update）。
+    // 软件源管理（读取 distfeed / customfeeds，可新增源、开关启用状态，保存后自动 apk update）。
     if (showSources) {
+        var newSourceUrl by remember { mutableStateOf("") }
         AppDialog(
             title = "软件源",
             confirmLabel = if (sourcesBusy) "保存中…" else "保存",
@@ -544,15 +578,22 @@ fun PackageManagerScreen(
                 val repos = sources.orEmpty()
                 scope.launch {
                     sourcesBusy = true
+                    var ok = false
+                    var output: String? = null
                     try {
-                        withContext(Dispatchers.IO) { client.saveRepositories(ssh, repos) }
-                        setMsg("软件源已保存并更新索引。", false)
-                        showSources = false
-                        loadLists()
+                        output = withContext(Dispatchers.IO) { client.saveRepositories(ssh, repos) }
+                        ok = !Regex("^ERROR|^Collected errors", RegexOption.MULTILINE).containsMatchIn(output)
+                        setMsg(
+                            if (ok) "软件源已保存并更新索引。" else "保存完成但更新索引失败：${output.lineSequence().firstOrNull { it.startsWith("ERROR") } ?: ""}",
+                            !ok
+                        )
                     } catch (e: Exception) {
                         setMsg(e.message ?: "保存软件源失败。", true)
                     } finally {
+                        // 无论成功失败都关闭弹窗，结果由消息条反馈。
                         sourcesBusy = false
+                        showSources = false
+                        if (ok) loadLists()
                     }
                 }
             },
@@ -568,10 +609,40 @@ fun PackageManagerScreen(
             } else {
                 Column(
                     modifier = Modifier
-                        .height(320.dp)
+                        .height(360.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    sources.orEmpty().forEach { repo ->
+                    // 添加源：默认加入 customfeeds.list。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newSourceUrl,
+                            onValueChange = { newSourceUrl = it },
+                            singleLine = true,
+                            placeholder = { Text("http(s):// 添加软件源") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val url = newSourceUrl.trim()
+                                if (url.isEmpty()) return@Button
+                                sources = sources.orEmpty() + ApkRepository(
+                                    line = -(sources.orEmpty().size + 1),
+                                    url = url,
+                                    enabled = true,
+                                    source = "/etc/apk/repositories.d/customfeeds.list"
+                                )
+                                newSourceUrl = ""
+                            },
+                            enabled = newSourceUrl.isNotBlank(),
+                            shape = AppShapes.pill,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 14.dp, vertical = 6.dp
+                            )
+                        ) { Text("添加") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    sources.orEmpty().forEachIndexed { idx, repo ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -595,12 +666,13 @@ fun PackageManagerScreen(
                             Switch(
                                 checked = repo.enabled,
                                 onCheckedChange = { enabled ->
-                                    sources = sources.orEmpty().map {
-                                        if (it.line == repo.line && it.source == repo.source) {
-                                            it.copy(enabled = enabled)
-                                        } else {
-                                            it
-                                        }
+                                    // 至少启用一个仓库：关掉最后一个启用项时阻止并提示。
+                                    if (!enabled && sources.orEmpty().count { it.enabled } <= 1) {
+                                        setMsg("至少启用一个软件包仓库。", true)
+                                        return@Switch
+                                    }
+                                    sources = sources.orEmpty().mapIndexed { i, r ->
+                                        if (i == idx) r.copy(enabled = enabled) else r
                                     }
                                 }
                             )
