@@ -44,6 +44,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Description
@@ -592,9 +599,12 @@ fun FileManagerScreen(
         pendingDownloadName = null
     }
     val uploadLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        if (uris.size == 1) {
+            // 单个文件：保留同名询问流程。
+            val uri = uris[0]
             scope.launch {
                 // 先在本地读取，再决定是否需要同名询问，最后进入带进度弹窗的传输。
                 val bytes = try {
@@ -612,6 +622,62 @@ fun FileManagerScreen(
                     uploadConflict = UploadConflict(name, bytes)
                 } else {
                     startUpload(name, bytes)
+                }
+            }
+        } else {
+            // 多个文件：同名自动重命名，逐个上传，共享一个进度弹窗。
+            scope.launch {
+                busy = true
+                message = null
+                var uploaded = 0
+                var cancelled = false
+                try {
+                    for ((index, uri) in uris.withIndex()) {
+                        val bytes = withContext(Dispatchers.IO) {
+                            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                ?: throw SshFileException("无法读取所选文件。")
+                        }
+                        if (bytes.size > MAX_UPLOAD_BYTES) continue
+                        val rawName = withContext(Dispatchers.IO) { queryDisplayName(context, uri) }
+                            ?: "upload-${index + 1}.bin"
+                        val finalName = if (entries?.any { it.name == rawName } == true) {
+                            uniqueName(rawName)
+                        } else {
+                            rawName
+                        }
+                        transferMeter.reset()
+                        transferCancel.value = false
+                        transfer = TransferInfo(finalName, bytes.size.toLong(), isUpload = true, sent = 0L, speedBps = 0f)
+                        SshFiles.upload(ssh, joinPath(currentPath, finalName), bytes) { sent ->
+                            transfer = TransferInfo(finalName, bytes.size.toLong(), true, sent, transferMeter.sample(sent))
+                        } { transferCancel.value }
+                        if (transferCancel.value) {
+                            cancelled = true
+                            break
+                        }
+                        uploaded++
+                        // 上传后立刻更新目录缓存，供下一个文件的同名判断使用。
+                        entries = withContext(Dispatchers.IO) { SshFiles.list(ssh, currentPath) }
+                    }
+                    message = when {
+                        cancelled -> "已取消，成功上传 $uploaded 个文件。"
+                        uploaded == uris.size -> "已上传 $uploaded 个文件。"
+                        else -> "已上传 $uploaded / ${uris.size} 个文件（过大或不可读的已跳过）。"
+                    }
+                    messageIsError = false
+                } catch (e: SshCancelledException) {
+                    message = "已取消，成功上传 $uploaded 个文件。"
+                    messageIsError = false
+                } catch (e: Exception) {
+                    message = e.message ?: "上传失败。"
+                    messageIsError = true
+                } finally {
+                    try {
+                        entries = withContext(Dispatchers.IO) { SshFiles.list(ssh, currentPath) }
+                    } catch (_: Exception) {
+                    }
+                    transfer = null
+                    busy = false
                 }
             }
         }
@@ -848,6 +914,25 @@ fun FileManagerScreen(
                         color = colors.onSurface
                     )
                     Row {
+                        TextButton(
+                            onClick = {
+                                val allNames = entries?.map { it.name }?.toSet() ?: emptySet()
+                                selectedNames = if (selectedNames.containsAll(allNames)) {
+                                    selectedNames - allNames
+                                } else {
+                                    selectedNames + allNames
+                                }
+                            },
+                            enabled = !entries.isNullOrEmpty()
+                        ) {
+                            Text(
+                                if (!entries.isNullOrEmpty() && selectedNames.containsAll(entries!!)) {
+                                    "全不选"
+                                } else {
+                                    "全选"
+                                }
+                            )
+                        }
                         TextButton(
                             onClick = {
                                 clipboard = ClipboardContent(currentPath, selectedNames.toList(), isMove = false)
@@ -1159,32 +1244,32 @@ fun FileManagerScreen(
                             .padding(vertical = 2.dp)
                     ) {
                         if (!menuEntry.isDir) {
-                            MenuLabel("查看 / 编辑", colors.onSurface) {
+                            MenuLabel("查看 / 编辑", Icons.Outlined.Visibility, colors.onSurface) {
                                 runMenuAction { openEntry(joinPath(currentPath, menuEntry.name), menuEntry.name, false) }
                             }
-                            MenuLabel("下载", colors.onSurface) {
+                            MenuLabel("下载", Icons.Outlined.Download, colors.onSurface) {
                                 runMenuAction {
                                     pendingDownloadName = menuEntry.name
                                     downloadLauncher.launch(menuEntry.name)
                                 }
                             }
-                            MenuLabel("分享", colors.onSurface) {
+                            MenuLabel("分享", Icons.Outlined.Share, colors.onSurface) {
                                 runMenuAction { shareTarget = menuEntry.name }
                             }
                         }
-                        MenuLabel("重命名", colors.onSurface) {
+                        MenuLabel("重命名", Icons.Outlined.Edit, colors.onSurface) {
                             runMenuAction {
                                 renameTarget = menuEntry
                                 renameText = menuEntry.name
                             }
                         }
-                        MenuLabel("修改权限", colors.onSurface) {
+                        MenuLabel("修改权限", Icons.Outlined.Lock, colors.onSurface) {
                             runMenuAction { startChmod(menuEntry) }
                         }
-                        MenuLabel("修改时间", colors.onSurface) {
+                        MenuLabel("修改时间", Icons.Outlined.Schedule, colors.onSurface) {
                             runMenuAction { startMtime(menuEntry) }
                         }
-                        MenuLabel("删除", colors.error) {
+                        MenuLabel("删除", Icons.Outlined.Delete, colors.error) {
                             runMenuAction { deleteTarget = menuEntry }
                         }
                     }
@@ -1676,17 +1761,34 @@ private fun FileRow(
 }
 
 @Composable
-private fun MenuLabel(label: String, tint: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+@Composable
+private fun MenuLabel(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
     val colors = LocalAppColors.current
-    Text(
-        label,
-        style = MaterialTheme.typography.bodySmall,
-        color = tint,
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-    )
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = tint
+        )
+    }
 }
 
 internal fun queryDisplayName(context: Context, uri: Uri): String? =

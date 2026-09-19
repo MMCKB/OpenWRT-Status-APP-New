@@ -16,8 +16,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +52,7 @@ import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
 import com.mmckb.openwrtstatus.ui.screens.ToolScreen
+import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 private const val TAB_DASHBOARD = 0
@@ -141,13 +145,26 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 if (selectedTab == TAB_TERMINAL) {
                     val terminalState by viewModel.terminal.state.collectAsState()
                     val terminalConnected = terminalState is SshTerminal.State.Connected
-                    TextButton(
+                    // 胶囊按钮：连接/断开一眼可辨。
+                    Surface(
                         onClick = {
                             if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
                         },
-                        enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting
+                        enabled = config.sshEnabled && terminalState !is SshTerminal.State.Connecting,
+                        shape = AppShapes.pill,
+                        color = if (terminalConnected) colors.surfaceVariant else colors.primary,
+                        contentColor = if (terminalConnected) colors.onSurface else colors.onPrimary,
+                        border = if (terminalConnected) {
+                            BorderStroke(1.dp, colors.outline)
+                        } else {
+                            null
+                        }
                     ) {
-                        Text(if (terminalConnected) "断开" else "连接", color = colors.primary)
+                        Text(
+                            if (terminalConnected) "断开" else "连接",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
                     }
                 }
             }
