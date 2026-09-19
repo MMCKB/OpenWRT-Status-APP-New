@@ -116,15 +116,19 @@ fun copyPickedImageToBackground(context: android.content.Context, uri: android.n
         val metrics = context.resources.displayMetrics
         val targetW = (metrics.widthPixels * 1.5f).toInt()
         val targetH = (metrics.heightPixels * 1.5f).toInt()
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: return false
+        // 第一遍只读图片尺寸：inJustDecodeBounds 模式下 decodeStream 固定返回 null，
+        // 不能把返回值当作失败依据。
+        val boundsStream = context.contentResolver.openInputStream(uri) ?: return false
+        boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= targetW || bounds.outHeight / (sample * 2) >= targetH) {
             sample *= 2
         }
-        val bitmap = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decodeStream = context.contentResolver.openInputStream(uri) ?: return false
+        val bitmap = decodeStream.use {
+            BitmapFactory.decodeStream(it, null, decodeOptions)
         } ?: return false
         val store = SettingsStore(context)
         store.backgroundFile().parentFile?.mkdirs()
