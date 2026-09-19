@@ -222,22 +222,27 @@ fun AppTopBar(
             navigationIcon()
             Spacer(Modifier.width(8.dp))
         }
-        Column(modifier = Modifier.weight(1f, fill = false)) {
+        // 标题列占满剩余宽度：动作键在所有机型上都严格贴右（部分机型在
+        // fill=false 的加权布局下会出现右侧留白导致动作键偏左）。
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (!subtitle.isNullOrBlank()) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
-                    color = colors.onSurfaceVariant
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
         Row(verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
