@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -70,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -79,10 +81,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.FileEntry
 import com.mmckb.openwrtstatus.data.ssh.SshCancelledException
@@ -91,6 +96,7 @@ import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+import kotlin.math.roundToInt
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatRate
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
@@ -239,6 +245,7 @@ fun FileManagerScreen(
     var transfer by remember { mutableStateOf<TransferInfo?>(null) }
     val transferMeter = remember { SpeedMeter() }
     val transferCancel = remember { mutableStateOf(false) }
+    var menuState by remember { mutableStateOf<Pair<FileEntry, Rect>?>(null) }
 
     // Dialog targets.
     var viewTarget by remember { mutableStateOf<String?>(null) }
@@ -1036,21 +1043,7 @@ fun FileManagerScreen(
                                                 selectedNames + entry.name
                                             }
                                         },
-                                        onView = {
-                                            openEntry(joinPath(currentPath, entry.name), entry.name, false)
-                                        },
-                                        onDownload = {
-                                            pendingDownloadName = entry.name
-                                            downloadLauncher.launch(entry.name)
-                                        },
-                                        onShare = { shareTarget = entry.name },
-                                        onRename = {
-                                            renameTarget = entry
-                                            renameText = entry.name
-                                        },
-                                        onChmod = { startChmod(entry) },
-                                        onMtime = { startMtime(entry) },
-                                        onDelete = { deleteTarget = entry }
+                                        onMenuOpen = { target, anchor -> menuState = target to anchor }
                                     )
                                     HorizontalDivider(color = colors.outline)
                                 }
@@ -1074,6 +1067,119 @@ fun FileManagerScreen(
                 .padding(20.dp)
         ) {
             Icon(Icons.Filled.CreateNewFolder, contentDescription = "新建文件夹")
+        }
+
+        // 三点菜单：绘制在页面层（共享应用窗口），因此能收到预测性返回的进度事件。
+        menuState?.let { (menuEntry, anchor) ->
+            var cardSize by remember(menuEntry) { mutableStateOf(IntSize.Zero) }
+            var parentSize by remember { mutableStateOf(IntSize.Zero) }
+            val appearScale = remember(menuEntry) { Animatable(0.85f) }
+            val appearAlpha = remember(menuEntry) { Animatable(0f) }
+            LaunchedEffect(menuEntry) {
+                launch {
+                    appearScale.animateTo(
+                        1f,
+                        spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = 0.001f)
+                    )
+                }
+                launch { appearAlpha.animateTo(1f, tween(140)) }
+            }
+
+            fun closeMenu() {
+                menuState = null
+            }
+
+            fun runMenuAction(action: () -> Unit) {
+                menuState = null
+                action()
+            }
+
+            // 透明点击层：点击菜单外任意位置关闭。
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .onSizeChanged { parentSize = it }
+                    .pointerInput(Unit) { detectTapGestures { closeMenu() } }
+            )
+            // 官方预测性返回规范：手势中跟随进度缩放淡出，提交关闭，取消回弹。
+            PredictiveBackHandler(enabled = !busy) { events ->
+                try {
+                    events.collect { ev ->
+                        val p = PredictiveBackEasing.transform(ev.progress).coerceIn(0f, 1f)
+                        appearScale.snapTo(1f - 0.12f * p)
+                        appearAlpha.snapTo(1f - 0.6f * p)
+                    }
+                    closeMenu()
+                } catch (_: CancellationException) {
+                    launch {
+                        appearScale.animateTo(
+                            1f,
+                            spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = 0.001f)
+                        )
+                        appearAlpha.animateTo(1f, tween(120))
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .offset {
+                        val gap = 4.dp.roundToPx()
+                        val x = (anchor.right.roundToInt() - cardSize.width).coerceAtLeast(gap)
+                        val yBelow = anchor.bottom.roundToInt() + gap
+                        val y = if (yBelow + cardSize.height <= parentSize.height - gap) {
+                            yBelow
+                        } else {
+                            (anchor.top.roundToInt() - cardSize.height - gap).coerceAtLeast(gap)
+                        }
+                        IntOffset(x, y)
+                    }
+                    .onSizeChanged { cardSize = it }
+                    .graphicsLayer {
+                        scaleX = appearScale.value
+                        scaleY = appearScale.value
+                        alpha = appearAlpha.value
+                        transformOrigin = TransformOrigin(1f, 0f)
+                    }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.outline),
+                    modifier = Modifier.widthIn(min = 104.dp)
+                ) {
+                    Column(Modifier.padding(vertical = 4.dp)) {
+                        if (!menuEntry.isDir) {
+                            MenuLabel("查看 / 编辑", colors.onSurface) {
+                                runMenuAction { openEntry(joinPath(currentPath, menuEntry.name), menuEntry.name, false) }
+                            }
+                            MenuLabel("下载", colors.onSurface) {
+                                runMenuAction {
+                                    pendingDownloadName = menuEntry.name
+                                    downloadLauncher.launch(menuEntry.name)
+                                }
+                            }
+                            MenuLabel("分享", colors.onSurface) {
+                                runMenuAction { shareTarget = menuEntry.name }
+                            }
+                        }
+                        MenuLabel("重命名", colors.onSurface) {
+                            runMenuAction {
+                                renameTarget = menuEntry
+                                renameText = menuEntry.name
+                            }
+                        }
+                        MenuLabel("修改权限", colors.onSurface) {
+                            runMenuAction { startChmod(menuEntry) }
+                        }
+                        MenuLabel("修改时间", colors.onSurface) {
+                            runMenuAction { startMtime(menuEntry) }
+                        }
+                        MenuLabel("删除", colors.error) {
+                            runMenuAction { deleteTarget = menuEntry }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1496,18 +1602,10 @@ private fun FileRow(
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     onToggleSelect: () -> Unit,
-    onView: () -> Unit,
-    onDownload: () -> Unit,
-    onShare: () -> Unit,
-    onRename: () -> Unit,
-    onChmod: () -> Unit,
-    onMtime: () -> Unit,
-    onDelete: () -> Unit
+    onMenuOpen: (FileEntry, Rect) -> Unit
 ) {
     val colors = LocalAppColors.current
-    var menuOpen by remember { mutableStateOf(false) }
-    var menuClosing by remember { mutableStateOf(false) }
-    var pendingMenuAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var anchorBounds by remember { mutableStateOf(Rect.Zero) }
 
     Row(
         modifier = Modifier
@@ -1544,108 +1642,29 @@ private fun FileRow(
         if (selectionMode) {
             Checkbox(checked = selected, onCheckedChange = { onToggleSelect() })
         } else {
-            Box {
-                IconButton(onClick = { menuOpen = true }, enabled = !busy) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
-                }
-                if (menuOpen) {
-                    // 应用弹层：MD3 尺寸与出入场动画，并按官方预测性返回规范——
-                    // 返回手势中跟随进度缩放淡出，提交关闭，取消回弹。
-                    Popup(
-                        alignment = Alignment.BottomEnd,
-                        onDismissRequest = {
-                            menuClosing = true
-                        },
-                        properties = PopupProperties(focusable = true)
-                    ) {
-                        val scope = rememberCoroutineScope()
-                        val appearScale = remember { Animatable(0.85f) }
-                        val appearAlpha = remember { Animatable(0f) }
-                        LaunchedEffect(Unit) {
-                            launch {
-                                appearScale.animateTo(
-                                    1f,
-                                    spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = 0.001f)
-                                )
-                            }
-                            launch { appearAlpha.animateTo(1f, tween(140)) }
-                        }
-                        LaunchedEffect(menuClosing) {
-                            if (menuClosing) {
-                                appearAlpha.animateTo(0f, tween(80))
-                                appearScale.animateTo(0.9f, tween(80))
-                                menuOpen = false
-                                menuClosing = false
-                                pendingMenuAction?.invoke()
-                                pendingMenuAction = null
-                            }
-                        }
-                        PredictiveBackHandler(enabled = !menuClosing) { events ->
-                            try {
-                                events.collect { ev ->
-                                    val p = PredictiveBackEasing.transform(ev.progress).coerceIn(0f, 1f)
-                                    appearScale.snapTo(1f - 0.12f * p)
-                                    appearAlpha.snapTo(1f - 0.6f * p)
-                                }
-                                menuClosing = true
-                            } catch (_: CancellationException) {
-                                scope.launch {
-                                    appearScale.animateTo(
-                                        1f,
-                                        spring(stiffness = Spring.StiffnessMedium, visibilityThreshold = 0.001f)
-                                    )
-                                    appearAlpha.animateTo(1f, tween(120))
-                                }
-                            }
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = colors.surface,
-                            border = BorderStroke(1.dp, colors.outline),
-                            modifier = Modifier
-                                .widthIn(min = 118.dp)
-                                .graphicsLayer {
-                                    scaleX = appearScale.value
-                                    scaleY = appearScale.value
-                                    alpha = appearAlpha.value
-                                    transformOrigin = TransformOrigin(1f, 0f)
-                                }
-                        ) {
-                            Column(Modifier.padding(vertical = 4.dp)) {
-                                fun close(action: () -> Unit) {
-                                    menuClosing = true
-                                    // 菜单收起后再执行动作，避免动画期间列表已变化。
-                                    pendingMenuAction = action
-                                }
-                                if (!entry.isDir) {
-                                    PopupLabel("查看 / 编辑", colors.onSurface) { close { onView() } }
-                                    PopupLabel("下载", colors.onSurface) { close { onDownload() } }
-                                    PopupLabel("分享", colors.onSurface) { close { onShare() } }
-                                }
-                                PopupLabel("重命名", colors.onSurface) { close { onRename() } }
-                                PopupLabel("修改权限", colors.onSurface) { close { onChmod() } }
-                                PopupLabel("修改时间", colors.onSurface) { close { onMtime() } }
-                                PopupLabel("删除", colors.error) { close { onDelete() } }
-                            }
-                        }
-                    }
-                }
+            // 菜单本体绘制在页面层（而非独立窗口），才能收到预测性返回的进度事件。
+            IconButton(
+                onClick = { onMenuOpen(entry, anchorBounds) },
+                enabled = !busy,
+                modifier = Modifier.onGloballyPositioned { anchorBounds = it.boundsInRoot() }
+            ) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "操作", tint = colors.onSurfaceVariant)
             }
         }
     }
 }
 
 @Composable
-private fun PopupLabel(label: String, tint: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
+private fun MenuLabel(label: String, tint: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     Text(
         label,
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodySmall,
         color = tint,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 12.dp, vertical = 9.dp)
     )
 }
 

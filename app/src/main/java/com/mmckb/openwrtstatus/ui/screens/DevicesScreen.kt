@@ -214,8 +214,9 @@ private fun DeviceCard(
             .fillMaxWidth()
             .clip(AppShapes.card)
     ) {
-        // 右滑露出左侧的编辑、左滑露出右侧的删除：色块外侧两角与卡片同款圆角，
-        // 露出时与卡片轮廓完全贴合。
+        // 右滑露出左侧的编辑、左滑露出右侧的删除：色块比露出的部分更长，
+        // 多出的部分一直延伸到卡片下面（被卡片盖住不可见），滑动过程中
+        // 颜色始终从卡片下面连续露出，与卡片无缝衔接。
         Row(
             modifier = Modifier.matchParentSize(),
             horizontalArrangement = Arrangement.Start,
@@ -227,8 +228,9 @@ private fun DeviceCard(
                 iconTint = SwipeEditIconColor,
                 icon = Icons.Filled.Edit,
                 shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
+                iconAtEnd = false,
                 progress = revealProgress,
-                modifier = Modifier.width(SwipeActionWidth)
+                modifier = Modifier.width(SwipeActionWidth + SwipeUnderCard)
             ) {
                 close()
                 onEdit()
@@ -245,8 +247,9 @@ private fun DeviceCard(
                 iconTint = Color.White,
                 icon = Icons.Filled.Delete,
                 shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                iconAtEnd = true,
                 progress = revealProgress,
-                modifier = Modifier.width(SwipeActionWidth)
+                modifier = Modifier.width(SwipeActionWidth + SwipeUnderCard)
             ) {
                 close()
                 onDelete()
@@ -368,6 +371,7 @@ private fun SwipeAction(
     iconTint: Color,
     icon: ImageVector,
     shape: Shape,
+    iconAtEnd: Boolean,
     progress: Float,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -377,27 +381,36 @@ private fun SwipeAction(
             .fillMaxHeight()
             .clip(shape)
             .background(container)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+            .clickable(onClick = onClick)
     ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = iconTint,
+        // 图标固定在露出的 72dp 区域中心，塞进卡片下面的部分保持纯色。
+        Box(
             modifier = Modifier
-                .size(26.dp)
-                .graphicsLayer {
-                    alpha = 0.4f + 0.6f * progress
-                    scaleX = 0.6f + 0.4f * progress
-                    scaleY = 0.6f + 0.4f * progress
-                }
-        )
+                .fillMaxHeight()
+                .width(SwipeActionWidth)
+                .align(if (iconAtEnd) Alignment.CenterEnd else Alignment.CenterStart),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = iconTint,
+                modifier = Modifier
+                    .size(26.dp)
+                    .graphicsLayer {
+                        alpha = 0.4f + 0.6f * progress
+                        scaleX = 0.6f + 0.4f * progress
+                        scaleY = 0.6f + 0.4f * progress
+                    }
+            )
+        }
     }
 }
 
 private val SwipeActionWidth = 72.dp
+private val SwipeUnderCard = 48.dp
 
 /** 纯红（删除）与柔和黄（编辑）的滑动操作底色，图标颜色随底色定。 */
 private val SwipeDeleteColor = Color(0xFFE53935)
-private val SwipeEditColor = Color(0xFFE9C46A)
+private val SwipeEditColor = Color(0xFFE1C16E)
 private val SwipeEditIconColor = Color(0xFF1A1C1E)
