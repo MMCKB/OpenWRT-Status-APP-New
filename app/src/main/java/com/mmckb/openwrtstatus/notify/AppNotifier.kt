@@ -81,7 +81,7 @@ object AppNotifier {
             style.addMetric(NotificationCompat.Metric(NotificationCompat.Metric.FixedText(value), label))
         }
         val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(com.mmckb.openwrtstatus.R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(style)

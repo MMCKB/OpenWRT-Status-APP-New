@@ -111,15 +111,23 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 val totalTx = rates.sumOf { it.txRate }
 
                 // 实时网速 Live Update：每次轮询刷新一次通知内容（开关关闭时撤回）。
+                // 指标里附带当前有流量的各网口（最多 4 个）的上下行速率。
                 if (_speedNotificationEnabled.value) {
                     val rx = formatRate(totalRx)
                     val tx = formatRate(totalTx)
+                    val ifaceMetrics = rates
+                        .filter { it.rxRate > 1024 || it.txRate > 1024 }
+                        .sortedByDescending { it.rxRate + it.txRate }
+                        .take(4)
+                        .map { iface ->
+                            iface.name to "↓ ${formatRate(iface.rxRate)}　↑ ${formatRate(iface.txRate)}"
+                        }
                     AppNotifier.showLiveUpdate(
                         getApplication(),
                         AppNotifier.ID_REALTIME_SPEED,
                         "实时网速 · ${cfg.displayName}",
                         "↓ $rx　↑ $tx",
-                        listOf("下行" to rx, "上行" to tx)
+                        listOf("下行" to rx, "上行" to tx) + ifaceMetrics
                     )
                 }
                 _history.value = (_history.value + HistorySample(
