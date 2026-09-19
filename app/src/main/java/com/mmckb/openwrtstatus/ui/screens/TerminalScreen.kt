@@ -55,6 +55,7 @@ import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 fun TerminalScreen(
     viewModel: RouterViewModel,
     hideOutput: Boolean = false,
+    bottomSpacer: androidx.compose.ui.unit.Dp = 76.dp,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.terminal.state.collectAsStateWithLifecycle()
@@ -141,8 +142,7 @@ fun TerminalScreen(
             ) { Text("发送") }
         }
 
-        // Keeps the input clear of the floating glass tab pill.
-        Spacer(Modifier.height(76.dp))
+        Spacer(Modifier.height(bottomSpacer))
     }
 }
 

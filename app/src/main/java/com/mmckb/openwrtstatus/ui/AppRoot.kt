@@ -176,6 +176,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     viewModel = viewModel,
                     // 横屏双栏且未开二级页时，输出区渲染在右栏，左侧只保留输入。
                     hideOutput = isLandscape && secondary == null,
+                    bottomSpacer = if (isLandscape) 40.dp else 76.dp,
                     modifier = Modifier.fillMaxSize()
                 )
                 TAB_TOOL -> ToolScreen(
