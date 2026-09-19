@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 
@@ -26,6 +27,14 @@ class DeviceEditActivity : ComponentActivity() {
         val isNew = intent.getBooleanExtra(EXTRA_IS_NEW, true)
         val existingNames = intent.getStringArrayListExtra(EXTRA_EXISTING) ?: arrayListOf()
 
+        // 旋转到横屏：正在编辑的设备交回主界面右栏内联编辑器继续编辑，本页退出。
+        // 进程被杀后直接在横屏恢复时同样交接。
+        if (savedInstanceState != null &&
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        ) {
+            handOffToInline(initial, isNew)
+            return
+        }
         setupEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
@@ -55,11 +64,21 @@ class DeviceEditActivity : ComponentActivity() {
         }
     }
 
+    private fun handOffToInline(initial: RouterConfig, isNew: Boolean) {
+        setResult(RESULT_OK, Intent().apply {
+            putExtra(EXTRA_OPEN_INLINE, true)
+            putExtra(EXTRA_DEVICE, initial)
+            putExtra(EXTRA_IS_NEW, isNew)
+        })
+        finish()
+    }
+
     companion object {
         const val EXTRA_DEVICE = "device"
         const val EXTRA_IS_NEW = "isNew"
         const val EXTRA_EXISTING = "existingNames"
         const val EXTRA_SAVED = "saved"
         const val EXTRA_DELETE_ID = "deleteId"
+        const val EXTRA_OPEN_INLINE = "openInline"
     }
 }
