@@ -283,7 +283,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 10.dp, bottom = 10.dp)
+                        .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)
                         .clip(RoundedCornerShape(24.dp))
                         .height(88.dp)
                         .drawBackdrop(
