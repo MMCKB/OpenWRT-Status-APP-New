@@ -74,12 +74,6 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
     private var previousTime = 0L
 
-    /** 连续失败达到该次数才判定离线，单次偶发失败（WiFi 瞬断）不弹断连提示。 */
-    private var pollFailures = 0
-
-    /** 上一次轮询未完成时不重叠发起新的，避免乱序完成导致状态抖动。 */
-    private var refreshInFlight = false
-
     init {
         refresh()
         // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
@@ -89,32 +83,12 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 refresh()
             }
         }
-        // 终端 SSH 已连上说明路由器可达：强制在线并清零失败计数。
-        viewModelScope.launch {
-            terminal.state.collect { st ->
-                if (st is SshTerminal.State.Connected) {
-                    pollFailures = 0
-                    ConnectionMonitor.status.value = ConnectionMonitor.Status.Online
-                }
-            }
-        }
     }
 
     /** Fetches a dashboard snapshot; [forceConfig] overrides the active config once. */
     fun refresh(forceConfig: RouterConfig? = null) {
-        if (refreshInFlight) return
-        refreshInFlight = true
         viewModelScope.launch {
-            try {
-                refreshInternal(forceConfig)
-            } finally {
-                refreshInFlight = false
-            }
-        }
-    }
-
-    private suspend fun refreshInternal(forceConfig: RouterConfig?) {
-        val cfg = forceConfig ?: _config.value
+            val cfg = forceConfig ?: _config.value
         if (_uiState.value !is StatusUiState.Success) {
             _uiState.value = StatusUiState.Loading
         }
@@ -209,22 +183,14 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 )
 
                 if (cfg.sshEnabled) refreshLeases()
-                pollFailures = 0
                 ConnectionMonitor.status.value = ConnectionMonitor.Status.Online
             } catch (e: RouterException) {
                 _uiState.value = StatusUiState.Error(e.message ?: "连接失败", e.hint)
-                markPollFailed()
+                ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
             } catch (e: Exception) {
                 _uiState.value = StatusUiState.Error(e.message ?: "未知错误", null)
-                markPollFailed()
+                ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
             }
-    }
-
-    /** 单次失败只累计计数，连续三次失败才判定离线（终端连着时视为仍可达）。 */
-    private fun markPollFailed() {
-        pollFailures++
-        if (pollFailures >= 3 && terminal.state.value !is SshTerminal.State.Connected) {
-            ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
         }
     }
 
