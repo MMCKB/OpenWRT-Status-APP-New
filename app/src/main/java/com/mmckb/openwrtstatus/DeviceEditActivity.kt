@@ -7,7 +7,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
-import com.mmckb.openwrtstatus.ui.theme.AppBackground
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 
 /**
@@ -25,27 +24,25 @@ class DeviceEditActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
-                AppBackground {
-                    DeviceEditScreen(
-                        initial = initial,
-                        isNew = isNew,
-                        existingNames = existingNames,
-                        onCancel = { finish() },
-                        onSave = { saved ->
-                            setResult(RESULT_OK, Intent().apply {
-                                putExtra(EXTRA_SAVED, saved)
-                                putExtra(EXTRA_IS_NEW, isNew)
-                            })
-                            finish()
-                        },
-                        onDelete = {
-                            setResult(RESULT_OK, Intent().apply {
-                                putExtra(EXTRA_DELETE_ID, initial.id)
-                            })
-                            finish()
-                        }
-                    )
-                }
+                DeviceEditScreen(
+                    initial = initial,
+                    isNew = isNew,
+                    existingNames = existingNames,
+                    onCancel = { finish() },
+                    onSave = { saved ->
+                        setResult(RESULT_OK, Intent().apply {
+                            putExtra(EXTRA_SAVED, saved)
+                            putExtra(EXTRA_IS_NEW, isNew)
+                        })
+                        finish()
+                    },
+                    onDelete = {
+                        setResult(RESULT_OK, Intent().apply {
+                            putExtra(EXTRA_DELETE_ID, initial.id)
+                        })
+                        finish()
+                    }
+                )
             }
         }
     }
