@@ -39,7 +39,7 @@ class FileManagerActivity : ComponentActivity() {
                         ssh = ssh,
                         onBack = { finish() }
                     )
-                    ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
+                    ConnectionToastHost(Modifier.align(Alignment.BottomEnd))
                 }
             }
         }
