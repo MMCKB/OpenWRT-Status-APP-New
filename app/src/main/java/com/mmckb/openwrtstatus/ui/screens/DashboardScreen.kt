@@ -55,12 +55,6 @@ fun DashboardScreen(
     val config by viewModel.config.collectAsStateWithLifecycle()
     val leases by viewModel.leases.collectAsStateWithLifecycle()
 
-    LaunchedEffect(config.refreshIntervalSec) {
-        while (true) {
-            delay((config.refreshIntervalSec * 1000L).coerceAtLeast(2000L))
-            viewModel.refresh()
-        }
-    }
 
     when (val state = uiState) {
         is StatusUiState.Initial, is StatusUiState.Loading -> LoadingView()
