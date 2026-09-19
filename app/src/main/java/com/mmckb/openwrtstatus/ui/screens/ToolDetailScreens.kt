@@ -1,5 +1,6 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -51,7 +53,9 @@ fun ToolScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
+            .navigationBarsPadding()
             .padding(top = rememberTopBarPadding(), bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -127,7 +131,8 @@ fun DetailScreen(
         is com.mmckb.openwrtstatus.data.model.StatusUiState.Error -> Box(
             modifier = modifier
                 .fillMaxSize()
-                .padding(top = rememberTopBarPadding(), bottom = 96.dp),
+                .navigationBarsPadding()
+            .padding(top = rememberTopBarPadding(), bottom = 96.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -139,7 +144,8 @@ fun DetailScreen(
         else -> Box(
             modifier = modifier
                 .fillMaxSize()
-                .padding(top = rememberTopBarPadding(), bottom = 96.dp),
+                .navigationBarsPadding()
+            .padding(top = rememberTopBarPadding(), bottom = 96.dp),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.5.dp)

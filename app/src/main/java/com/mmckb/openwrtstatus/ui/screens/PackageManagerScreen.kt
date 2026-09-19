@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -282,24 +283,6 @@ fun PackageManagerScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
-            Spacer(Modifier.width(8.dp))
-            // 搜索按钮：纯色椭圆实心，比其它按钮短一些。
-            Surface(
-                onClick = {
-                    showFilter = !showFilter
-                    if (!showFilter) filter = ""
-                },
-                enabled = sshEnabled,
-                shape = AppShapes.pill,
-                color = colors.primary,
-                contentColor = colors.onPrimary
-            ) {
-                Icon(
-                    Icons.Outlined.Search,
-                    contentDescription = "搜索",
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp).size(18.dp)
-                )
-            }
             Spacer(Modifier.weight(1f))
             TextButton(
                 onClick = { runOp("update", emptyList(), "更新列表") },
@@ -414,6 +397,24 @@ fun PackageManagerScreen(
                 TabChip("已安装 ${installedList.size}", mode == "installed", Modifier.weight(1f)) { mode = "installed" }
                 TabChip("可用 ${availableList.size}", mode == "available", Modifier.weight(1f)) { mode = "available" }
                 TabChip("可升级 ${updatesList.size}", mode == "updates", Modifier.weight(1f)) { mode = "updates" }
+                // 搜索胶囊：与三个 tab 同高同圆角。
+                Surface(
+                    onClick = {
+                        showFilter = !showFilter
+                        if (!showFilter) filter = ""
+                    },
+                    enabled = sshEnabled,
+                    shape = AppShapes.pill,
+                    color = colors.primary,
+                    contentColor = colors.onPrimary,
+                    modifier = Modifier.height(38.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = "搜索",
+                        modifier = Modifier.padding(horizontal = 12.dp).size(18.dp)
+                    )
+                }
             }
             // 紧凑圆角搜索/安装框：点搜索胶囊后展开收起（带动画）。
             // 可用视图下，输入的内容既是过滤条件也可以直接安装。
@@ -777,19 +778,24 @@ private fun TabChip(label: String, selected: Boolean, modifier: Modifier = Modif
         color = if (selected) colors.primary else colors.surfaceVariant,
         contentColor = if (selected) colors.onPrimary else colors.onSurfaceVariant,
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
-        modifier = modifier
+        // 与搜索胶囊同高（38dp），圆角同为胶囊形。
+        modifier = modifier.height(38.dp)
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        Box(
             modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 8.dp)
-                .fillMaxWidth(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
-        )
+                .padding(horizontal = 8.dp)
+                .fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 

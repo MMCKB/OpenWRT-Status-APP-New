@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -172,6 +174,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 )
                 TAB_TERMINAL -> TerminalScreen(
                     viewModel = viewModel,
+                    // 横屏双栏且未开二级页时，输出区渲染在右栏，左侧只保留输入。
+                    hideOutput = secondary == null,
                     modifier = Modifier.fillMaxSize()
                 )
                 TAB_TOOL -> ToolScreen(
@@ -267,11 +271,20 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         // 横屏双栏：左侧一级页（tab 在左侧底部），右侧二级页；未打开时右侧为空。
         Row(Modifier.fillMaxSize().background(colors.background)) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                MainPage(Modifier.fillMaxSize())
+                // 横屏下 tab 悬浮在左下角：内容整体抬高避让，滑到底不会被 tab 压住。
+                MainPage(
+                    Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding()
+                        .padding(bottom = 28.dp)
+                )
                 MainTopBar(Modifier.align(Alignment.TopCenter))
+                // 磨砂条不贴屏幕边缘：加边距并做圆角。
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
+                        .padding(horizontal = 10.dp, bottom = 10.dp)
+                        .clip(RoundedCornerShape(24.dp))
                         .height(88.dp)
                         .drawBackdrop(
                             backdrop = backdrop,
@@ -283,8 +296,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 TabBar(
                     Modifier
                         .align(Alignment.BottomStart)
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, bottom = 22.dp)
+                        .padding(start = 16.dp, bottom = 12.dp)
                 )
             }
             Box(
@@ -294,6 +306,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     .background(colors.outline)
             )
             Box(Modifier.weight(1f).fillMaxHeight()) {
+                // 横屏终端：未开二级页时，命令输出面板单独占右栏。
+                if (selectedTab == TAB_TERMINAL && secondary == null) {
+                    com.mmckb.openwrtstatus.ui.screens.TerminalOutputPane(
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 secondary?.let { page ->
                     Box(Modifier.fillMaxSize()) {
                         when (page) {
@@ -323,7 +342,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                 }
                             )
                         }
-                        ConnectionToastHost(Modifier.align(Alignment.BottomEnd))
+                        // 横屏下胶囊从顶部滑出（右上角），竖屏保持从右侧滑入。
+                        ConnectionToastHost(
+                            Modifier.align(Alignment.TopEnd),
+                            slideFromTop = true
+                        )
                     }
                 }
             }
