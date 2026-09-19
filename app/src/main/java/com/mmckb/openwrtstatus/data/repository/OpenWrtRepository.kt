@@ -100,6 +100,7 @@ class OpenWrtRepository(private val rpc: UbusRpcClient = UbusRpcClient()) {
             val channel = (section["channel"] as? JsonPrimitive)?.content ?: "配置"
             WirelessInfo(name = name, ssid = ssid, up = !disabled, channel = channel, clients = null)
         }
+    }
 
     private fun buildStatus(
         board: JsonElement,
