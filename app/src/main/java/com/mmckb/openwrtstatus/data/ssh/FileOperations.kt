@@ -151,12 +151,23 @@ object SshFiles {
         run(config, "chown ${quote(owner)} ${quote(shellSafe(path))}")
     }
 
-    /** Sets the modification time via BusyBox `touch -t` (date renders the stamp). */
+    /**
+     * Sets the modification time via BusyBox `touch -t`. The stamp is generated on the
+     * phone (some BusyBox builds can't parse `date -d @epoch`, which silently made touch
+     * fall back to the current time). Assumes router and phone share a timezone.
+     */
     suspend fun setModifiedTime(config: SshConfig, path: String, epochSeconds: Long) {
-        run(
-            config,
-            "touch -t \"\$(date -d @$epochSeconds '+%Y%m%d%H%M.%S')\" ${quote(shellSafe(path))}"
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = epochSeconds * 1000
+        val stamp = "%04d%02d%02d%02d%02d.%02d".format(
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH) + 1,
+            cal.get(java.util.Calendar.DAY_OF_MONTH),
+            cal.get(java.util.Calendar.HOUR_OF_DAY),
+            cal.get(java.util.Calendar.MINUTE),
+            cal.get(java.util.Calendar.SECOND)
         )
+        run(config, "touch -t ${quote(stamp)} ${quote(shellSafe(path))}")
     }
 
     /** Runs a command and fails when the remote exit status is non-zero. */

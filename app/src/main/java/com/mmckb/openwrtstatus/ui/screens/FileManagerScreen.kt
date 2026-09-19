@@ -348,15 +348,16 @@ fun FileManagerScreen(
         }
     }
 
-    fun runOp(info: String?, refreshList: Boolean = true, block: suspend () -> Unit) {
+    fun runOp(info: String?, refreshList: Boolean = true, block: suspend () -> Any? = { null }) {
         scope.launch {
             busy = true
             message = null
             var errorText: String? = null
+            var successText: String? = null
             try {
-                withContext(Dispatchers.IO) { block() }
-                if (info != null) {
-                    message = info
+                successText = withContext(Dispatchers.IO) { block() } as? String
+                if (info != null || successText != null) {
+                    message = successText ?: info
                     messageIsError = false
                 }
             } catch (e: Exception) {
@@ -1147,7 +1148,7 @@ fun FileManagerScreen(
                     shape = RoundedCornerShape(16.dp),
                     color = colors.surface,
                     border = BorderStroke(1.dp, colors.outline),
-                    modifier = Modifier.widthIn(min = 104.dp)
+                    modifier = Modifier.widthIn(min = 100.dp)
                 ) {
                     Column(Modifier.padding(vertical = 4.dp)) {
                         if (!menuEntry.isDir) {
@@ -1524,7 +1525,18 @@ fun FileManagerScreen(
                     val path = joinPath(currentPath, entry.name)
                     val epoch = parsed.time / 1000
                     mtimeTarget = null
-                    runOp("已更新修改时间。") { SshFiles.setModifiedTime(ssh, path, epoch) }
+                    runOp(null) {
+                        SshFiles.setModifiedTime(ssh, path, epoch)
+                        // 回读校验，把真实生效的修改时间反馈出来（防止个别
+                        // BusyBox 的 touch -t 静默回落到当前时间）。
+                        val actual = SshFiles.stat(ssh, path).modifiedAt
+                        if (kotlin.math.abs(actual - epoch) > 90) {
+                            throw com.mmckb.openwrtstatus.data.ssh.SshFileException(
+                                "修改时间未生效（实际为 ${mtimeFormat.format(java.util.Date(actual * 1000))}）。"
+                            )
+                        }
+                        "已更新修改时间：${mtimeFormat.format(java.util.Date(epoch * 1000))}"
+                    }
                 }
             },
             onDismiss = { mtimeTarget = null }
@@ -1666,7 +1678,7 @@ private fun MenuLabel(label: String, tint: androidx.compose.ui.graphics.Color, o
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 9.dp)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
 
