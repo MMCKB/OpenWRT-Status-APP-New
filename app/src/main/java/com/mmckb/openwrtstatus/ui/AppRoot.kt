@@ -1,12 +1,19 @@
 package com.mmckb.openwrtstatus.ui
 
 import android.content.Intent
+import android.content.res.Configuration
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Dashboard
@@ -14,24 +21,24 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -41,15 +48,22 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
+import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
+import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
+import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
+import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
-import com.mmckb.openwrtstatus.ui.screens.DetailScreen
+import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
 import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
+import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
+import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
 import com.mmckb.openwrtstatus.ui.screens.ToolScreen
@@ -63,20 +77,88 @@ private const val TAB_TERMINAL = 3
 private const val TAB_TOOL = 4
 private const val TAB_SETTINGS = 5
 
+/** 横屏右栏可承载的二级页面。 */
+private sealed interface SecondaryPage {
+    data object FileManager : SecondaryPage
+    data object PackageManager : SecondaryPage
+    data object About : SecondaryPage
+    data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
+}
+
 @Composable
 fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var selectedTab by remember { mutableIntStateOf(TAB_DASHBOARD) }
     val config by viewModel.config.collectAsState()
+    val devices by viewModel.devices.collectAsState()
     val colors = LocalAppColors.current
     val context = LocalContext.current
+
+    // 横屏（平板/折叠态/横持手机）双栏：左侧一级页 + 左下角 tab，右侧二级页；竖屏保持原样。
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var secondary by remember { mutableStateOf<SecondaryPage?>(null) }
+    LaunchedEffect(isLandscape) {
+        if (!isLandscape) secondary = null
+    }
+
+    val ssh = SshConfig(
+        host = config.sshHost.ifBlank { config.ip },
+        port = config.sshPort,
+        username = config.sshUsername,
+        password = config.sshPassword
+    )
+
+    val editLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val deletedId = result.data?.getStringExtra(DeviceEditActivity.EXTRA_DELETE_ID)
+        if (deletedId != null) {
+            viewModel.deleteDevice(deletedId)
+            return@rememberLauncherForActivityResult
+        }
+        val saved = result.data?.getSerializableExtra(DeviceEditActivity.EXTRA_SAVED) as? RouterConfig
+        if (saved != null) {
+            val isNew = result.data?.getBooleanExtra(DeviceEditActivity.EXTRA_IS_NEW, false) ?: false
+            if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
+        }
+    }
+
+    fun openSecondary(page: SecondaryPage) {
+        if (isLandscape) {
+            secondary = page
+        } else {
+            val intent = when (page) {
+                SecondaryPage.FileManager -> Intent(context, FileManagerActivity::class.java)
+                SecondaryPage.PackageManager -> Intent(context, PackageManagerActivity::class.java)
+                SecondaryPage.About -> Intent(context, AboutActivity::class.java)
+                is SecondaryPage.DeviceEditor -> return
+            }
+            context.startActivity(intent.putExtra(FileManagerActivity.EXTRA_CONFIG, config))
+        }
+    }
+
+    fun openEditor(device: RouterConfig, isNew: Boolean) {
+        if (isLandscape) {
+            secondary = SecondaryPage.DeviceEditor(device, isNew)
+        } else {
+            val intent = Intent(context, DeviceEditActivity::class.java).apply {
+                putExtra(DeviceEditActivity.EXTRA_DEVICE, device)
+                putExtra(DeviceEditActivity.EXTRA_IS_NEW, isNew)
+                putStringArrayListExtra(
+                    DeviceEditActivity.EXTRA_EXISTING,
+                    ArrayList(devices.filterNot { it.id == device.id }.map { it.displayName })
+                )
+            }
+            editLauncher.launch(intent)
+        }
+    }
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
     val backdrop = rememberLayerBackdrop()
 
-    Box(Modifier.fillMaxSize().background(colors.background)) {
-        // Page layer fills the whole screen; the top bar overlays it.
-        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+    @Composable
+    fun MainPage(modifier: Modifier) {
+        Box(modifier.layerBackdrop(backdrop)) {
             when (selectedTab) {
                 TAB_DASHBOARD -> DashboardScreen(
                     viewModel = viewModel,
@@ -84,6 +166,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 )
                 TAB_DEVICES -> DevicesScreen(
                     viewModel = viewModel,
+                    onOpenEditor = ::openEditor,
                     modifier = Modifier.fillMaxSize()
                 )
                 TAB_TERMINAL -> TerminalScreen(
@@ -91,18 +174,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     modifier = Modifier.fillMaxSize()
                 )
                 TAB_TOOL -> ToolScreen(
-                    onOpenPackageManager = {
-                        context.startActivity(
-                            Intent(context, PackageManagerActivity::class.java)
-                                .putExtra(PackageManagerActivity.EXTRA_CONFIG, config)
-                        )
-                    },
-                    onOpenFileManager = {
-                        context.startActivity(
-                            Intent(context, FileManagerActivity::class.java)
-                                .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
-                        )
-                    },
+                    onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
+                    onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
                     modifier = Modifier.fillMaxSize()
                 )
                 TAB_DETAIL -> DetailScreen(
@@ -111,19 +184,17 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 )
                 else -> SettingsScreen(
                     viewModel = viewModel,
-                    onOpenAbout = {
-                        context.startActivity(Intent(context, AboutActivity::class.java))
-                    },
+                    onOpenAbout = { openSecondary(SecondaryPage.About) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
         }
+    }
 
-        // Top bar: a plain Gaussian blur of the live content - no tint on top of it,
-        // and no default edge highlight (that reads as a white border on a full-width bar).
+    @Composable
+    fun MainTopBar(modifier: Modifier) {
         AppTopBar(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
+            modifier = modifier
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RectangleShape },
@@ -152,7 +223,6 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 if (selectedTab == TAB_TERMINAL) {
                     val terminalState by viewModel.terminal.state.collectAsState()
                     val terminalConnected = terminalState is SshTerminal.State.Connected
-                    // 胶囊按钮：连接/断开一眼可辨。
                     Surface(
                         onClick = {
                             if (terminalConnected) viewModel.disconnectSsh() else viewModel.connectSsh()
@@ -161,11 +231,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         shape = AppShapes.pill,
                         color = if (terminalConnected) colors.surfaceVariant else colors.primary,
                         contentColor = if (terminalConnected) colors.onSurface else colors.onPrimary,
-                        border = if (terminalConnected) {
-                            BorderStroke(1.dp, colors.outline)
-                        } else {
-                            null
-                        }
+                        border = if (terminalConnected) BorderStroke(1.dp, colors.outline) else null
                     ) {
                         Text(
                             if (terminalConnected) "断开" else "连接",
@@ -176,19 +242,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 }
             }
         )
+    }
 
-        // Gaussian blur strip below the tab pill area.
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .height(88.dp)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RectangleShape },
-                    effects = { blur(16.dp.toPx()) }
-                )
-        )
-
+    @Composable
+    fun TabBar(modifier: Modifier) {
         FloatingTabBar(
             backdrop = backdrop,
             tabs = listOf(
@@ -201,10 +258,100 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             ),
             selectedIndex = selectedTab,
             onTabSelected = { selectedTab = it },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 22.dp)
+            modifier = modifier
         )
+    }
+
+    if (isLandscape) {
+        // 横屏双栏：左侧一级页（tab 在左侧底部），右侧二级页；未打开时右侧为空。
+        Row(Modifier.fillMaxSize().background(colors.background)) {
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                MainPage(Modifier.fillMaxSize())
+                MainTopBar(Modifier.align(Alignment.TopCenter))
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .height(88.dp)
+                        .drawBackdrop(
+                            backdrop = backdrop,
+                            shape = { RectangleShape },
+                            effects = { blur(16.dp.toPx()) },
+                            highlight = { Highlight(alpha = 0f) }
+                        )
+                )
+                TabBar(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .navigationBarsPadding()
+                        .padding(start = 16.dp, bottom = 22.dp)
+                )
+            }
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(colors.outline)
+            )
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                secondary?.let { page ->
+                    Box(Modifier.fillMaxSize()) {
+                        when (page) {
+                            SecondaryPage.FileManager -> FileManagerScreen(
+                                ssh = ssh,
+                                onBack = { secondary = null }
+                            )
+                            SecondaryPage.PackageManager -> PackageManagerScreen(
+                                ssh = ssh,
+                                sshEnabled = config.sshEnabled,
+                                onBack = { secondary = null }
+                            )
+                            SecondaryPage.About -> AboutScreen(onBack = { secondary = null })
+                            is SecondaryPage.DeviceEditor -> DeviceEditScreen(
+                                initial = page.initial,
+                                isNew = page.isNew,
+                                existingNames = devices.filterNot { it.id == page.initial.id }
+                                    .map { it.displayName },
+                                onCancel = { secondary = null },
+                                onSave = { saved ->
+                                    if (page.isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
+                                    secondary = null
+                                },
+                                onDelete = {
+                                    viewModel.deleteDevice(page.initial.id)
+                                    secondary = null
+                                }
+                            )
+                        }
+                        ConnectionToastHost(Modifier.align(Alignment.BottomEnd))
+                    }
+                }
+            }
+        }
+    } else {
+        Box(Modifier.fillMaxSize().background(colors.background)) {
+            MainPage(Modifier.fillMaxSize())
+
+            MainTopBar(Modifier.align(Alignment.TopCenter))
+
+            // Gaussian blur strip below the tab pill area.
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .height(88.dp)
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { RectangleShape },
+                        effects = { blur(16.dp.toPx()) },
+                        highlight = { Highlight(alpha = 0f) }
+                    )
+            )
+
+            TabBar(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 22.dp)
+            )
+        }
     }
 }

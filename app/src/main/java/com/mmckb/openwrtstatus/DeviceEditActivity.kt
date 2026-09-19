@@ -3,7 +3,7 @@ package com.mmckb.openwrtstatus
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
+
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,7 +26,7 @@ class DeviceEditActivity : ComponentActivity() {
         val isNew = intent.getBooleanExtra(EXTRA_IS_NEW, true)
         val existingNames = intent.getStringArrayListExtra(EXTRA_EXISTING) ?: arrayListOf()
 
-        enableEdgeToEdge()
+        setupEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {

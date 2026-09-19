@@ -3,7 +3,7 @@ package com.mmckb.openwrtstatus
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
+
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,7 +31,7 @@ class FileManagerActivity : ComponentActivity() {
             password = config.sshPassword
         )
 
-        enableEdgeToEdge()
+        setupEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
