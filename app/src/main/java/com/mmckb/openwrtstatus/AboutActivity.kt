@@ -21,7 +21,7 @@ class AboutActivity : ComponentActivity() {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
                     AboutScreen(onBack = { finish() })
-                    ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
+                    ConnectionToastHost(Modifier.align(Alignment.BottomEnd))
                 }
             }
         }

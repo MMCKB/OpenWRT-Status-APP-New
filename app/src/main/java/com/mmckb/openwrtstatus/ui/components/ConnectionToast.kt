@@ -1,27 +1,11 @@
 package com.mmckb.openwrtstatus.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.offset
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Router
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,23 +15,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
-/** 应用级连接状态：由主界面的轮询驱动，二级页面据此提示断连/恢复。 */
+/** 应用级连接状态：由主界面的轮询驱动，二级页面据此提示断连。 */
 object ConnectionMonitor {
     enum class Status { Unknown, Online, Offline }
 
@@ -55,143 +31,46 @@ object ConnectionMonitor {
 }
 
 private const val TOAST_DURATION_MS = 3500L
-private val OfflineColor = Color(0xFFF44336)
-private val OnlineColor = Color(0xFF4CAF50)
-
-private data class ToastData(
-    val text: String,
-    val color: Color,
-    val showCross: Boolean
-)
 
 /**
- * 纯色胶囊提示：出现在屏幕右侧、垂直居中略偏下的位置。
- * - 「在线 → 离线」：红色，路由器线条图标右上角带小叉；
- * - 「离线 → 在线」：绿色，不带小叉。
- * 交互：从右侧滑入滑出；可向右拖动提前滑走；按住不动时胶囊停在原地
- * （自动消失计时暂停），松手后未过阈值则回弹，过阈值则滑走消失。
+ * 右下角纯色胶囊提示：仅在与路由器「在线 → 离线」状态切换时出现，
+ * 数秒后自动消失。放在应用窗口层（非系统 Toast），样式与应用一致。
  */
 @Composable
 fun ConnectionToastHost(modifier: Modifier = Modifier) {
     val status by ConnectionMonitor.status.collectAsState()
-    var toast by remember { mutableStateOf<ToastData?>(null) }
-    var lastToast by remember { mutableStateOf(ToastData("路由器连接已断开", OfflineColor, true)) }
+    var visible by remember { mutableStateOf(false) }
     var previous by remember { mutableStateOf(ConnectionMonitor.Status.Unknown) }
-    var isHeld by remember { mutableStateOf(false) }
-    var suppressOffline by remember { mutableStateOf(false) }
-    var lastShownAt by remember { mutableStateOf(0L) }
-    // 拖动时用同步状态跟手（不经过协程调度，避免发飘/不跟手），
-    // 松手后的回弹再用 Animatable 做弹簧动画。
-    var dragX by remember { mutableStateOf(0f) }
-    var returning by remember { mutableStateOf(false) }
-    val returnAnim = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    val dismissPx = with(density) { 96.dp.toPx() }
 
     LaunchedEffect(status) {
-        val now = System.currentTimeMillis()
         if (previous == ConnectionMonitor.Status.Online && status == ConnectionMonitor.Status.Offline) {
-            // 离线期间只弹一次；8 秒内不重复弹同类提示，避免状态抖动刷屏。
-            if (!suppressOffline && now - lastShownAt >= 8000) {
-                toast = ToastData("路由器连接已断开", OfflineColor, true)
-                lastShownAt = now
-            }
-            suppressOffline = true
-        } else if (previous == ConnectionMonitor.Status.Offline && status == ConnectionMonitor.Status.Online) {
-            suppressOffline = false
-            if (now - lastShownAt >= 8000) {
-                toast = ToastData("路由器已连接", OnlineColor, false)
-                lastShownAt = now
-            }
+            visible = true
         }
         previous = status
     }
-    // 自动消失：按住期间暂停计时，松手后重新计时。
-    LaunchedEffect(toast, isHeld) {
-        if (toast != null && !isHeld) {
+    LaunchedEffect(visible) {
+        if (visible) {
             delay(TOAST_DURATION_MS)
-            toast = null
+            visible = false
         }
     }
 
     AnimatedVisibility(
-        visible = toast != null,
-        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
         modifier = modifier
-            .padding(end = 16.dp)
-            .offset(y = 40.dp)
     ) {
-        val data = lastToast
-        val dragOffset = if (returning) returnAnim.value else dragX
         Surface(
             shape = AppShapes.pill,
-            color = data.color,
-            contentColor = Color.White,
-            modifier = Modifier
-                .offset { IntOffset(dragOffset.roundToInt(), 0) }
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = {
-                            isHeld = true
-                            returning = false
-                        },
-                        onDrag = { change, amount ->
-                            change.consume()
-                            dragX = (dragX + amount.x).coerceAtLeast(0f)
-                        },
-                        onDragEnd = {
-                            isHeld = false
-                            if (dragX > dismissPx) {
-                                toast = null
-                                dragX = 0f
-                                // 用户手动滑走红色断连提示后，本次离线期间不再重复弹出。
-                                if (lastToast.showCross) suppressOffline = true
-                            } else if (dragX > 0f) {
-                                scope.launch {
-                                    returnAnim.snapTo(dragX)
-                                    returning = true
-                                    returnAnim.animateTo(
-                                        0f,
-                                        spring(stiffness = Spring.StiffnessMediumLow)
-                                    )
-                                    returning = false
-                                    dragX = 0f
-                                }
-                            }
-                        },
-                        onDragCancel = { isHeld = false }
-                    )
-                }
+            color = Color(0xFF323232),
+            contentColor = Color.White
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box {
-                    Icon(
-                        Icons.Outlined.Router,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    if (data.showCross) {
-                        Icon(
-                            Icons.Outlined.Close,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(11.dp)
-                                .align(Alignment.TopEnd)
-                                .background(data.color, CircleShape)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    data.text,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
+            Text(
+                "路由器连接已断开",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+            )
         }
     }
 }

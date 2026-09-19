@@ -49,7 +49,7 @@ class DeviceEditActivity : ComponentActivity() {
                             finish()
                         }
                     )
-                    ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
+                    ConnectionToastHost(Modifier.align(Alignment.BottomEnd))
                 }
             }
         }
