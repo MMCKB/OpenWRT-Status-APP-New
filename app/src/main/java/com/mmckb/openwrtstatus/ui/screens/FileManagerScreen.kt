@@ -637,7 +637,6 @@ fun FileManagerScreen(
                             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                                 ?: throw SshFileException("无法读取所选文件。")
                         }
-                        if (bytes.size > MAX_UPLOAD_BYTES) continue
                         val rawName = withContext(Dispatchers.IO) { queryDisplayName(context, uri) }
                             ?: "upload-${index + 1}.bin"
                         val finalName = if (entries?.any { it.name == rawName } == true) {
@@ -648,9 +647,15 @@ fun FileManagerScreen(
                         transferMeter.reset()
                         transferCancel.value = false
                         transfer = TransferInfo(finalName, bytes.size.toLong(), isUpload = true, sent = 0L, speedBps = 0f)
-                        SshFiles.upload(ssh, joinPath(currentPath, finalName), bytes) { sent ->
-                            transfer = TransferInfo(finalName, bytes.size.toLong(), true, sent, transferMeter.sample(sent))
-                        } { transferCancel.value }
+                        SshFiles.upload(
+                            ssh,
+                            joinPath(currentPath, finalName),
+                            bytes,
+                            onProgress = { sent ->
+                                transfer = TransferInfo(finalName, bytes.size.toLong(), true, sent, transferMeter.sample(sent))
+                            },
+                            cancelled = { transferCancel.value }
+                        )
                         if (transferCancel.value) {
                             cancelled = true
                             break
@@ -926,7 +931,7 @@ fun FileManagerScreen(
                             enabled = !entries.isNullOrEmpty()
                         ) {
                             Text(
-                                if (!entries.isNullOrEmpty() && selectedNames.containsAll(entries!!)) {
+                                if (!entries.isNullOrEmpty() && selectedNames.containsAll(entries!!.map { it.name })) {
                                     "全不选"
                                 } else {
                                     "全选"
@@ -1760,7 +1765,6 @@ private fun FileRow(
     }
 }
 
-@Composable
 @Composable
 private fun MenuLabel(
     label: String,
