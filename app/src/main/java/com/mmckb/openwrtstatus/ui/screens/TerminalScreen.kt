@@ -146,7 +146,7 @@ fun TerminalScreen(
     }
 }
 
-/** 横屏右栏的独立命令输出面板（与左侧共享同一个 SSH 会话流）。 */
+/** 横屏右栏的独立命令输出面板（与左侧共享同一个 SSH 会话流），铺满整个右栏。 */
 @Composable
 fun TerminalOutputPane(
     viewModel: RouterViewModel,
@@ -154,40 +154,27 @@ fun TerminalOutputPane(
 ) {
     val output by viewModel.terminal.output.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
-    val colors = LocalAppColors.current
 
     LaunchedEffect(output) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
-    Column(
+    // 纯黑控制台铺满整个右栏（含状态栏/手势条区域），文字内容内侧留白。
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .padding(top = rememberTopBarPadding())
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .background(Color.Black)
     ) {
         Text(
-            "终端输出",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onSurface,
-            modifier = Modifier.padding(bottom = 10.dp)
-        )
-        Box(
+            text = output.ifEmpty { "未连接。在左侧点击「连接」开始 SSH 会话。" },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            color = Color(0xFFE6E8EB),
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black, AppShapes.card)
-                .padding(14.dp)
-        ) {
-            Text(
-                text = output.ifEmpty { "未连接。在左侧点击「连接」开始 SSH 会话。" },
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                color = Color(0xFFE6E8EB),
-                modifier = Modifier.verticalScroll(scrollState)
-            )
-        }
+                .verticalScroll(scrollState)
+                .padding(top = 44.dp, start = 14.dp, end = 14.dp, bottom = 14.dp)
+        )
     }
 }
