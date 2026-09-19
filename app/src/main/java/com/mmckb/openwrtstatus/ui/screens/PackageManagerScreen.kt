@@ -16,7 +16,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,7 +59,7 @@ import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
+
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -86,10 +90,15 @@ fun PackageManagerScreen(
     var storage by remember { mutableStateOf<MountInfo?>(null) }
     var backend by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf("") }
+    var showFilter by remember { mutableStateOf(false) }
     var installName by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
+    var installedLoading by remember { mutableStateOf(false) }
+    var availableLoading by remember { mutableStateOf(false) }
+    var upgradableLoading by remember { mutableStateOf(false) }
+    var storageLoading by remember { mutableStateOf(false) }
 
     var opRunning by remember { mutableStateOf(false) }
     var opDialogHidden by remember { mutableStateOf(false) }
@@ -110,50 +119,48 @@ fun PackageManagerScreen(
     }
 
     fun loadLists() {
+        // 每一路独立转圈：哪个列表在加载，就在哪个视图里显示 spinner，
+        // 已完成的列表立即渲染，不再等全部加载完。
+        installedLoading = true
+        availableLoading = true
+        upgradableLoading = true
+        storageLoading = true
+        setMsg(null, false)
         scope.launch {
-            busy = true
+            launch {
+                try {
+                    installed = client.listInstalled(ssh)
+                } catch (e: Exception) {
+                    installed = emptyList()
+                    setMsg(e.message ?: "已安装列表读取失败。", true)
+                } finally {
+                    installedLoading = false
+                }
+            }
+            launch {
+                try {
+                    upgradable = client.listUpgradable(ssh)
+                } catch (e: Exception) {
+                    upgradable = emptyList()
+                } finally {
+                    upgradableLoading = false
+                }
+            }
+            launch {
+                try {
+                    storage = client.mountInfo(ssh)
+                } finally {
+                    storageLoading = false
+                }
+            }
             try {
-                backend = withContext(Dispatchers.IO) {
-                    runCatching { client.backend(ssh) }.getOrNull() ?: "opkg"
-                }
-                // 四路并行：已安装、可升级、存储、可用（最大最慢的一路单独跑）。
-                val installedJob = scope.async {
-                    runCatching { withContext(Dispatchers.IO) { client.listInstalled(ssh) } }
-                }
-                val upgradableJob = scope.async {
-                    runCatching { withContext(Dispatchers.IO) { client.listUpgradable(ssh) } }
-                }
-                val storageJob = scope.async {
-                    runCatching { withContext(Dispatchers.IO) { client.mountInfo(ssh) } }
-                }
-                val availableJob = scope.async {
-                    runCatching { withContext(Dispatchers.IO) { client.listAvailable(ssh, emptySet()) } }
-                }
-
-                val installedResult = installedJob.await()
-                installed = installedResult.getOrNull()
-                upgradable = upgradableJob.await().getOrNull()
-                storage = storageJob.await().getOrNull()
-                val installedNames = installed.orEmpty().map { it.name }.toSet()
-                val availableResult = availableJob.await()
-                // 可用列表到达后，用已安装名单就地标记安装状态。
-                available = availableResult.getOrNull()?.map {
-                    it.copy(installed = installedNames.contains(it.name))
-                }
-
-                val failures = listOf(
-                    installedResult,
-                    upgradableJob.await(),
-                    storageJob.await(),
-                    availableResult
-                ).count { it.isFailure }
-                when {
-                    failures == 4 -> setMsg("读取软件包列表失败，请检查 SSH 连接。", true)
-                    failures > 0 -> setMsg("部分信息读取失败，请重试。", true)
-                    else -> setMsg(null, false)
-                }
+                val raw = client.listAvailable(ssh, emptySet())
+                val names = installed.orEmpty().map { it.name }.toSet()
+                available = raw.map { it.copy(installed = names.contains(it.name)) }
+            } catch (e: Exception) {
+                available = emptyList()
             } finally {
-                busy = false
+                availableLoading = false
             }
         }
     }
@@ -178,11 +185,13 @@ fun PackageManagerScreen(
                 opRunning = false
                 opResult = result
                 if (opDialogHidden) {
-                    // 用户已选「后台等待」：用消息条反馈并自动刷新。
-                    setMsg(
-                        if (result.success) "$info 完成。" else "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
-                        !result.success
-                    )
+                    // 用户已选「后台等待」：成功静默刷新，失败才提示。
+                    if (!result.success) {
+                        setMsg(
+                            "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
+                            true
+                        )
+                    }
                     loadLists()
                 }
             } catch (e: Exception) {
@@ -302,25 +311,7 @@ fun PackageManagerScreen(
             fontWeight = FontWeight.SemiBold,
             color = colors.onSurface
         )
-        backend?.let {
-            Text(
-                "$it 后端 · SSH",
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
-            )
-        }
 
-        if (busy) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            }
-        }
         message?.let {
             Text(
                 it,
@@ -359,26 +350,79 @@ fun PackageManagerScreen(
                 }
             }
 
-            // 视图切换 + 过滤
+            // 视图切换 + 搜索开关
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 TabChip("已安装 ${installedList.size}", mode == "installed", Modifier.weight(1f)) { mode = "installed" }
                 TabChip("可用 ${availableList.size}", mode == "available", Modifier.weight(1f)) { mode = "available" }
                 TabChip("可升级 ${updatesList.size}", mode == "updates", Modifier.weight(1f)) { mode = "updates" }
+                IconButton(onClick = {
+                    showFilter = !showFilter
+                    if (!showFilter) filter = ""
+                }) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = "搜索",
+                        tint = if (showFilter) colors.primary else colors.onSurfaceVariant
+                    )
+                }
             }
-            OutlinedTextField(
-                value = filter,
-                onValueChange = { filter = it },
-                singleLine = true,
-                placeholder = { Text("过滤软件包名称或描述") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            )
+            // 紧凑圆角搜索框：点搜索图标后展开。
+            if (showFilter) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = colors.surfaceVariant,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .height(38.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Outlined.Search,
+                            contentDescription = null,
+                            tint = colors.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (filter.isEmpty()) {
+                                Text(
+                                    "搜索",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = filter,
+                                onValueChange = { filter = it },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (filter.isNotEmpty()) {
+                            IconButton(onClick = { filter = "" }) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "清除",
+                                    tint = colors.onSurfaceVariant,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             if (mode == "available") {
                 Row(
                     modifier = Modifier
@@ -402,12 +446,29 @@ fun PackageManagerScreen(
             }
 
             // 软件包列表
+            val listLoading = when (mode) {
+                "available" -> availableLoading
+                "updates" -> upgradableLoading
+                else -> installedLoading
+            }
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .padding(top = 6.dp)
             ) {
-                if (filtered.isEmpty() && !busy) {
+                if (listLoading) {
+                    // spinner 显示在正在加载的那个视图里。
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 32.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                        }
+                    }
+                } else if (filtered.isEmpty()) {
                     item {
                         Text(
                             if (mode == "updates") "所有软件包均为最新。" else "无匹配软件包。",
@@ -686,10 +747,19 @@ private fun PackageRow(
                         horizontal = 14.dp, vertical = 4.dp
                     )
                 ) { Text("升级") }
-                else -> TextButton(
+                else -> Button(
                     onClick = onRemove,
-                    enabled = !busy
-                ) { Text("删除", color = colors.error) }
+                    enabled = !busy,
+                    shape = AppShapes.pill,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.surface,
+                        contentColor = colors.error
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.error.copy(alpha = 0.5f)),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 14.dp, vertical = 4.dp
+                    )
+                ) { Text("删除") }
             }
         }
         pkg.description?.let {

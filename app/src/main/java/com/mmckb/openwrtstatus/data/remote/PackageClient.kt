@@ -136,8 +136,18 @@ class PackageClient {
 
     suspend fun update(ssh: SshConfig): PkgOpResult = runOpCmd(ssh, "update")
 
-    suspend fun install(ssh: SshConfig, packageName: String): PkgOpResult =
-        runOpCmd(ssh, "install", quotePackageName(packageName))
+    /** [allowUntrusted]：跳过签名校验（上传的本地包默认启用）。 */
+    suspend fun install(
+        ssh: SshConfig,
+        packageName: String,
+        allowUntrusted: Boolean = false
+    ): PkgOpResult {
+        val bin = backend(ssh)
+        val args = mutableListOf<String>()
+        if (allowUntrusted && bin == "apk") args += "--allow-untrusted"
+        args += quotePackageName(packageName)
+        return runOpCmd(ssh, "install", *args.toTypedArray())
+    }
 
     suspend fun remove(ssh: SshConfig, packageName: String): PkgOpResult =
         runOpCmd(ssh, "remove", quotePackageName(packageName))
@@ -150,7 +160,13 @@ class PackageClient {
     private suspend fun runOpCmd(ssh: SshConfig, action: String, vararg pkgs: String): PkgOpResult =
         withContext(Dispatchers.IO) {
             val bin = backend(ssh)
-            val command = "$bin $action" + if (pkgs.isEmpty()) "" else " " + pkgs.joinToString(" ")
+            // apk 的安装/删除子命令是 add/del（opkg 才叫 install/remove），语义同 LuCI helper。
+            val mappedAction = when {
+                bin == "apk" && action == "install" -> "add"
+                bin == "apk" && action == "remove" -> "del"
+                else -> action
+            }
+            val command = "$bin $mappedAction" + if (pkgs.isEmpty()) "" else " " + pkgs.joinToString(" ")
             val out = exec(ssh, command, 600_000)
             // apk/opkg 的失败信息都以 ERROR: 开头（stderr 已并入 stdout）。
             val failed = Regex("^ERROR|^Collected errors", RegexOption.MULTILINE).containsMatchIn(out)
