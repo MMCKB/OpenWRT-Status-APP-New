@@ -77,6 +77,9 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     /** 连续失败达到该次数才判定离线，单次偶发失败（WiFi 瞬断）不弹断连提示。 */
     private var pollFailures = 0
 
+    /** 上一次轮询未完成时不重叠发起新的，避免乱序完成导致状态抖动。 */
+    private var refreshInFlight = false
+
     init {
         refresh()
         // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
@@ -99,12 +102,23 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Fetches a dashboard snapshot; [forceConfig] overrides the active config once. */
     fun refresh(forceConfig: RouterConfig? = null) {
+        if (refreshInFlight) return
+        refreshInFlight = true
         viewModelScope.launch {
-            val cfg = forceConfig ?: _config.value
-            if (_uiState.value !is StatusUiState.Success) {
-                _uiState.value = StatusUiState.Loading
-            }
             try {
+                refreshInternal(forceConfig)
+            } finally {
+                refreshInFlight = false
+            }
+        }
+    }
+
+    private suspend fun refreshInternal(forceConfig: RouterConfig?) {
+        val cfg = forceConfig ?: _config.value
+        if (_uiState.value !is StatusUiState.Success) {
+            _uiState.value = StatusUiState.Loading
+        }
+        try {
                 val status = repository.fetchStatus(cfg)
                 val now = System.currentTimeMillis()
 
@@ -204,13 +218,12 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 _uiState.value = StatusUiState.Error(e.message ?: "未知错误", null)
                 markPollFailed()
             }
-        }
     }
 
-    /** 单次失败只累计计数，连续两次失败才判定离线（终端连着时视为仍可达）。 */
+    /** 单次失败只累计计数，连续三次失败才判定离线（终端连着时视为仍可达）。 */
     private fun markPollFailed() {
         pollFailures++
-        if (pollFailures >= 2 && terminal.state.value !is SshTerminal.State.Connected) {
+        if (pollFailures >= 3 && terminal.state.value !is SshTerminal.State.Connected) {
             ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
         }
     }
