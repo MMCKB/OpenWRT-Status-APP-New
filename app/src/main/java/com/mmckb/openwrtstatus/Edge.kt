@@ -10,7 +10,7 @@ import androidx.core.view.WindowCompat
  * - enableEdgeToEdge：状态栏/导航栏透明，图标颜色随主题自动切换；
  * - API 29+ 关闭导航栏对比度强制，保证手势条区域完全透明（无边框设计）。
  */
-fun Activity.setupEdgeToEdge() {
+fun androidx.activity.ComponentActivity.setupEdgeToEdge() {
     enableEdgeToEdge(
         statusBarStyle = androidx.activity.SystemBarStyle.auto(
             android.graphics.Color.TRANSPARENT,
