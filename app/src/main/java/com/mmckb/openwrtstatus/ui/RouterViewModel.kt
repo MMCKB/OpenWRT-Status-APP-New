@@ -16,10 +16,12 @@ import com.mmckb.openwrtstatus.data.repository.OpenWrtRepository
 import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.notify.AppNotifier
+import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.formatRate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.max
 
 private const val HISTORY_LIMIT = 60
@@ -74,6 +76,13 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         refresh()
+        // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
+        viewModelScope.launch {
+            while (true) {
+                delay(_config.value.refreshIntervalSec.coerceAtLeast(2) * 1000L)
+                refresh()
+            }
+        }
     }
 
     /** Fetches a dashboard snapshot; [forceConfig] overrides the active config once. */
@@ -174,10 +183,13 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 )
 
                 if (cfg.sshEnabled) refreshLeases()
+                ConnectionMonitor.status.value = ConnectionMonitor.Status.Online
             } catch (e: RouterException) {
                 _uiState.value = StatusUiState.Error(e.message ?: "连接失败", e.hint)
+                ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
             } catch (e: Exception) {
                 _uiState.value = StatusUiState.Error(e.message ?: "未知错误", null)
+                ConnectionMonitor.status.value = ConnectionMonitor.Status.Offline
             }
         }
     }

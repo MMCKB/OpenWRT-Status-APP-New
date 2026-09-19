@@ -5,8 +5,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 
@@ -29,10 +34,13 @@ class FileManagerActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
-                FileManagerScreen(
-                    ssh = ssh,
-                    onBack = { finish() }
-                )
+                Box(Modifier.fillMaxSize()) {
+                    FileManagerScreen(
+                        ssh = ssh,
+                        onBack = { finish() }
+                    )
+                    ConnectionToastHost(Modifier.align(Alignment.BottomEnd))
+                }
             }
         }
     }
