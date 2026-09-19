@@ -680,7 +680,7 @@ fun FileManagerScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 8.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppBackButton(onBack = onBack)

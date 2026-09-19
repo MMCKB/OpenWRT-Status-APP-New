@@ -580,7 +580,10 @@ fun AppDialog(
 @Composable
 fun AppBackButton(onBack: () -> Unit) {
     val colors = LocalAppColors.current
-    IconButton(onClick = onBack) {
+    IconButton(
+        onClick = onBack,
+        modifier = Modifier.size(40.dp)
+    ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "返回",

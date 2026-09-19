@@ -73,7 +73,7 @@ fun DeviceEditScreen(
             .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = 12.dp)
+            .padding(top = 2.dp)
             .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {

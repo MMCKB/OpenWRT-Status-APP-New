@@ -61,7 +61,7 @@ fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = 8.dp, bottom = 12.dp),
+            .padding(top = 2.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
