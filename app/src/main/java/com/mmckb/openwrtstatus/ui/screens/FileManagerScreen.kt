@@ -1150,7 +1150,7 @@ fun FileManagerScreen(
                     border = BorderStroke(1.dp, colors.outline),
                     modifier = Modifier.widthIn(min = 88.dp)
                 ) {
-                    Column(Modifier.padding(vertical = 4.dp)) {
+                    Column(Modifier.padding(vertical = 2.dp)) {
                         if (!menuEntry.isDir) {
                             MenuLabel("查看 / 编辑", colors.onSurface) {
                                 runMenuAction { openEntry(joinPath(currentPath, menuEntry.name), menuEntry.name, false) }
@@ -1678,7 +1678,7 @@ private fun MenuLabel(label: String, tint: androidx.compose.ui.graphics.Color, o
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
     )
 }
 
