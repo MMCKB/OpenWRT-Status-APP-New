@@ -127,7 +127,7 @@ fun copyPickedImageToBackground(context: android.content.Context, uri: android.n
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: return false
         val store = SettingsStore(context)
-        java.io.File(store.backgroundFile().parentFile).mkdirs()
+        store.backgroundFile().parentFile?.mkdirs()
         store.backgroundFile().outputStream().use { out ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
