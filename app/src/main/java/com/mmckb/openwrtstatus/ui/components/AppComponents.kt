@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -515,7 +516,11 @@ fun AppDialog(
 ) {
     val colors = LocalAppColors.current
     var backProgress by remember { mutableStateOf(0f) }
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        // 对话框窗口也走 edge-to-edge，避免弹窗期间手势条区域变成不透明色块。
+        properties = DialogProperties(decorFitsSystemWindows = false)
+    ) {
         // 预测性返回：手势中跟随系统规范缩放淡出（一级页面返回同款动效），取消则回弹，提交则关闭。
         PredictiveBackHandler {
             try {

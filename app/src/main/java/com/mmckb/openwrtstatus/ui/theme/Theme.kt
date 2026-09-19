@@ -35,7 +35,7 @@ data class AppColors(
 val LocalAppColors = staticCompositionLocalOf { lightAppColors() }
 
 fun lightAppColors() = AppColors(
-    background = Color(0xFFF4F6FA),
+    background = Color(0xFFFFFFFF),
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFEEF1F6),
     onSurface = Color(0xFF1A1C1E),

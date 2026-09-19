@@ -348,14 +348,14 @@ class PackageClient {
                     PkgInfo(
                         name = match.groupValues[1],
                         version = match.groupValues[2],
-                        description = "已安装的系统软件包 (apk)",
+                        description = null,
                         installed = true
                     )
                 } else {
                     PkgInfo(
                         name = trimmed,
                         version = "unknown",
-                        description = "已安装的系统软件包 (apk)",
+                        description = null,
                         installed = true
                     )
                 }
