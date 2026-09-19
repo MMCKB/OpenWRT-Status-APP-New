@@ -569,6 +569,7 @@ fun PackageManagerScreen(
     // 软件源管理（读取 distfeed / customfeeds，可新增源、开关启用状态，保存后自动 apk update）。
     if (showSources) {
         var newSourceUrl by remember { mutableStateOf("") }
+        var sourcesError by remember { mutableStateOf<String?>(null) }
         AppDialog(
             title = "软件源",
             confirmLabel = if (sourcesBusy) "保存中…" else "保存",
@@ -612,15 +613,35 @@ fun PackageManagerScreen(
                         .height(360.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // 添加源：默认加入 customfeeds.list。
+                    // 添加源：默认加入 customfeeds.list。输入框与添加按钮同高同圆角。
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = newSourceUrl,
-                            onValueChange = { newSourceUrl = it },
-                            singleLine = true,
-                            placeholder = { Text("http(s):// 添加软件源") },
-                            modifier = Modifier.weight(1f)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = colors.surfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "http(s)://",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = newSourceUrl,
+                                    onValueChange = { newSourceUrl = it },
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
@@ -637,9 +658,17 @@ fun PackageManagerScreen(
                             enabled = newSourceUrl.isNotBlank(),
                             shape = AppShapes.pill,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 14.dp, vertical = 6.dp
+                                horizontal = 14.dp, vertical = 9.dp
                             )
                         ) { Text("添加") }
+                    }
+                    sourcesError?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.error,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     sources.orEmpty().forEachIndexed { idx, repo ->
@@ -668,9 +697,10 @@ fun PackageManagerScreen(
                                 onCheckedChange = { enabled ->
                                     // 至少启用一个仓库：关掉最后一个启用项时阻止并提示。
                                     if (!enabled && sources.orEmpty().count { it.enabled } <= 1) {
-                                        setMsg("至少启用一个软件包仓库。", true)
+                                        sourcesError = "至少启用一个软件包仓库。"
                                         return@Switch
                                     }
+                                    sourcesError = null
                                     sources = sources.orEmpty().mapIndexed { i, r ->
                                         if (i == idx) r.copy(enabled = enabled) else r
                                     }

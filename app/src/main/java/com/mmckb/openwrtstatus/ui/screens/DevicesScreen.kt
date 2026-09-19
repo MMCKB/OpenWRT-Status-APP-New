@@ -1,8 +1,5 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -52,14 +49,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppDialog
@@ -78,39 +73,16 @@ import kotlin.math.roundToInt
 @Composable
 fun DevicesScreen(
     viewModel: RouterViewModel,
+    onOpenEditor: (RouterConfig, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val activeId by viewModel.activeId.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
     var openSwipe by remember { mutableStateOf<Pair<String, String>?>(null) }
-    val context = LocalContext.current
-
-    val editLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val deletedId = result.data?.getStringExtra(DeviceEditActivity.EXTRA_DELETE_ID)
-        if (deletedId != null) {
-            viewModel.deleteDevice(deletedId)
-            return@rememberLauncherForActivityResult
-        }
-        val saved = result.data?.getSerializableExtra(DeviceEditActivity.EXTRA_SAVED) as? RouterConfig
-        if (saved != null) {
-            val isNew = result.data?.getBooleanExtra(DeviceEditActivity.EXTRA_IS_NEW, false) ?: false
-            if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
-        }
-    }
 
     fun launchEditor(device: RouterConfig, isNew: Boolean) {
-        val intent = Intent(context, DeviceEditActivity::class.java).apply {
-            putExtra(DeviceEditActivity.EXTRA_DEVICE, device)
-            putExtra(DeviceEditActivity.EXTRA_IS_NEW, isNew)
-            putStringArrayListExtra(
-                DeviceEditActivity.EXTRA_EXISTING,
-                ArrayList(devices.filterNot { it.id == device.id }.map { it.displayName })
-            )
-        }
-        editLauncher.launch(intent)
+        onOpenEditor(device, isNew)
     }
 
     val colors = LocalAppColors.current

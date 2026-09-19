@@ -2,7 +2,7 @@ package com.mmckb.openwrtstatus
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
+
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +16,7 @@ import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 class AboutActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        setupEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
