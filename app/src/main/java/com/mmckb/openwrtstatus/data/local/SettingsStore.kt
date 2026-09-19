@@ -5,16 +5,65 @@ import android.content.SharedPreferences
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Persists the device list (multi-router support) plus the active device id in
  * SharedPreferences as JSON. A legacy single-router install is migrated into a
  * one-entry device list on first read.
  */
-class SettingsStore(context: Context) {
+class SettingsStore(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("openwrt_status_prefs", Context.MODE_PRIVATE)
+
+    /** 用户自定义背景图的调整参数。offset 为屏幕宽高的比例（-0.5..0.5）。 */
+    data class BackgroundAdjust(
+        val blurDp: Float = 0f,
+        val scale: Float = 1f,
+        val offsetX: Float = 0f,
+        val offsetY: Float = 0f
+    )
+
+    fun backgroundFile(): File = File(context.filesDir, "background.jpg")
+
+    fun hasBackgroundImage(): Boolean = backgroundFile().exists()
+
+    fun isBackgroundEnabled(): Boolean =
+        prefs.getBoolean(KEY_BG_ENABLED, false) && hasBackgroundImage()
+
+    fun saveBackgroundEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BG_ENABLED, enabled).apply()
+    }
+
+    fun loadBackgroundAdjust(): BackgroundAdjust = BackgroundAdjust(
+        blurDp = prefs.getFloat(KEY_BG_BLUR, 0f),
+        scale = prefs.getFloat(KEY_BG_SCALE, 1f),
+        offsetX = prefs.getFloat(KEY_BG_OFFSET_X, 0f),
+        offsetY = prefs.getFloat(KEY_BG_OFFSET_Y, 0f)
+    )
+
+    fun saveBackgroundAdjust(adjust: BackgroundAdjust) {
+        prefs.edit()
+            .putFloat(KEY_BG_BLUR, adjust.blurDp)
+            .putFloat(KEY_BG_SCALE, adjust.scale)
+            .putFloat(KEY_BG_OFFSET_X, adjust.offsetX)
+            .putFloat(KEY_BG_OFFSET_Y, adjust.offsetY)
+            .putBoolean(KEY_BG_ENABLED, true)
+            .apply()
+    }
+
+    /** 移除背景：清掉图片文件与全部设置。 */
+    fun clearBackground() {
+        backgroundFile().delete()
+        prefs.edit()
+            .putBoolean(KEY_BG_ENABLED, false)
+            .putFloat(KEY_BG_BLUR, 0f)
+            .putFloat(KEY_BG_SCALE, 1f)
+            .putFloat(KEY_BG_OFFSET_X, 0f)
+            .putFloat(KEY_BG_OFFSET_Y, 0f)
+            .apply()
+    }
 
     fun loadDevices(): List<RouterConfig> {
         val raw = prefs.getString(KEY_DEVICES, null)
@@ -108,5 +157,10 @@ class SettingsStore(context: Context) {
         private const val KEY_DEVICES = "devices_json"
         private const val KEY_ACTIVE = "activeDeviceId"
         private const val KEY_SPEED_NOTIFY = "speed_notification_enabled"
+        private const val KEY_BG_ENABLED = "bg_enabled"
+        private const val KEY_BG_BLUR = "bg_blur"
+        private const val KEY_BG_SCALE = "bg_scale"
+        private const val KEY_BG_OFFSET_X = "bg_offset_x"
+        private const val KEY_BG_OFFSET_Y = "bg_offset_y"
     }
 }
