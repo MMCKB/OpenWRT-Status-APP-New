@@ -74,44 +74,86 @@ class PackageClient {
     private suspend fun exec(ssh: SshConfig, command: String, timeoutMs: Int): String =
         withContext(Dispatchers.IO) { SshExec.run(ssh, "$command 2>&1", timeoutMs) }
 
+    // ---- 后端检测（apk / opkg，自动适配，逻辑同 LuCI helper） ----
+
+    private val backends = mutableMapOf<String, String>()
+
+    /** 检测路由器使用的包管理器：有 /usr/bin/apk 用 apk，否则 opkg。 */
+    suspend fun backend(ssh: SshConfig): String = withContext(Dispatchers.IO) {
+        backends.getOrPut("${ssh.username}@${ssh.host}:${ssh.port}") {
+            runCatching {
+                SshExec.run(
+                    ssh,
+                    "command -v apk >/dev/null 2>&1 && echo apk || echo opkg",
+                    20_000
+                ).trim().ifBlank { "opkg" }
+            }.getOrDefault("opkg")
+        }
+    }
+
     // ---- 列表 ----
 
-    /** 已安装软件包（apk info -v，每行"包名-版本"）。 */
-    suspend fun listInstalled(ssh: SshConfig): List<PkgInfo> = withContext(Dispatchers.IO) {
-        parseInstalledPackages(exec(ssh, "apk info -v", 120_000))
-    }
-
-    /** 可升级软件包（apk list -u，输出含旧版本号）。 */
-    suspend fun listUpgradable(ssh: SshConfig): List<PkgInfo> = withContext(Dispatchers.IO) {
-        parseUpgradablePackages(exec(ssh, "apk list -u", 120_000))
-    }
-
-    /** 可用软件包（apk search -v "*"，含描述；[installedNames] 用于标记已安装）。 */
-    suspend fun listAvailable(ssh: SshConfig, installedNames: Set<String>): List<PkgInfo> =
-        withContext(Dispatchers.IO) {
-            parseAvailablePackages(exec(ssh, "apk search -v \"*\" || apk search \"*\"", 180_000), installedNames)
+    /** 已安装软件包。 */
+    suspend fun listInstalled(ssh: SshConfig): List<PkgInfo> {
+        val bin = backend(ssh)
+        return if (bin == "apk") {
+            withContext(Dispatchers.IO) { parseInstalledPackages(exec(ssh, "apk info -v", 120_000)) }
+        } else {
+            withContext(Dispatchers.IO) {
+                parseOpkgList(exec(ssh, "cat /usr/lib/opkg/status", 120_000), installedByDefault = true)
+            }
         }
+    }
+
+    /** 可升级软件包。 */
+    suspend fun listUpgradable(ssh: SshConfig): List<PkgInfo> {
+        val bin = backend(ssh)
+        return if (bin == "apk") {
+            withContext(Dispatchers.IO) { parseUpgradablePackages(exec(ssh, "apk list -u", 120_000)) }
+        } else {
+            withContext(Dispatchers.IO) {
+                parseOpkgUpgradable(exec(ssh, "opkg list-upgradable", 120_000))
+            }
+        }
+    }
+
+    /** 可用软件包（[installedNames] 用于标记已安装）。 */
+    suspend fun listAvailable(ssh: SshConfig, installedNames: Set<String>): List<PkgInfo> {
+        val bin = backend(ssh)
+        return if (bin == "apk") {
+            withContext(Dispatchers.IO) {
+                parseAvailablePackages(exec(ssh, "apk search -v \"*\" || apk search \"*\"", 180_000), installedNames)
+            }
+        } else {
+            // opkg：解包 lists 目录的 gzip 索引（逻辑同 LuCI helper）。
+            val command = "lists_dir=\$(sed -rne 's#^lists_dir \\S+ (\\S+)#\\1#p' /etc/opkg.conf /etc/opkg/*.conf 2>/dev/null | tail -n 1); " +
+                "find \"\${lists_dir:-/usr/lib/opkg/lists}\" -type f '!' -name '*.sig' | xargs -r gzip -cd"
+            withContext(Dispatchers.IO) { parseOpkgList(exec(ssh, command, 180_000), installedByDefault = false) }
+        }
+    }
 
     // ---- 操作 ----
 
-    suspend fun update(ssh: SshConfig): PkgOpResult = runOpCmd(ssh, "apk update")
+    suspend fun update(ssh: SshConfig): PkgOpResult = runOpCmd(ssh, "update")
 
     suspend fun install(ssh: SshConfig, packageName: String): PkgOpResult =
-        runOpCmd(ssh, "apk add ${quotePackageName(packageName)}")
+        runOpCmd(ssh, "install", quotePackageName(packageName))
 
     suspend fun remove(ssh: SshConfig, packageName: String): PkgOpResult =
-        runOpCmd(ssh, "apk del ${quotePackageName(packageName)}")
+        runOpCmd(ssh, "remove", quotePackageName(packageName))
 
     suspend fun upgradePackage(ssh: SshConfig, packageName: String): PkgOpResult =
-        runOpCmd(ssh, "apk upgrade ${quotePackageName(packageName)}")
+        runOpCmd(ssh, "upgrade", quotePackageName(packageName))
 
-    suspend fun upgradeAll(ssh: SshConfig): PkgOpResult = runOpCmd(ssh, "apk upgrade")
+    suspend fun upgradeAll(ssh: SshConfig): PkgOpResult = runOpCmd(ssh, "upgrade")
 
-    private suspend fun runOpCmd(ssh: SshConfig, command: String): PkgOpResult =
+    private suspend fun runOpCmd(ssh: SshConfig, action: String, vararg pkgs: String): PkgOpResult =
         withContext(Dispatchers.IO) {
+            val bin = backend(ssh)
+            val command = "$bin $action" + if (pkgs.isEmpty()) "" else " " + pkgs.joinToString(" ")
             val out = exec(ssh, command, 600_000)
-            // apk 的失败信息以 ERROR: 开头（stderr 已并入 stdout）。
-            val failed = Regex("^ERROR", RegexOption.MULTILINE).containsMatchIn(out)
+            // apk/opkg 的失败信息都以 ERROR: 开头（stderr 已并入 stdout）。
+            val failed = Regex("^ERROR|^Collected errors", RegexOption.MULTILINE).containsMatchIn(out)
             PkgOpResult(
                 code = if (failed) 1 else 0,
                 pkmcmd = command,
@@ -193,7 +235,87 @@ class PackageClient {
         )
     }
 
-    // ---- 行文本解析（移植自旧版 OpenWRT-Status-APP） ----
+    // ---- 行文本解析（apk 部分移植自旧版 OpenWRT-Status-APP） ----
+
+    /**
+     * 解析 opkg 的文本格式（/usr/lib/opkg/status 与 lists 索引同构）：
+     * `Package:/Version:/status:/Installed-Size:/Description:` 等键值块，
+     * 续行以空格开头；键名大小写不敏感（移植自 LuCI parseList）。
+     */
+    private fun parseOpkgList(output: String, installedByDefault: Boolean): List<PkgInfo> {
+        val packages = mutableListOf<PkgInfo>()
+        var name: String? = null
+        var version: String? = null
+        var description: String? = null
+        var size = 0L
+        var installed = false
+
+        fun flush() {
+            val n = name ?: return
+            packages.add(
+                PkgInfo(
+                    name = n,
+                    version = version,
+                    size = size,
+                    description = description,
+                    installed = installedByDefault || installed
+                )
+            )
+        }
+
+        for (raw in output.split(Regex("\r?\n"))) {
+            if (raw.startsWith(" ") || raw.startsWith("\t")) {
+                // 续行：追加到上一个字段的值。
+                if (raw.trim().isNotEmpty()) {
+                    description = (description ?: "").let { if (it.isEmpty()) raw.trim() else "$it ${raw.trim()}" }
+                }
+                continue
+            }
+            val idx = raw.indexOf(':')
+            if (idx <= 0) continue
+            val key = raw.substring(0, idx).trim().lowercase()
+            val value = raw.substring(idx + 1).trim()
+            when (key) {
+                "package" -> {
+                    flush()
+                    name = value.ifEmpty { null }
+                    version = null
+                    description = null
+                    size = 0L
+                    installed = false
+                }
+                "version" -> version = value
+                "installed-size" -> size = value.toLongOrNull() ?: 0L
+                "status" -> installed = value.split(' ').getOrNull(2) == "installed"
+                "description" -> description = value
+            }
+        }
+        flush()
+        return packages.sortedBy { it.name.lowercase() }
+    }
+
+    /** 解析 `opkg list-upgradable` 输出：`name - version - description`。 */
+    private fun parseOpkgUpgradable(output: String): List<PkgInfo> {
+        val packages = mutableListOf<PkgInfo>()
+        for (raw in output.split(Regex("\r?\n"))) {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty() || trimmed.startsWith("ERROR") || trimmed.startsWith("Collected errors")) continue
+            val segments = trimmed.split(" - ")
+            if (segments.isEmpty()) continue
+            val nameVersion = segments[0].trim()
+            val description = segments.getOrNull(2)?.trim() ?: "有可用更新"
+            val match = Regex("^(.+)-([0-9].*)$").find(nameVersion)
+            packages.add(
+                PkgInfo(
+                    name = match?.groupValues?.get(1) ?: nameVersion,
+                    version = match?.groupValues?.get(2) ?: "unknown",
+                    description = description,
+                    installed = true
+                )
+            )
+        }
+        return packages
+    }
 
     private fun parseInstalledPackages(output: String): List<PkgInfo> {
         val packages = mutableListOf<PkgInfo>()
