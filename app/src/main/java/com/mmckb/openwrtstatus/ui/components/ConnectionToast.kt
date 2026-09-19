@@ -78,6 +78,8 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
     var lastToast by remember { mutableStateOf(ToastData("路由器连接已断开", OfflineColor, true)) }
     var previous by remember { mutableStateOf(ConnectionMonitor.Status.Unknown) }
     var isHeld by remember { mutableStateOf(false) }
+    var suppressOffline by remember { mutableStateOf(false) }
+    var lastShownAt by remember { mutableStateOf(0L) }
     // 拖动时用同步状态跟手（不经过协程调度，避免发飘/不跟手），
     // 松手后的回弹再用 Animatable 做弹簧动画。
     var dragX by remember { mutableStateOf(0f) }
@@ -88,12 +90,20 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
     val dismissPx = with(density) { 96.dp.toPx() }
 
     LaunchedEffect(status) {
-        toast = when {
-            previous == ConnectionMonitor.Status.Online && status == ConnectionMonitor.Status.Offline ->
-                ToastData("路由器连接已断开", OfflineColor, true)
-            previous == ConnectionMonitor.Status.Offline && status == ConnectionMonitor.Status.Online ->
-                ToastData("路由器已连接", OnlineColor, false)
-            else -> toast
+        val now = System.currentTimeMillis()
+        if (previous == ConnectionMonitor.Status.Online && status == ConnectionMonitor.Status.Offline) {
+            // 离线期间只弹一次；8 秒内不重复弹同类提示，避免状态抖动刷屏。
+            if (!suppressOffline && now - lastShownAt >= 8000) {
+                toast = ToastData("路由器连接已断开", OfflineColor, true)
+                lastShownAt = now
+            }
+            suppressOffline = true
+        } else if (previous == ConnectionMonitor.Status.Offline && status == ConnectionMonitor.Status.Online) {
+            suppressOffline = false
+            if (now - lastShownAt >= 8000) {
+                toast = ToastData("路由器已连接", OnlineColor, false)
+                lastShownAt = now
+            }
         }
         previous = status
     }
@@ -136,6 +146,8 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
                             if (dragX > dismissPx) {
                                 toast = null
                                 dragX = 0f
+                                // 用户手动滑走红色断连提示后，本次离线期间不再重复弹出。
+                                if (lastToast.showCross) suppressOffline = true
                             } else if (dragX > 0f) {
                                 scope.launch {
                                     returnAnim.snapTo(dragX)
