@@ -65,9 +65,17 @@ fun SettingsScreen(
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null && copyPickedImageToBackground(context, uri)) {
-            bgRefresh++
-            context.startActivity(Intent(context, BackgroundEditActivity::class.java))
+        if (uri != null) {
+            if (copyPickedImageToBackground(context, uri)) {
+                bgRefresh++
+                context.startActivity(Intent(context, BackgroundEditActivity::class.java))
+            } else {
+                android.widget.Toast.makeText(
+                    context,
+                    "无法读取所选图片，请换一张试试",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 
