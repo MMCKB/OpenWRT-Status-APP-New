@@ -78,7 +78,11 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
     var lastToast by remember { mutableStateOf(ToastData("路由器连接已断开", OfflineColor, true)) }
     var previous by remember { mutableStateOf(ConnectionMonitor.Status.Unknown) }
     var isHeld by remember { mutableStateOf(false) }
-    val dragX = remember { Animatable(0f) }
+    // 拖动时用同步状态跟手（不经过协程调度，避免发飘/不跟手），
+    // 松手后的回弹再用 Animatable 做弹簧动画。
+    var dragX by remember { mutableStateOf(0f) }
+    var returning by remember { mutableStateOf(false) }
+    val returnAnim = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val dismissPx = with(density) { 96.dp.toPx() }
@@ -110,32 +114,38 @@ fun ConnectionToastHost(modifier: Modifier = Modifier) {
             .offset(y = 40.dp)
     ) {
         val data = lastToast
+        val dragOffset = if (returning) returnAnim.value else dragX
         Surface(
             shape = AppShapes.pill,
             color = data.color,
             contentColor = Color.White,
             modifier = Modifier
-                .offset { IntOffset(dragX.value.roundToInt(), 0) }
+                .offset { IntOffset(dragOffset.roundToInt(), 0) }
                 .pointerInput(Unit) {
                     detectDragGestures(
-                        onDragStart = { isHeld = true },
+                        onDragStart = {
+                            isHeld = true
+                            returning = false
+                        },
                         onDrag = { change, amount ->
                             change.consume()
-                            scope.launch {
-                                dragX.snapTo((dragX.value + amount.x).coerceAtLeast(0f))
-                            }
+                            dragX = (dragX + amount.x).coerceAtLeast(0f)
                         },
                         onDragEnd = {
                             isHeld = false
-                            scope.launch {
-                                if (abs(dragX.value) > dismissPx) {
-                                    toast = null
-                                    dragX.snapTo(0f)
-                                } else {
-                                    dragX.animateTo(
+                            if (dragX > dismissPx) {
+                                toast = null
+                                dragX = 0f
+                            } else if (dragX > 0f) {
+                                scope.launch {
+                                    returnAnim.snapTo(dragX)
+                                    returning = true
+                                    returnAnim.animateTo(
                                         0f,
                                         spring(stiffness = Spring.StiffnessMediumLow)
                                     )
+                                    returning = false
+                                    dragX = 0f
                                 }
                             }
                         },
