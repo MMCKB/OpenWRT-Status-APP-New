@@ -327,7 +327,7 @@ fun WirelessScreen(
                 if (iface.macfilter != o?.macfilter && iface.macfilter != null) {
                     put(iface.section, "macfilter", iface.macfilter)
                 }
-                if (iface.maclist != (o?.maclist ?: emptyList())) {
+                if (iface.maclist != (o?.maclist ?: emptyList<String>())) {
                     put(iface.section, "maclist", iface.maclist)
                 }
                 if (iface.disabled != (o?.disabled ?: false)) {
