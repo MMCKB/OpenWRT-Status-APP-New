@@ -14,6 +14,9 @@ import kotlinx.serialization.json.put
 data class WirelessRadio(
     val section: String,
     val channel: String?,
+    val htmode: String?,
+    val txpower: String?,
+    val country: String?,
     val band: String?,
     val disabled: Boolean,
     val ifaces: List<WirelessIface>
@@ -23,10 +26,14 @@ data class WirelessRadio(
 data class WirelessIface(
     val section: String,
     val device: String,
+    val mode: String?,
     val ssid: String,
+    val network: String?,
     val key: String?,
     val encryption: String?,
     val hidden: Boolean,
+    val isolate: Boolean,
+    val wmm: Boolean,
     val disabled: Boolean
 )
 
@@ -70,6 +77,9 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     WirelessRadio(
                         section = sectionName,
                         channel = str(sec, "channel"),
+                        htmode = str(sec, "htmode"),
+                        txpower = str(sec, "txpower"),
+                        country = str(sec, "country"),
                         band = str(sec, "band"),
                         disabled = bool(sec, "disabled"),
                         ifaces = emptyList()
@@ -79,10 +89,21 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     WirelessIface(
                         section = sectionName,
                         device = str(sec, "device") ?: "",
+                        mode = str(sec, "mode") ?: "ap",
                         ssid = str(sec, "ssid") ?: "",
+                        network = section["network"]?.let { n ->
+                            when (n) {
+                                is JsonArray -> n.mapNotNull { (it as? JsonPrimitive)?.content }
+                                    .joinToString(",")
+                                is JsonPrimitive -> n.content
+                                else -> null
+                            }
+                        },
                         key = str(sec, "key"),
                         encryption = str(sec, "encryption"),
                         hidden = bool(sec, "hidden"),
+                        isolate = bool(sec, "isolate"),
+                        wmm = if (sec.containsKey("wmm")) bool(sec, "wmm") else true,
                         disabled = bool(sec, "disabled")
                     )
                 )
@@ -122,6 +143,52 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         } catch (e: Exception) {
             throw WirelessApplyException("配置已写入但重载无线失败，请在路由器上执行「wifi reload」。", e)
         }
+    }
+
+    /** 添加 WiFi 接口（LuCI「添加 Wi-Fi 接口」）：uci add → commit → network reload。 */
+    suspend fun addIface(
+        config: RouterConfig,
+        device: String,
+        ssid: String,
+        key: String?,
+        encryption: String
+    ) = withContext(Dispatchers.IO) {
+        call(
+            config, "uci", "add",
+            buildJsonObject {
+                put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
+                put("type", kotlinx.serialization.json.JsonPrimitive("wifi-iface"))
+                put("values", buildJsonObject {
+                    put("device", kotlinx.serialization.json.JsonPrimitive(device))
+                    put("mode", kotlinx.serialization.json.JsonPrimitive("ap"))
+                    put("ssid", kotlinx.serialization.json.JsonPrimitive(ssid))
+                    put("network", kotlinx.serialization.json.JsonPrimitive("lan"))
+                    put("encryption", kotlinx.serialization.json.JsonPrimitive(encryption))
+                    if (key.isNotEmpty()) put("key", kotlinx.serialization.json.JsonPrimitive(key))
+                })
+            }
+        )
+        call(
+            config, "uci", "commit",
+            buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("wireless")) }
+        )
+        call(config, "network", "reload", buildJsonObject { })
+    }
+
+    /** 删除接口段：uci delete → commit → network reload。 */
+    suspend fun deleteIface(config: RouterConfig, section: String) = withContext(Dispatchers.IO) {
+        call(
+            config, "uci", "delete",
+            buildJsonObject {
+                put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
+                put("section", kotlinx.serialization.json.JsonPrimitive(section))
+            }
+        )
+        call(
+            config, "uci", "commit",
+            buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("wireless")) }
+        )
+        call(config, "network", "reload", buildJsonObject { })
     }
 }
 

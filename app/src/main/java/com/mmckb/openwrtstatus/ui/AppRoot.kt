@@ -4,6 +4,10 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -37,11 +41,13 @@ import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,6 +65,7 @@ import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
+import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
@@ -422,7 +429,37 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         )
                     }
                     secondary?.let { page ->
-                        Box(Modifier.fillMaxSize()) {
+                        // 预测性返回：右栏二级页跟手右滑淡出，提交关闭，取消回弹。
+                        val backAnim = remember(page) { androidx.compose.animation.core.Animatable(0f) }
+                        val paneScope = rememberCoroutineScope()
+                        androidx.activity.compose.PredictiveBackHandler { events ->
+                            try {
+                                events.collect { ev ->
+                                    val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+                                        .transform(ev.progress).coerceIn(0f, 1f)
+                                    backAnim.snapTo(p)
+                                }
+                                secondary = null
+                            } catch (_: kotlin.coroutines.cancellation.CancellationException) {
+                                paneScope.launch {
+                                    backAnim.animateTo(
+                                        0f,
+                                        androidx.compose.animation.core.spring(
+                                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        val backP = backAnim.value
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    translationX = size.width * 0.35f * backP
+                                    alpha = 1f - 0.6f * backP
+                                }
+                        ) {
                             secondaryPane(page)
                             // 横屏下胶囊从顶部滑出（右上角）。
                             ConnectionToastHost(
