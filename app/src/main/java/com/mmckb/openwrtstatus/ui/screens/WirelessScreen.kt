@@ -1,8 +1,13 @@
 package com.mmckb.openwrtstatus.ui.screens
 
 import android.graphics.Bitmap
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -50,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,10 +72,12 @@ import com.mmckb.openwrtstatus.data.remote.WirelessRadio
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -221,6 +229,9 @@ fun WirelessScreen(
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val isLandscape =
+        androidx.compose.ui.platform.LocalConfiguration.current.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val client = remember { WirelessClient() }
     val ssh = remember(config) {
         SshConfig(
@@ -399,13 +410,14 @@ fun WirelessScreen(
 
     val changes = buildChanges()
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp)
-            .padding(top = 2.dp, bottom = 12.dp)
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(top = 2.dp, bottom = 12.dp)
+        ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
             Spacer(Modifier.weight(1f))
@@ -660,19 +672,24 @@ fun WirelessScreen(
                                 .padding(top = 10.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
-                            TextButton(
+                            // 圆形二维码分享按钮（紧贴「删除」左侧）。
+                            Surface(
                                 onClick = { shareIfaceFor = iface },
                                 enabled = !busy,
-                                modifier = Modifier.height(30.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp)
+                                shape = CircleShape,
+                                color = colors.surfaceVariant,
+                                modifier = Modifier.size(30.dp)
                             ) {
-                                Icon(
-                                    Icons.Outlined.QrCode2,
-                                    contentDescription = "分享二维码",
-                                    tint = colors.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Outlined.QrCode2,
+                                        contentDescription = "分享二维码",
+                                        tint = colors.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
+                            Spacer(Modifier.width(6.dp))
                             TextButton(
                                 onClick = { deleteIfaceFor = iface.section },
                                 enabled = !busy,
@@ -719,6 +736,14 @@ fun WirelessScreen(
                     .padding(top = 4.dp)
             ) {
                 Text(if (changes.isEmpty()) "无更改" else "应用更改（${changes.size} 段）")
+            }
+        }
+        }
+
+        // —— 横屏：WiFi 分享二维码从右侧滑出面板（竖屏为底部弹窗） ——
+        if (isLandscape) {
+            shareIfaceFor?.let { shareIface ->
+                WifiShareSidePanel(shareIface, onDismiss = { shareIfaceFor = null })
             }
         }
     }
@@ -1057,72 +1082,22 @@ fun WirelessScreen(
         )
     }
 
-    // ---- WiFi 分享二维码（底部弹窗，非居中） ----
-    shareIfaceFor?.let { shareIface ->
-        val qrContent = wifiQrContent(
-            shareIface.ssid, shareIface.key, shareIface.encryption, shareIface.hidden
-        )
-        val qrBitmap = remember(qrContent) { wifiQrBitmap(qrContent) }
-        ModalBottomSheet(
-            onDismissRequest = { shareIfaceFor = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = colors.surface,
-            contentColor = colors.onSurface
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 22.dp)
-                    .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+    // ---- WiFi 分享二维码：竖屏底部弹窗（横屏为右侧滑出面板） ----
+    if (!isLandscape) {
+        shareIfaceFor?.let { shareIface ->
+            ModalBottomSheet(
+                onDismissRequest = { shareIfaceFor = null },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = colors.surface,
+                contentColor = colors.onSurface
             ) {
-                Text(
-                    "分享二维码",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
-                )
-                Spacer(Modifier.height(16.dp))
-                // 白底容器保证深色模式下二维码同样可被相机识别。
-                Surface(
-                    shape = AppShapes.block,
-                    color = Color.White
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 22.dp, end = 22.dp, bottom = 30.dp)
                 ) {
-                    if (qrBitmap != null) {
-                        Image(
-                            bitmap = qrBitmap.asImageBitmap(),
-                            contentDescription = "WiFi 二维码",
-                            modifier = Modifier
-                                .padding(10.dp)
-                                .size(240.dp)
-                        )
-                    } else {
-                        Text(
-                            "二维码生成失败。",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.error,
-                            modifier = Modifier.padding(24.dp)
-                        )
-                    }
+                    WifiShareContent(shareIface)
                 }
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    shareIface.ssid.ifEmpty { "（未设置 SSID）" },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface,
-                    maxLines = 2
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    when {
-                        shareIface.encryption == "none" -> "密码：无（开放网络）"
-                        shareIface.key.isNullOrBlank() -> "密码：未获取"
-                        else -> "密码：${shareIface.key}"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant
-                )
             }
         }
     }
@@ -1243,6 +1218,120 @@ private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
         onCheckedChange = onCheckedChange,
         modifier = Modifier.scale(0.75f)
     )
+}
+
+/** WiFi 分享二维码内容：标题 + 白底二维码 + WiFi 名称 + 灰字密码（竖屏/横屏共用）。 */
+@Composable
+private fun WifiShareContent(shareIface: WirelessIface) {
+    val colors = LocalAppColors.current
+    val qrContent = wifiQrContent(
+        shareIface.ssid, shareIface.key, shareIface.encryption, shareIface.hidden
+    )
+    val qrBitmap = remember(qrContent) { wifiQrBitmap(qrContent) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "分享二维码",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(16.dp))
+        // 白底容器保证深色模式下二维码同样可被相机识别。
+        Surface(
+            shape = AppShapes.block,
+            color = Color.White
+        ) {
+            if (qrBitmap != null) {
+                Image(
+                    bitmap = qrBitmap.asImageBitmap(),
+                    contentDescription = "WiFi 二维码",
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .size(240.dp)
+                )
+            } else {
+                Text(
+                    "二维码生成失败。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.error,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Text(
+            shareIface.ssid.ifEmpty { "（未设置 SSID）" },
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface,
+            maxLines = 2
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            when {
+                shareIface.encryption == "none" -> "密码：无（开放网络）"
+                shareIface.key.isNullOrBlank() -> "密码：未获取"
+                else -> "密码：${shareIface.key}"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant
+        )
+    }
+}
+
+/** 横屏右侧滑出的分享面板：遮罩点击关闭，预测性返回时面板跟手向右滑出。 */
+@Composable
+private fun WifiShareSidePanel(iface: WirelessIface, onDismiss: () -> Unit) {
+    val colors = LocalAppColors.current
+    var backProgress by remember { mutableStateOf(0f) }
+    PredictiveBackHandler { progress ->
+        try {
+            progress.collect { backProgress = it }
+            onDismiss()
+        } catch (_: CancellationException) {
+            backProgress = 0f
+        }
+    }
+    val p = PredictiveBackEasing.transform(backProgress).coerceIn(0f, 1f)
+    Box(Modifier.fillMaxSize()) {
+        // 半透明遮罩：点击空白关闭，随返回手势逐渐变透。
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.32f * (1f - p)))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() }
+        )
+        Surface(
+            shape = AppShapes.card,
+            color = colors.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(top = 12.dp, bottom = 12.dp, end = 12.dp)
+                .fillMaxHeight()
+                .width(300.dp)
+                .graphicsLayer {
+                    alpha = 1f - 0.4f * p
+                    translationX = size.width * 0.3f * p
+                }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                WifiShareContent(iface)
+            }
+        }
+    }
 }
 
 /** 选择行：点击后弹出应用风格的选择对话框。 */
