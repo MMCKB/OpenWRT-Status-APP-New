@@ -74,6 +74,25 @@ class PackageClient {
     private suspend fun exec(ssh: SshConfig, command: String, timeoutMs: Int): String =
         withContext(Dispatchers.IO) { SshExec.run(ssh, "$command 2>&1", timeoutMs) }
 
+    private val EXIT_MARKER = "__OPENWRT_STATUS_EXIT__"
+
+    /**
+     * 执行命令并返回 (清洗后的输出, 真实退出码)。命令末尾追加退出码标记行，
+     * 由远端 shell 回显；SSH 会话中途断开（如设备离网、连接被杀）时标记行
+     * 不会到达，退出码为 null——必须视为失败，不能凭「输出里没有 ERROR」
+     * 就判定成功。
+     */
+    private suspend fun execWithCode(ssh: SshConfig, command: String, timeoutMs: Int): Pair<String, Int?> =
+        withContext(Dispatchers.IO) {
+            val out = SshExec.run(ssh, "$command 2>&1; echo \"$EXIT_MARKER:\$?\"", timeoutMs)
+            val code = Regex("$EXIT_MARKER:(-?\\d+)\\s*$", RegexOption.MULTILINE)
+                .find(out)?.groupValues?.get(1)?.toIntOrNull()
+            val cleaned = out
+                .replace(Regex("^$EXIT_MARKER:-?\\d+\\s*$", RegexOption.MULTILINE), "")
+                .trim()
+            cleaned to code
+        }
+
     // ---- 后端检测（apk / opkg，自动适配，逻辑同 LuCI helper） ----
 
     private val backends = mutableMapOf<String, String>()
@@ -167,11 +186,17 @@ class PackageClient {
                 else -> action
             }
             val command = "$bin $mappedAction" + if (pkgs.isEmpty()) "" else " " + pkgs.joinToString(" ")
-            val out = exec(ssh, command, 600_000)
-            // apk/opkg 的失败信息都以 ERROR: 开头（stderr 已并入 stdout）。
-            val failed = Regex("^ERROR|^Collected errors", RegexOption.MULTILINE).containsMatchIn(out)
+            val (out, exitCode) = execWithCode(ssh, command, 600_000)
+            // 判定失败的三种情况：输出含 ERROR、远端返回非 0、以及「拿不到退出码」
+            // （SSH 会话中断，例如更新过程中设备离网）——绝不能当作成功。
+            val failed = exitCode == null || exitCode != 0 ||
+                Regex("^ERROR|^Collected errors", RegexOption.MULTILINE).containsMatchIn(out)
             PkgOpResult(
-                code = if (failed) 1 else 0,
+                code = when {
+                    exitCode == null -> -1
+                    failed && exitCode == 0 -> 1
+                    else -> exitCode
+                },
                 pkmcmd = command,
                 stdout = out.takeIf { it.isNotBlank() },
                 stderr = null
@@ -226,11 +251,17 @@ class PackageClient {
                 "target=$quotedSource; mkdir -p \"\$(dirname \"\$target\")\"; temp=\$(mktemp /tmp/openwrt-status-apk-repositories.XXXXXX) || exit 1; printf '%s\\n' $writeLines > \"\$temp\" || { rm -f \"\$temp\"; exit 1; }; cp \"\$target\" \"\$target.openwrt-status.bak\" 2>/dev/null || true; mv \"\$temp\" \"\$target\""
             }
         }
-        exec(
+        val (out, exitCode) = execWithCode(
             ssh,
             "if ! command -v apk >/dev/null 2>&1; then echo 'apk 未安装。'; exit 2; fi; umask 077; ${writes.joinToString("; ")} && apk update",
             300_000
         )
+        // 会话中断 / 非 0 退出时补一行 ERROR，让调用方的 ERROR 检查直接判定失败。
+        val failed = exitCode == null || exitCode != 0
+        if (failed && !out.startsWith("ERROR")) {
+            (if (out.isBlank()) "" else "$out\n") +
+                "ERROR: 命令未正常完成（${exitCode?.let { "退出码 $it" } ?: "连接中断"}）。"
+        } else out
     }
 
     /** 根分区存储容量（apk 安装位置）。 */

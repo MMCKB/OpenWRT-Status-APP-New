@@ -130,5 +130,8 @@ dependencies {
     // SSH remote shell (maintained JSch fork, keeps the com.jcraft.jsch API)
     implementation("com.github.mwiede:jsch:2.28.7")
 
+    // WiFi 分享二维码生成（ZXing core，纯 Java 无传递依赖，Apache-2.0）
+    implementation("com.google.zxing:core:3.5.3")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
