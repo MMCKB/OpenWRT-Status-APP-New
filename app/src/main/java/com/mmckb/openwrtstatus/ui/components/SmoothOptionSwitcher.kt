@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,9 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +50,9 @@ fun SmoothOptionSwitcher(
 ) {
     val colors = LocalAppColors.current
     val selectedIndex = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    // 长按拖动时在 pointerInput 协程里读取最新值，避免闭包捕获到过期状态。
+    val currentSelected by rememberUpdatedState(selected)
+    val currentOnSelect by rememberUpdatedState(onSelect)
     val progress by animateFloatAsState(
         targetValue = selectedIndex.toFloat(),
         animationSpec = tween(300, easing = OptionSwitcherEasing),
@@ -57,6 +63,24 @@ fun SmoothOptionSwitcher(
             .height(40.dp)
             .clip(RoundedCornerShape(20.dp))
             .background(colors.surfaceVariant)
+            // 长按后横向滑动：手指划到哪一段就实时切换到哪一段，
+            // 指示器随之平滑滑动；单击选择行为保持不变。
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        val idx = ((offset.x / size.width.coerceAtLeast(1)) * options.size)
+                            .toInt().coerceIn(0, options.size - 1)
+                        val value = options[idx].first
+                        if (value != currentSelected) currentOnSelect(value)
+                    },
+                    onDrag = { change, _ ->
+                        val idx = ((change.position.x / size.width.coerceAtLeast(1)) * options.size)
+                            .toInt().coerceIn(0, options.size - 1)
+                        val value = options[idx].first
+                        if (value != currentSelected) currentOnSelect(value)
+                    }
+                )
+            }
     ) {
         val segment = maxWidth / options.size
         // 滑动指示器：随选中索引平移一个段宽。

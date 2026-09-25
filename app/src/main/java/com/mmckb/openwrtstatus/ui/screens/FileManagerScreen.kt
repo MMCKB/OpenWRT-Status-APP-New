@@ -41,7 +41,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
@@ -106,6 +105,7 @@ import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
 import kotlin.math.roundToInt
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatRate
@@ -1414,11 +1414,7 @@ fun FileManagerScreen(
                 color = colors.onSurfaceVariant
             )
             Spacer(Modifier.height(8.dp))
-            Column(
-                modifier = Modifier
-                    .height(360.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            ThinScrollbarColumn(modifier = Modifier.height(360.dp)) {
                 if (list.isEmpty()) {
                     Text(
                         "空压缩包",

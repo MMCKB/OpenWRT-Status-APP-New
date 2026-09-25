@@ -16,9 +16,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Search
@@ -59,6 +57,7 @@ import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
@@ -169,14 +168,16 @@ fun PackageManagerScreen(
         }
     }
 
-    fun runOp(action: String, pkgs: List<String>, info: String) {
+    fun runOp(action: String, pkgs: List<String>, info: String, background: Boolean = false) {
         opInfo = info
         scope.launch {
             busy = true
             opRunning = true
             opResult = null
-            opDialogHidden = false
-            reloadOnOpClose = true
+            // background（自动任务）从一开始就不弹操作窗，仅显示标题旁的胶囊动画；
+            // 手动任务仍先弹窗，等用户点「后台等待」后再转入胶囊形态。
+            opDialogHidden = background
+            reloadOnOpClose = !background
             try {
                 val result = withContext(Dispatchers.IO) {
                     when (action) {
@@ -188,9 +189,8 @@ fun PackageManagerScreen(
                     }
                 }
                 opRunning = false
-                opResult = result
-                if (opDialogHidden) {
-                    // 用户已选「后台等待」：成功静默刷新，失败才提示。
+                if (background) {
+                    // 自动/后台任务：不弹结果窗，成功静默刷新列表，失败才提示。
                     if (!result.success) {
                         setMsg(
                             "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
@@ -198,6 +198,18 @@ fun PackageManagerScreen(
                         )
                     }
                     loadLists()
+                } else {
+                    opResult = result
+                    if (opDialogHidden) {
+                        // 用户已选「后台等待」：成功静默刷新，失败才提示。
+                        if (!result.success) {
+                            setMsg(
+                                "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
+                                true
+                            )
+                        }
+                        loadLists()
+                    }
                 }
             } catch (e: Exception) {
                 opRunning = false
@@ -216,6 +228,15 @@ fun PackageManagerScreen(
         } else {
             opResult = null
             if (reloadOnOpClose) loadLists()
+        }
+    }
+
+    // 进入软件包页即自动「更新列表」：并行加载三个列表与存储占用，
+    // 同时后台执行 apk update；期间标题旁显示后台等待的胶囊动画。
+    LaunchedEffect(sshEnabled) {
+        if (sshEnabled) {
+            loadLists()
+            runOp("update", emptyList(), "更新列表", background = true)
         }
     }
 
@@ -608,11 +629,7 @@ fun PackageManagerScreen(
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
             } else {
-                Column(
-                    modifier = Modifier
-                        .height(360.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
+                ThinScrollbarColumn(modifier = Modifier.height(360.dp)) {
                     // 添加源：默认加入 customfeeds.list。输入框与添加按钮同高同圆角。
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
@@ -746,14 +763,14 @@ fun PackageManagerScreen(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
-                    Text(
-                        res.stdout?.takeIf { it.isNotBlank() } ?: if (res.success) "操作成功完成。" else "操作失败。",
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = if (res.success) colors.onSurface else colors.error,
-                        modifier = Modifier
-                            .height(260.dp)
-                            .verticalScroll(rememberScrollState())
-                    )
+                    ThinScrollbarColumn(modifier = Modifier.height(260.dp)) {
+                        Text(
+                            res.stdout?.takeIf { it.isNotBlank() }
+                                ?: if (res.success) "操作成功完成。" else "操作失败。",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = if (res.success) colors.onSurface else colors.error
+                        )
+                    }
                     if (!res.success) {
                         Text(
                             "命令退出码 ${res.code}。",
