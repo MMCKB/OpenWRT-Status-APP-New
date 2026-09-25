@@ -2,6 +2,18 @@ package com.mmckb.openwrtstatus.ui.screens
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +53,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,11 +78,20 @@ import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val UPLOAD_TMP_PATH = "/tmp/upload.apk"
+
+/** 标题旁状态胶囊的状态：运行中（转圈）/ 成功（打勾）/ 失败（打叉）/ 隐藏。 */
+private sealed interface PillState {
+    data object Hidden : PillState
+    data class Running(val info: String) : PillState
+    data class Success(val info: String) : PillState
+    data class Failure(val info: String) : PillState
+}
 
 /**
  * 软件包管理页（二级页，独立 Activity）：与旧版 OpenWRT-Status-APP 相同的方式——
@@ -107,6 +132,14 @@ fun PackageManagerScreen(
     var opDialogHidden by remember { mutableStateOf(false) }
     var opResult by remember { mutableStateOf<PkgOpResult?>(null) }
     var reloadOnOpClose by remember { mutableStateOf(false) }
+    var pillState by remember { mutableStateOf<PillState>(PillState.Hidden) }
+    // 成功/失败胶囊停留约 1.8 秒后自动隐藏（退出动画由 AnimatedVisibility 承担）。
+    LaunchedEffect(pillState) {
+        if (pillState is PillState.Success || pillState is PillState.Failure) {
+            delay(1800)
+            pillState = PillState.Hidden
+        }
+    }
 
     var pendingRemove by remember { mutableStateOf<PkgInfo?>(null) }
     var confirmInstallName by remember { mutableStateOf<String?>(null) }
@@ -170,6 +203,7 @@ fun PackageManagerScreen(
 
     fun runOp(action: String, pkgs: List<String>, info: String, background: Boolean = false) {
         opInfo = info
+        if (background) pillState = PillState.Running(info)
         scope.launch {
             busy = true
             opRunning = true
@@ -190,7 +224,9 @@ fun PackageManagerScreen(
                 }
                 opRunning = false
                 if (background) {
-                    // 自动/后台任务：不弹结果窗，成功静默刷新列表，失败才提示。
+                    // 自动/后台任务：不弹结果窗，胶囊转为成功/失败形态。
+                    pillState =
+                        if (result.success) PillState.Success(info) else PillState.Failure(info)
                     if (!result.success) {
                         setMsg(
                             "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
@@ -202,6 +238,8 @@ fun PackageManagerScreen(
                     opResult = result
                     if (opDialogHidden) {
                         // 用户已选「后台等待」：成功静默刷新，失败才提示。
+                        pillState =
+                            if (result.success) PillState.Success(info) else PillState.Failure(info)
                         if (!result.success) {
                             setMsg(
                                 "${info}失败：${result.stdout?.lineSequence()?.firstOrNull { it.startsWith("ERROR") } ?: "退出码 ${result.code}"}",
@@ -213,6 +251,8 @@ fun PackageManagerScreen(
                 }
             } catch (e: Exception) {
                 opRunning = false
+                // 胶囊正在显示（后台模式）时以失败形态反馈。
+                if (background || opDialogHidden) pillState = PillState.Failure(info)
                 setMsg(e.message ?: "$info 失败。", true)
                 reloadOnOpClose = false
             } finally {
@@ -223,8 +263,9 @@ fun PackageManagerScreen(
 
     fun closeOpDialog() {
         if (opRunning) {
-            // 「后台等待」：隐藏弹窗，操作继续在后台执行。
+            // 「后台等待」：隐藏弹窗，操作继续在后台执行，胶囊接管进度显示。
             opDialogHidden = true
+            pillState = PillState.Running(opInfo)
         } else {
             opResult = null
             if (reloadOnOpClose) loadLists()
@@ -258,13 +299,19 @@ fun PackageManagerScreen(
                     opDialogHidden = false
                     opResult = null
                     reloadOnOpClose = true
+                    opInfo = "上传安装"
                     val result = withContext(Dispatchers.IO) {
                         client.install(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH)
                     }
                     opRunning = false
                     opResult = result
+                    if (opDialogHidden) {
+                        pillState =
+                            if (result.success) PillState.Success(opInfo) else PillState.Failure(opInfo)
+                    }
                 } catch (e: Exception) {
                     setMsg(e.message ?: "上传安装失败。", true)
+                    if (opDialogHidden) pillState = PillState.Failure("上传安装")
                     reloadOnOpClose = false
                 } finally {
                     runCatching {
@@ -339,31 +386,72 @@ fun PackageManagerScreen(
                 color = colors.onSurface
             )
             Spacer(Modifier.weight(1f))
-            // 更新列表后台执行时：标题右侧的实心胶囊状态（转圈 + 文案）。
-            androidx.compose.animation.AnimatedVisibility(
-                visible = opRunning && opDialogHidden,
-                enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut()
+            // 标题右侧的状态胶囊：运行中（主色+转圈）→ 成功（绿色+打勾动画）/
+            // 失败（红色+打叉动画）。颜色与内容切换均带过渡，停留约 1.8 秒后
+            // 以缩放+淡出动画消失。
+            AnimatedVisibility(
+                visible = pillState != PillState.Hidden,
+                enter = scaleIn() + fadeIn(),
+                exit = scaleOut() + fadeOut()
             ) {
+                val pillColor by animateColorAsState(
+                    targetValue = when (pillState) {
+                        is PillState.Failure -> colors.error
+                        is PillState.Success -> colors.success
+                        PillState.Hidden, is PillState.Running -> colors.primary
+                    },
+                    animationSpec = tween(300),
+                    label = "pillColor"
+                )
                 Surface(
                     shape = AppShapes.pill,
-                    color = colors.primary,
+                    color = pillColor,
                     contentColor = colors.onPrimary
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = colors.onPrimary
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "正在$opInfo",
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                    AnimatedContent(
+                        targetState = pillState,
+                        transitionSpec = {
+                            (fadeIn(tween(200)) + scaleIn(initialScale = 0.6f, animationSpec = tween(200))) togetherWith
+                                (fadeOut(tween(150)) + scaleOut(targetScale = 0.6f, animationSpec = tween(150)))
+                        },
+                        label = "pillContent"
+                    ) { state ->
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            when (state) {
+                                is PillState.Running -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = colors.onPrimary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "正在${state.info}",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                is PillState.Success -> {
+                                    AnimatedCheckIcon(Modifier.size(16.dp), colors.onPrimary)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "${state.info}成功",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                is PillState.Failure -> {
+                                    AnimatedCrossIcon(Modifier.size(16.dp), colors.onPrimary)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "${state.info}失败",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                                PillState.Hidden -> {}
+                            }
+                        }
                     }
                 }
             }
@@ -900,5 +988,46 @@ private fun PackageRow(
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
+    }
+}
+
+/** 打勾图标：两段线条按进度依次画出（入场时逐笔成形）。 */
+@Composable
+private fun AnimatedCheckIcon(modifier: Modifier = Modifier, color: Color) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(450, easing = FastOutSlowInEasing))
+    }
+    Canvas(modifier) {
+        val p = progress.value
+        val a = Offset(size.width * 0.18f, size.height * 0.55f)
+        val b = Offset(size.width * 0.42f, size.height * 0.78f)
+        val c = Offset(size.width * 0.82f, size.height * 0.26f)
+        val stroke = 2.5.dp.toPx()
+        val p1 = (p / 0.45f).coerceIn(0f, 1f)
+        val p2 = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f)
+        if (p1 > 0f) drawLine(color, a, lerp(a, b, p1), stroke, StrokeCap.Round)
+        if (p2 > 0f) drawLine(color, b, lerp(b, c, p2), stroke, StrokeCap.Round)
+    }
+}
+
+/** 打叉图标：两条对角线按进度依次画出（入场时逐笔成形）。 */
+@Composable
+private fun AnimatedCrossIcon(modifier: Modifier = Modifier, color: Color) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, tween(450, easing = FastOutSlowInEasing))
+    }
+    Canvas(modifier) {
+        val p = progress.value
+        val a = Offset(size.width * 0.25f, size.height * 0.25f)
+        val b = Offset(size.width * 0.75f, size.height * 0.75f)
+        val c = Offset(size.width * 0.75f, size.height * 0.25f)
+        val d = Offset(size.width * 0.25f, size.height * 0.75f)
+        val stroke = 2.5.dp.toPx()
+        val p1 = (p / 0.5f).coerceIn(0f, 1f)
+        val p2 = ((p - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        if (p1 > 0f) drawLine(color, a, lerp(a, b, p1), stroke, StrokeCap.Round)
+        if (p2 > 0f) drawLine(color, c, lerp(c, d, p2), stroke, StrokeCap.Round)
     }
 }
