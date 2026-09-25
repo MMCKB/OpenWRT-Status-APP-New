@@ -55,6 +55,7 @@ import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
+import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
@@ -716,10 +717,8 @@ fun WirelessScreen(
                     300.dp,
                     androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.45f
                 )
-                Column(
-                    modifier = Modifier
-                        .height(sectionBodyHeight)
-                        .verticalScroll(rememberScrollState()),
+                ThinScrollbarColumn(
+                    modifier = Modifier.height(sectionBodyHeight),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     when (ifaceSectionTab) {
@@ -1015,11 +1014,7 @@ fun WirelessScreen(
                         color = colors.onSurfaceVariant
                     )
                 } else {
-                    Column(
-                        modifier = Modifier
-                            .heightIn(max = 380.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
+                    ThinScrollbarColumn(modifier = Modifier.heightIn(max = 380.dp)) {
                         nets.forEach { net ->
                             Column(Modifier.padding(vertical = 6.dp)) {
                                 Text(
@@ -1055,11 +1050,7 @@ fun WirelessScreen(
             onConfirm = { selectState = null },
             onDismiss = { selectState = null }
         ) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 340.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            ThinScrollbarColumn(modifier = Modifier.heightIn(max = 340.dp)) {
                 sel.options.forEach { (value, label) ->
                     val isSelected = value == sel.selected
                     Text(
