@@ -59,30 +59,52 @@ object AppNotifier {
         Build.VERSION.SDK_INT >= 36 &&
             (context.getSystemService(NotificationManager::class.java)?.canPostPromotedNotifications() == true)
 
-    /** 「路由器已连接」：绿色强调 + 计秒器实时走时（动画）。 */
+    /**
+     * 「路由器已连接」实时动态（Live Update）：ongoing + MetricStyle，
+     * 连接时长用 TimeDifference 计秒器实时走时（动画），请求系统提升展示。
+     */
     fun notifyConnected(context: Context, connectedSinceMillis: Long) {
         if (!permissionGranted(context)) return
+        val style = NotificationCompat.MetricStyle().addMetric(
+            NotificationCompat.Metric(
+                NotificationCompat.Metric.TimeDifference.forStopwatch(
+                    connectedSinceMillis,
+                    NotificationCompat.Metric.TimeDifference.FORMAT_CHRONOMETER
+                ),
+                "连接时长"
+            )
+        )
         val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(com.mmckb.openwrtstatus.R.drawable.ic_launcher_foreground)
             .setContentTitle("路由器已连接")
             .setContentText("连接正常")
-            .setWhen(connectedSinceMillis)
-            .setUsesChronometer(true)
+            .setStyle(style)
             .setColor(0xFF4CAF50.toInt())
+            .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setRequestPromotedOngoing(true)
             .build()
         context.getSystemService(NotificationManager::class.java)?.notify(ID_CONN_STATUS, notification)
     }
 
-    /** 「路由器未连接」：红色强调警示。 */
+    /** 「路由器未连接」实时动态：红色强调，持续展示直至恢复连接（同 ID 替换）。 */
     fun notifyDisconnected(context: Context) {
         if (!permissionGranted(context)) return
+        val style = NotificationCompat.MetricStyle().addMetric(
+            NotificationCompat.Metric(
+                NotificationCompat.Metric.FixedText("离线"),
+                "状态"
+            )
+        )
         val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(com.mmckb.openwrtstatus.R.drawable.ic_launcher_foreground)
             .setContentTitle("路由器未连接")
             .setContentText("无法访问路由器，请检查网络")
+            .setStyle(style)
             .setColor(0xFFF44336.toInt())
-            .setOnlyAlertOnce(false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setRequestPromotedOngoing(true)
             .build()
         context.getSystemService(NotificationManager::class.java)?.notify(ID_CONN_STATUS, notification)
     }
