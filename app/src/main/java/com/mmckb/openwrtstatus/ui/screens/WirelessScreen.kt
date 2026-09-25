@@ -1,5 +1,13 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.using
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -414,12 +422,12 @@ fun WirelessScreen(
                                 Icons.Outlined.Router,
                                 contentDescription = null,
                                 tint = colors.primary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 radio.section,
-                                style = MaterialTheme.typography.titleSmall,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.onSurface
                             )
@@ -529,23 +537,16 @@ fun WirelessScreen(
                     }
                 }
 
-                // —— WiFi（接口，LuCI 信息形态） ——
-                Text(
-                    "WiFi",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface,
-                    modifier = Modifier.padding(start = 4.dp)
-                )
+                // —— WiFi（接口，LuCI 信息形态）——没有接口时不显示该分区（不提示） ——
                 val allIfaces = radios.orEmpty().flatMap { it.ifaces }
-                if (allIfaces.isEmpty()) {
-                    AppCard(contentPadding = 14.dp) {
-                        Text(
-                            "无 WiFi 接口。可在上方网卡卡片点击「添加 WiFi」。",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant
-                        )
-                    }
+                if (allIfaces.isNotEmpty()) {
+                    Text(
+                        "WiFi",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
                 }
                 allIfaces.forEach { iface ->
                     AppCard(contentPadding = 14.dp) {
@@ -557,12 +558,12 @@ fun WirelessScreen(
                                 Icons.Outlined.Wifi,
                                 contentDescription = null,
                                 tint = colors.primary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 iface.ssid.ifEmpty { "（未设置 SSID）" },
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.onSurface,
                                 maxLines = 1,
@@ -716,7 +717,18 @@ fun WirelessScreen(
                     onSelect = { ifaceSectionTab = it },
                     modifier = Modifier.fillMaxWidth()
                 )
-                when (ifaceSectionTab) {
+                // 分区切换动效（Android 官方文档方案：AnimatedContent + SizeTransform）：
+                // 旧分区淡出、新分区淡入，容器高度在两个内容之间平滑过渡且不裁剪内容。
+                AnimatedContent(
+                    targetState = ifaceSectionTab,
+                    transitionSpec = {
+                        (fadeIn(tween(280, easing = LinearEasing)) togetherWith
+                            fadeOut(tween(280, easing = LinearEasing)))
+                            .using(SizeTransform(clip = false))
+                    },
+                    label = "ifaceSection"
+                ) { tab ->
+                    when (tab) {
                     "security" -> {
                         SelectRow("加密", encryptionLabel(ifaceEncryption)) {
                             selectState = SelectState(
@@ -812,6 +824,7 @@ fun WirelessScreen(
                         SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
                         SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
                         SettingRow("隔离客户端", ifaceIsolate) { ifaceIsolate = it }
+                    }
                     }
                 }
             }
