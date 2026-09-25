@@ -17,7 +17,6 @@ import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.notify.AppNotifier
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
-import com.mmckb.openwrtstatus.ui.formatRate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -64,12 +63,9 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val _history = MutableStateFlow<List<HistorySample>>(emptyList())
     val history: StateFlow<List<HistorySample>> = _history
 
-    private val _leaseError = MutableStateFlow<String?>(null)
-    val leaseError: StateFlow<String?> = _leaseError
-
-    private val _speedNotificationEnabled =
-        MutableStateFlow(settingsStore.isSpeedNotificationEnabled())
-    val speedNotificationEnabled: StateFlow<Boolean> = _speedNotificationEnabled
+    private val _connNotifyEnabled =
+        MutableStateFlow(settingsStore.isConnectionNotifyEnabled())
+    val connNotifyEnabled: StateFlow<Boolean> = _connNotifyEnabled
 
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
@@ -83,6 +79,25 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             while (true) {
                 delay(_config.value.refreshIntervalSec.coerceAtLeast(2) * 1000L)
                 refresh()
+            }
+        }
+        // 连接状态通知：在线↔离线切换时发送（已连接通知带计秒器动画，实时走时）。
+        viewModelScope.launch {
+            var previous = ConnectionMonitor.Status.Unknown
+            ConnectionMonitor.status.collect { status ->
+                val app = getApplication<Application>()
+                val enabled = _connNotifyEnabled.value
+                if (previous == ConnectionMonitor.Status.Online &&
+                    status == ConnectionMonitor.Status.Offline && enabled
+                ) {
+                    AppNotifier.notifyDisconnected(app)
+                }
+                if (previous == ConnectionMonitor.Status.Offline &&
+                    status == ConnectionMonitor.Status.Online && enabled
+                ) {
+                    AppNotifier.notifyConnected(app, System.currentTimeMillis())
+                }
+                previous = status
             }
         }
     }
@@ -122,26 +137,6 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 val totalRx = rates.sumOf { it.rxRate }
                 val totalTx = rates.sumOf { it.txRate }
 
-                // 实时网速 Live Update：每次轮询刷新一次通知内容（开关关闭时撤回）。
-                // 指标里附带当前有流量的各网口（最多 4 个）的上下行速率。
-                if (_speedNotificationEnabled.value) {
-                    val rx = formatRate(totalRx)
-                    val tx = formatRate(totalTx)
-                    val ifaceMetrics = rates
-                        .filter { it.rxRate > 1024 || it.txRate > 1024 }
-                        .sortedByDescending { it.rxRate + it.txRate }
-                        .take(4)
-                        .map { iface ->
-                            iface.name to "↓ ${formatRate(iface.rxRate)}　↑ ${formatRate(iface.txRate)}"
-                        }
-                    AppNotifier.showLiveUpdate(
-                        getApplication(),
-                        AppNotifier.ID_REALTIME_SPEED,
-                        "实时网速 · ${cfg.displayName}",
-                        "↓ $rx　↑ $tx",
-                        listOf("下行" to rx, "上行" to tx) + ifaceMetrics
-                    )
-                }
                 _history.value = (_history.value + HistorySample(
                     at = now,
                     memoryPercent = memPct,
@@ -245,11 +240,11 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** 开关实时网速 Live Update 通知；关闭时立即撤回常驻通知。 */
-    fun setSpeedNotificationEnabled(enabled: Boolean) {
-        settingsStore.saveSpeedNotificationEnabled(enabled)
-        _speedNotificationEnabled.value = enabled
+    fun setConnectionNotifyEnabled(enabled: Boolean) {
+        settingsStore.saveConnectionNotifyEnabled(enabled)
+        _connNotifyEnabled.value = enabled
         if (!enabled) {
-            AppNotifier.cancel(getApplication(), AppNotifier.ID_REALTIME_SPEED)
+            AppNotifier.cancel(getApplication(), AppNotifier.ID_CONN_STATUS)
         }
     }
 

@@ -11,18 +11,17 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 /**
- * 实时消息通知的接入骨架，按 Android Live Updates 官方要求实现：
- * - 渠道重要性不得为 IMPORTANCE_MIN；
- * - Live Update 通知必须 ongoing、使用标准样式（这里用 ProgressStyle）、
- *   必须设置 contentTitle、通过 setRequestPromotedOngoing 请求系统提升；
- * - 清单声明 POST_PROMOTED_NOTIFICATIONS 非运行时权限。
+ * 通知基础设施 + 连接状态通知：
+ * - 渠道重要性不得为 IMPORTANCE_MIN（Live Updates 硬性要求之一，保留兼容）；
+ * - 清单声明 POST_NOTIFICATIONS / POST_PROMOTED_NOTIFICATIONS。
  *
- * 目前没有任何功能触发通知；后续的路由器事件推送调用 [showLiveUpdate] 或 [show] 即可。
+ * 连接状态通知带动画：「已连接」使用系统计秒器实时走时显示连接时长，
+ * 「未连接」为红色警示；状态切换时系统自动以过渡效果替换同 ID 通知。
  */
 object AppNotifier {
 
     const val CHANNEL_STATUS = "realtime_status"
-    const val ID_REALTIME_SPEED = 2001
+    const val ID_CONN_STATUS = 3001
     private const val PERMISSION_REQUEST_CODE = 1001
 
     /** 应用启动时调用：创建通知渠道（API 26+ 必需，重复创建无副作用）。 */
@@ -31,10 +30,10 @@ object AppNotifier {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             val channel = NotificationChannel(
                 CHANNEL_STATUS,
-                "实时消息",
+                "连接状态",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "路由器实时状态与消息通知"
+                description = "路由器连接与断开通知"
             }
             manager.createNotificationChannel(channel)
         }
@@ -48,73 +47,48 @@ object AppNotifier {
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
 
-    /** Android 13+ 的运行时通知权限请求（当前未接入任何 UI，功能开启时调用）。 */
+    /** Android 13+ 的运行时通知权限请求（设置页开关开启时调用）。 */
     fun requestPermission(activity: Activity) {
         if (Build.VERSION.SDK_INT >= 33 && !permissionGranted(activity)) {
             activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), PERMISSION_REQUEST_CODE)
         }
     }
 
-    /**
-     * 系统是否愿意把该应用的通知提升为 Live Update（Android 16+，含用户开关）。
-     * 不满足时 [showLiveUpdate] 会自动降级为普通 ongoing 通知。
-     */
+    /** 系统是否愿意把通知提升为 Live Update（Android 16+，含用户开关）。 */
     fun canPostPromoted(context: Context): Boolean =
         Build.VERSION.SDK_INT >= 36 &&
             (context.getSystemService(NotificationManager::class.java)?.canPostPromotedNotifications() == true)
 
-    /**
-     * Live Update 通知（官方要求的 ongoing + 标准样式 + setRequestPromotedOngoing）。
-     * [body] 是普通文本正文——MetricStyle 仅在 Android 16+ 生效，旧系统/未提升时
-     * 靠它显示网速；[metrics] 在支持提升的系统上以指标样式呈现。
-     */
-    fun showLiveUpdate(
-        context: Context,
-        id: Int,
-        title: String,
-        body: String,
-        metrics: List<Pair<CharSequence, CharSequence>>
-    ) {
+    /** 「路由器已连接」：绿色强调 + 计秒器实时走时（动画）。 */
+    fun notifyConnected(context: Context, connectedSinceMillis: Long) {
         if (!permissionGranted(context)) return
-        val style = NotificationCompat.MetricStyle()
-        metrics.forEach { (label, value) ->
-            style.addMetric(NotificationCompat.Metric(NotificationCompat.Metric.FixedText(value), label))
-        }
         val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
             .setSmallIcon(com.mmckb.openwrtstatus.R.drawable.ic_launcher_foreground)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(style)
-            .setOngoing(true)
+            .setContentTitle("路由器已连接")
+            .setContentText("连接正常")
+            .setWhen(connectedSinceMillis)
+            .setUsesChronometer(true)
+            .setColor(0xFF4CAF50.toInt())
             .setOnlyAlertOnce(true)
-            .setRequestPromotedOngoing(true)
             .build()
-        context.getSystemService(NotificationManager::class.java)?.notify(id, notification)
+        context.getSystemService(NotificationManager::class.java)?.notify(ID_CONN_STATUS, notification)
     }
 
-    /** 撤回一条通知（如关闭实时网速时清掉常驻通知）。 */
+    /** 「路由器未连接」：红色强调警示。 */
+    fun notifyDisconnected(context: Context) {
+        if (!permissionGranted(context)) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_STATUS)
+            .setSmallIcon(com.mmckb.openwrtstatus.R.drawable.ic_launcher_foreground)
+            .setContentTitle("路由器未连接")
+            .setContentText("无法访问路由器，请检查网络")
+            .setColor(0xFFF44336.toInt())
+            .setOnlyAlertOnce(false)
+            .build()
+        context.getSystemService(NotificationManager::class.java)?.notify(ID_CONN_STATUS, notification)
+    }
+
+    /** 撤回连接状态通知（关闭通知开关时调用）。 */
     fun cancel(context: Context, id: Int) {
         context.getSystemService(NotificationManager::class.java)?.cancel(id)
-    }
-
-    /**
-     * 普通通知（预留 API，当前无调用方）；也可作为 Live Update 在旧系统上的降级路径。
-     * [id] 用于覆盖同一条持续更新的消息。
-     */
-    fun show(context: Context, id: Int, title: String, text: String) {
-        if (!permissionGranted(context)) return
-        val builder = if (Build.VERSION.SDK_INT >= 26) {
-            NotificationCompat.Builder(context, CHANNEL_STATUS)
-        } else {
-            @Suppress("DEPRECATION")
-            NotificationCompat.Builder(context)
-        }
-        val notification = builder
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setOnlyAlertOnce(true)
-            .build()
-        context.getSystemService(NotificationManager::class.java)?.notify(id, notification)
     }
 }
