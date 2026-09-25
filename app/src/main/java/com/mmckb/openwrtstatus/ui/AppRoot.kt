@@ -70,6 +70,7 @@ import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
+import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalOutputPane
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
 import com.mmckb.openwrtstatus.ui.screens.ToolScreen
