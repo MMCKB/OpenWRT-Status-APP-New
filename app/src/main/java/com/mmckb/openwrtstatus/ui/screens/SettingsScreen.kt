@@ -43,7 +43,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    val speedNotify by viewModel.speedNotificationEnabled.collectAsStateWithLifecycle()
+    val connNotify by viewModel.connNotifyEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Column(
@@ -61,21 +61,21 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "实时网速通知",
+                        "连接状态通知",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface
                     )
                     Text(
-                        "在系统通知栏以 Live Update 实时显示当前设备的上下行网速",
+                        "路由器连接或断开时发送通知，已连接通知实时显示连接时长",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant
                     )
                 }
                 Switch(
-                    checked = speedNotify,
+                    checked = connNotify,
                     onCheckedChange = { enabled ->
-                        viewModel.setSpeedNotificationEnabled(enabled)
+                        viewModel.setConnectionNotifyEnabled(enabled)
                         if (enabled) (context as? ComponentActivity)?.let {
                             AppNotifier.requestPermission(it)
                         }
