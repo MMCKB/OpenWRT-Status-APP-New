@@ -91,7 +91,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         device = str(sec, "device") ?: "",
                         mode = str(sec, "mode") ?: "ap",
                         ssid = str(sec, "ssid") ?: "",
-                        network = section["network"]?.let { n ->
+                        network = sec["network"]?.let { n ->
                             when (n) {
                                 is JsonArray -> n.mapNotNull { (it as? JsonPrimitive)?.content }
                                     .joinToString(",")
@@ -164,7 +164,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     put("ssid", kotlinx.serialization.json.JsonPrimitive(ssid))
                     put("network", kotlinx.serialization.json.JsonPrimitive("lan"))
                     put("encryption", kotlinx.serialization.json.JsonPrimitive(encryption))
-                    if (key.isNotEmpty()) put("key", kotlinx.serialization.json.JsonPrimitive(key))
+                    if (!key.isNullOrEmpty()) put("key", kotlinx.serialization.json.JsonPrimitive(key))
                 })
             }
         )

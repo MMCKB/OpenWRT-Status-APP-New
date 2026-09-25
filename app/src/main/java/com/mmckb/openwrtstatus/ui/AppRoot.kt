@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,6 +78,7 @@ import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
+import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalOutputPane
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
