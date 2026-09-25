@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
@@ -1291,7 +1292,7 @@ private fun WifiShareSidePanel(iface: WirelessIface, onDismiss: () -> Unit) {
     var backProgress by remember { mutableStateOf(0f) }
     PredictiveBackHandler { progress ->
         try {
-            progress.collect { backProgress = it }
+            progress.collect { backProgress = it.progress }
             onDismiss()
         } catch (_: CancellationException) {
             backProgress = 0f
