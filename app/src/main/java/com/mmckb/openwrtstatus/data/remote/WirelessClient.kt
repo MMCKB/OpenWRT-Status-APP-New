@@ -40,6 +40,8 @@ data class WirelessIface(
     val frag: String? = null,
     val rts: String? = null,
     val shortPreamble: Boolean = true,
+    val macfilter: String? = null,
+    val maclist: List<String> = emptyList(),
     val disabled: Boolean
 )
 
@@ -116,6 +118,10 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         frag = str(sec, "frag"),
                         rts = str(sec, "rts"),
                         shortPreamble = if (sec.containsKey("short_preamble")) bool(sec, "short_preamble") else true,
+                        macfilter = str(sec, "macfilter"),
+                        maclist = (sec["maclist"] as? JsonArray)
+                            ?.mapNotNull { (it as? JsonPrimitive)?.content }
+                            .ifEmpty { str(sec, "maclist")?.split(Regex("[, ]+"))?.filter { m -> m.isNotEmpty() } } ?: emptyList(),
                         disabled = bool(sec, "disabled")
                     )
                 )
