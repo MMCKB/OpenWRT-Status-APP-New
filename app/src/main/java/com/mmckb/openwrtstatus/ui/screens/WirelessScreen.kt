@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -403,95 +405,126 @@ fun WirelessScreen(
                     modifier = Modifier.padding(start = 4.dp)
                 )
                 radios.orEmpty().forEach { radio ->
-                    AppCard {
-                        Column(Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Router,
-                                    contentDescription = null,
-                                    tint = colors.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    radio.section,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = colors.onSurface
-                                )
-                                Spacer(Modifier.weight(1f))
-                                Switch(
-                                    checked = !radio.disabled,
-                                    onCheckedChange = { on ->
-                                        updateRadio(radio.section) { it.copy(disabled = !on) }
-                                    }
-                                )
-                            }
-                            Text(
-                                buildString {
-                                    radio.liveHwmodesText?.let { append("$it　·　") }
-                                    append("信道 ${radio.liveChannel ?: radio.channel ?: "auto"}")
-                                    radio.liveTxpower?.let { append("　·　功率 $it dBm") }
-                                    radio.liveNoise?.let { append("　·　噪声 $it dBm") }
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
+                    AppCard(contentPadding = 14.dp) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Outlined.Router,
+                                contentDescription = null,
+                                tint = colors.primary,
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(
-                                    onClick = {
-                                        scope.launch {
-                                            busy = true
-                                            try {
-                                                withContext(Dispatchers.IO) {
-                                                    com.mmckb.openwrtstatus.data.ssh.SshExec.run(
-                                                        ssh, "wifi reload"
-                                                    )
-                                                }
-                                                setMsg("网卡已重启。", false)
-                                            } catch (e: Exception) {
-                                                setMsg(e.message ?: "重启失败。", true)
-                                            } finally {
-                                                busy = false
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                radio.section,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.onSurface
+                            )
+                            Spacer(Modifier.weight(1f))
+                            SmallSwitch(
+                                checked = !radio.disabled,
+                                onCheckedChange = { on ->
+                                    updateRadio(radio.section) { it.copy(disabled = !on) }
+                                }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            StatCell(
+                                "信道",
+                                radio.liveChannel?.toString() ?: radio.channel ?: "auto",
+                                Modifier.weight(1f)
+                            )
+                            StatCell(
+                                "频段",
+                                bandLabel(radio.band).ifEmpty { radio.liveHwmodesText ?: "-" },
+                                Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            StatCell(
+                                "发射功率",
+                                radio.liveTxpower?.let { "$it dBm" } ?: "-",
+                                Modifier.weight(1f)
+                            )
+                            StatCell(
+                                "底噪",
+                                radio.liveNoise?.let { "$it dBm" } ?: "-",
+                                Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        busy = true
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                com.mmckb.openwrtstatus.data.ssh.SshExec.run(
+                                                    ssh, "wifi reload"
+                                                )
                                             }
+                                            setMsg("网卡已重启。", false)
+                                        } catch (e: Exception) {
+                                            setMsg(e.message ?: "重启失败。", true)
+                                        } finally {
+                                            busy = false
                                         }
-                                    },
-                                    enabled = !busy
-                                ) { Text("重启") }
-                                TextButton(
-                                    onClick = {
-                                        scanFor = radio.section
-                                        scanResults = null
-                                        scanBusy = true
-                                        scope.launch {
-                                            try {
-                                                scanResults = withContext(Dispatchers.IO) {
-                                                    client.scan(config, radio.section)
-                                                }
-                                            } catch (e: Exception) {
-                                                setMsg(e.message ?: "扫描失败。", true)
-                                            } finally {
-                                                scanBusy = false
+                                    }
+                                },
+                                enabled = !busy,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) { Text("重启") }
+                            TextButton(
+                                onClick = {
+                                    scanFor = radio.section
+                                    scanResults = null
+                                    scanBusy = true
+                                    scope.launch {
+                                        try {
+                                            scanResults = withContext(Dispatchers.IO) {
+                                                client.scan(config, radio.section)
                                             }
+                                        } catch (e: Exception) {
+                                            setMsg(e.message ?: "扫描失败。", true)
+                                        } finally {
+                                            scanBusy = false
                                         }
-                                    },
-                                    enabled = !busy
-                                ) { Text("扫描") }
-                                TextButton(
-                                    onClick = {
-                                        addSsid = ""
-                                        addKey = ""
-                                        addEncryption = "psk2"
-                                        addWifiFor = radio.section
-                                    },
-                                    enabled = !busy
-                                ) { Text("添加 WiFi") }
-                            }
+                                    }
+                                },
+                                enabled = !busy,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) { Text("扫描") }
+                            TextButton(
+                                onClick = {
+                                    addSsid = ""
+                                    addKey = ""
+                                    addEncryption = "psk2"
+                                    addWifiFor = radio.section
+                                },
+                                enabled = !busy,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) { Text("添加 WiFi") }
                         }
                     }
                 }
@@ -504,11 +537,9 @@ fun WirelessScreen(
                     color = colors.onSurface,
                     modifier = Modifier.padding(start = 4.dp)
                 )
-                val withParent = radios.orEmpty().flatMap { radio ->
-                    radio.ifaces.map { Triple(it, radio, radio.section) }
-                }
-                if (withParent.isEmpty()) {
-                    AppCard {
+                val allIfaces = radios.orEmpty().flatMap { it.ifaces }
+                if (allIfaces.isEmpty()) {
+                    AppCard(contentPadding = 14.dp) {
                         Text(
                             "无 WiFi 接口。可在上方网卡卡片点击「添加 WiFi」。",
                             style = MaterialTheme.typography.bodyMedium,
@@ -516,95 +547,103 @@ fun WirelessScreen(
                         )
                     }
                 }
-                withParent.forEach { (iface, radio, radioSection) ->
-                    AppCard {
-                        Column(Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Wifi,
-                                    contentDescription = null,
-                                    tint = colors.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        iface.ssid.ifEmpty { "（未设置 SSID）" },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = colors.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        buildString {
-                                            iface.liveBssid?.let { append("$it　·　") }
-                                            append(iface.liveEncryption
-                                                ?: encryptionLabel(iface.encryption))
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.onSurfaceVariant
-                                    )
-                                }
-                                Switch(
-                                    checked = !iface.disabled,
-                                    onCheckedChange = { on ->
-                                        updateIface(iface.section) { it.copy(disabled = !on) }
-                                    }
-                                )
-                            }
-                            Text(
-                                buildString {
-                                    append(radioSection)
-                                    append("　·　信道 ${radio.liveChannel ?: radio.channel ?: "auto"}")
-                                    iface.liveSignal?.let { append("　·　信号 $it dBm") }
-                                    iface.clientCount?.let { append("　·　客户端 $it") }
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp)
+                allIfaces.forEach { iface ->
+                    AppCard(contentPadding = 14.dp) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Outlined.Wifi,
+                                contentDescription = null,
+                                tint = colors.primary,
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(
-                                    onClick = { deleteIfaceFor = iface.section },
-                                    enabled = !busy
-                                ) { Text("删除", color = colors.error) }
-                                Button(
-                                    onClick = {
-                                        ifaceMode = iface.mode ?: "ap"
-                                        ifaceSsid = iface.ssid
-                                        ifaceNetwork = iface.network ?: "lan"
-                                        ifaceEncryption = iface.encryption ?: "psk2"
-                                        ifaceCipher = "auto"
-                                        ifaceKey = iface.key ?: ""
-                                        ifaceHidden = iface.hidden
-                                        ifaceWmm = iface.wmm
-                                        ifaceIsolate = iface.isolate
-                                        ifaceMacfilter = iface.macfilter ?: "disable"
-                                        ifaceMaclist = iface.maclist.joinToString("\n")
-                                        ifaceBssid = iface.bssid ?: ""
-                                        ifaceDtim = iface.dtim ?: ""
-                                        ifaceBeaconInt = iface.beaconInt ?: ""
-                                        ifaceFrag = iface.frag ?: ""
-                                        ifaceRts = iface.rts ?: ""
-                                        ifaceShortPreamble = iface.shortPreamble
-                                        ifaceSectionTab = "general"
-                                        editIfaceFor = iface.section
-                                    },
-                                    enabled = !busy,
-                                    shape = AppShapes.pill,
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                        horizontal = 14.dp, vertical = 4.dp
-                                    )
-                                ) { Text("编辑") }
-                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                iface.ssid.ifEmpty { "（未设置 SSID）" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            SmallSwitch(
+                                checked = !iface.disabled,
+                                onCheckedChange = { on ->
+                                    updateIface(iface.section) { it.copy(disabled = !on) }
+                                }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            StatCell(
+                                "加密",
+                                iface.liveEncryption ?: encryptionLabel(iface.encryption),
+                                Modifier.weight(1.4f)
+                            )
+                            StatCell(
+                                "信号",
+                                iface.liveSignal?.let { "$it dBm" } ?: "-",
+                                Modifier.weight(1f)
+                            )
+                            StatCell(
+                                "客户端",
+                                iface.clientCount?.toString() ?: "-",
+                                Modifier.weight(1f)
+                            )
+                        }
+                        StatCell(
+                            "BSSID",
+                            iface.liveBssid ?: iface.bssid ?: "-",
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = { deleteIfaceFor = iface.section },
+                                enabled = !busy,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) { Text("删除", color = colors.error) }
+                            Button(
+                                onClick = {
+                                    ifaceMode = iface.mode ?: "ap"
+                                    ifaceSsid = iface.ssid
+                                    ifaceNetwork = iface.network ?: "lan"
+                                    ifaceEncryption = iface.encryption ?: "psk2"
+                                    ifaceCipher = "auto"
+                                    ifaceKey = iface.key ?: ""
+                                    ifaceHidden = iface.hidden
+                                    ifaceWmm = iface.wmm
+                                    ifaceIsolate = iface.isolate
+                                    ifaceMacfilter = iface.macfilter ?: "disable"
+                                    ifaceMaclist = iface.maclist.joinToString("\n")
+                                    ifaceBssid = iface.bssid ?: ""
+                                    ifaceDtim = iface.dtim ?: ""
+                                    ifaceBeaconInt = iface.beaconInt ?: ""
+                                    ifaceFrag = iface.frag ?: ""
+                                    ifaceRts = iface.rts ?: ""
+                                    ifaceShortPreamble = iface.shortPreamble
+                                    ifaceSectionTab = "general"
+                                    editIfaceFor = iface.section
+                                },
+                                enabled = !busy,
+                                shape = AppShapes.pill,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp)
+                            ) { Text("编辑") }
                         }
                     }
                 }
@@ -1035,30 +1074,39 @@ fun WirelessScreen(
     }
 }
 
-/** 信息行：标签 + 当前值。 */
+/** 信息格：小号「标签 + 值」横排单元，用于卡片内的两列信息网格。 */
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun StatCell(label: String, value: String, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurface
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.onSurfaceVariant
         )
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(6.dp))
         Text(
             value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = colors.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }
+}
+
+/** 缩小版的开关：默认 M3 Switch 视觉上太大，整体缩放约 3/4。 */
+@Composable
+private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = Modifier.scale(0.75f)
+    )
 }
 
 /** 选择行：点击后弹出应用风格的选择对话框。 */
@@ -1110,6 +1158,6 @@ private fun SettingRow(label: String, checked: Boolean, onChange: (Boolean) -> U
             color = colors.onSurface,
             modifier = Modifier.weight(1f)
         )
-        Switch(checked = checked, onCheckedChange = onChange)
+        SmallSwitch(checked = checked, onCheckedChange = onChange)
     }
 }

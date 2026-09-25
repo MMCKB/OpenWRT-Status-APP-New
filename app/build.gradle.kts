@@ -75,6 +75,17 @@ android {
         }
     }
 
+    // 按架构拆分：一次构建产出 4 个 APK（arm64-v8a 64 位 / armeabi-v7a 32 位 / x86_64 / x86），
+    // 不再产出合并的 universal APK。
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

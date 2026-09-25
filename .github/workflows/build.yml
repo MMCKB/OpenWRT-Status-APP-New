@@ -7,9 +7,13 @@ on:
     branches: ["main", "master", "Dev"]
   workflow_dispatch:
 
+# dev-build 滚动 release 需要 contents:write 权限。
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Debug APK
+    name: Build per-ABI release APKs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,12 +60,58 @@ jobs:
             echo "No signing secrets configured; the build will fall back to debug signing."
           fi
 
-      - name: Build APK (release, unified MMCKB signing)
+      # splits.abi 一次构建产出 4 个 APK：arm64-v8a / armeabi-v7a / x86_64 / x86。
+      - name: Build per-ABI release APKs
         run: gradle :app:assembleRelease --no-daemon
 
-      - name: Upload release APK
+      # 改名为可读的文件名，产物与 release 里都是裸 APK 文件（不打包成 zip）。
+      - name: Rename APKs per ABI
+        run: |
+          mkdir -p apk-out
+          cp app/build/outputs/apk/release/*arm64-v8a-release.apk   apk-out/OpenWrt-Status-arm64-v8a.apk
+          cp app/build/outputs/apk/release/*armeabi-v7a-release.apk apk-out/OpenWrt-Status-armeabi-v7a.apk
+          cp app/build/outputs/apk/release/*x86_64-release.apk      apk-out/OpenWrt-Status-x86_64.apk
+          cp app/build/outputs/apk/release/*x86-release.apk         apk-out/OpenWrt-Status-x86.apk
+          ls -l apk-out
+
+      - name: Upload arm64-v8a APK (64 位)
         uses: actions/upload-artifact@v7
         with:
-          name: openwrt-status-app-release
-          path: app/build/outputs/apk/release/*.apk
+          name: OpenWrt-Status-arm64-v8a
+          path: apk-out/OpenWrt-Status-arm64-v8a.apk
           if-no-files-found: error
+
+      - name: Upload armeabi-v7a APK (32 位)
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenWrt-Status-armeabi-v7a
+          path: apk-out/OpenWrt-Status-armeabi-v7a.apk
+          if-no-files-found: error
+
+      - name: Upload x86_64 APK (x86 64 位)
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenWrt-Status-x86_64
+          path: apk-out/OpenWrt-Status-x86_64.apk
+          if-no-files-found: error
+
+      - name: Upload x86 APK (x86 32 位)
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenWrt-Status-x86
+          path: apk-out/OpenWrt-Status-x86.apk
+          if-no-files-found: error
+
+      # Dev 分支推送 / 手动触发时，把 4 个裸 APK 挂到滚动 release，
+      # 从 release 页可以直接下载 APK 文件本身（artifact 下载时 GitHub 会强制套一层 zip）。
+      - name: Publish raw APKs to rolling dev-build release
+        if: github.ref == 'refs/heads/Dev' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create dev-build \
+            --prerelease \
+            --title "Dev 滚动构建" \
+            --notes "Dev 分支每次推送自动覆盖更新的构建产物：4 个架构的 APK，可直接下载 APK 文件。" \
+            || true
+          gh release upload dev-build apk-out/*.apk --clobber
