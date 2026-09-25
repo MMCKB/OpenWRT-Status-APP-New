@@ -55,6 +55,7 @@ data class WirelessIface(
     val liveBssid: String? = null,
     val liveMode: String? = null,
     val liveEncryption: String? = null,
+    val liveSsid: String? = null,
     val liveSignal: Int? = null,
     val liveNoise: Int? = null,
     val clientCount: Int? = null
@@ -172,7 +173,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
         // iwinfo 实时数据：radio 级 + 接口级。
         val wifiIfaces = runCatching {
-            (iwinfo(config, "devices", "wireless")["devices"] as? JsonArray)
+            (iwinfo(config, "devices", "wireless")?.get("devices") as? JsonArray)
                 ?.mapNotNull { dev ->
                     ((dev as? JsonObject)?.get("name") as? JsonPrimitive)?.content
                 }
@@ -206,14 +207,14 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     val liveMode = str(info, "mode")
                     val signal = (info["signal"] as? JsonPrimitive)?.content?.toIntOrNull()
                     val noise = (info["noise"] as? JsonPrimitive)?.content?.toIntOrNull()
-                    val enc = info["encryption"].jsonObject
+                    val enc = info["encryption"]?.jsonObject ?: kotlinx.serialization.json.buildJsonObject { }
                     val encEnabled = (enc["enabled"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
                     val wpa = (enc["wpa"] as? JsonPrimitive)?.content?.toIntOrNull()
                     val ciphers = (enc["ciphers"] as? JsonArray)
                         ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
                     val liveEnc = when {
                         !encEnabled -> "无加密"
-                        wpa != null -> "$wpaName(wpa) (${ciphers.joinToString("/")})"
+                        wpa != null -> "${wpaName(wpa)} (${ciphers.joinToString("/")})"
                         else -> "已加密"
                     }
                     val assoc = runCatching {
@@ -292,7 +293,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     put("ssid", kotlinx.serialization.json.JsonPrimitive(ssid))
                     put("network", kotlinx.serialization.json.JsonPrimitive("lan"))
                     put("encryption", kotlinx.serialization.json.JsonPrimitive(encryption))
-                    if (key.isNotEmpty()) put("key", kotlinx.serialization.json.JsonPrimitive(key))
+                    if (!key.isNullOrEmpty()) put("key", kotlinx.serialization.json.JsonPrimitive(key))
                 })
             }
         )
@@ -316,7 +317,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         val info = iwinfo(config, "scan", device) ?: return@withContext emptyList()
         (info["results"] as? JsonArray)?.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
-            val enc = obj["encryption"].jsonObject
+            val enc = obj["encryption"]?.jsonObject ?: kotlinx.serialization.json.buildJsonObject { }
             ScanNet(
                 ssid = str(obj, "ssid") ?: "",
                 bssid = str(obj, "bssid") ?: "",
