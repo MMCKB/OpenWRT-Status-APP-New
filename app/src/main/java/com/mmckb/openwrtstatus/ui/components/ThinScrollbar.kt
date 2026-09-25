@@ -31,6 +31,8 @@ import kotlinx.coroutines.delay
 private const val SCROLLBAR_HIDE_DELAY_MS = 800L
 private val SCROLLBAR_WIDTH = 4.dp
 private val SCROLLBAR_MIN_THUMB = 28.dp
+// 滚动条向右移出内容区的距离：落在内容与弹窗边缘的留白里，不遮挡文本。
+private val SCROLLBAR_RIGHT_SHIFT = 8.dp
 
 /**
  * 弹窗内可滚动内容区的统一容器：右侧叠加一条现代样式的细滚动条（overlay 风格），
@@ -81,6 +83,7 @@ fun ThinScrollbarColumn(
                 val trackH = size.height
                 if (trackH <= 0f) return@Canvas
                 val barW = SCROLLBAR_WIDTH.toPx()
+                val shift = SCROLLBAR_RIGHT_SHIFT.toPx()
                 val thumbH = maxOf(
                     SCROLLBAR_MIN_THUMB.toPx(),
                     trackH * (trackH / (trackH + state.maxValue))
@@ -88,7 +91,7 @@ fun ThinScrollbarColumn(
                 val progress = (state.value.toFloat() / state.maxValue).coerceIn(0f, 1f)
                 drawRoundRect(
                     color = barColor.copy(alpha = 0.45f),
-                    topLeft = Offset(size.width - barW, (trackH - thumbH) * progress),
+                    topLeft = Offset(size.width - barW + shift, (trackH - thumbH) * progress),
                     size = Size(barW, thumbH),
                     cornerRadius = CornerRadius(barW / 2f)
                 )
