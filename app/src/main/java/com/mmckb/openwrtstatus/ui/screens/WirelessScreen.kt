@@ -193,6 +193,14 @@ fun WirelessScreen(
                     .padding(top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // —— 无线网卡（wifi-device） ——
+                Text(
+                    "无线网卡",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
                 radios.orEmpty().forEach { radio ->
                     AppCard {
                         Text(
@@ -233,78 +241,104 @@ fun WirelessScreen(
                                 }
                             )
                         }
+                    }
+                }
 
-                        radio.ifaces.forEach { iface ->
+                // —— WiFi（wifi-iface 接口） ——
+                Text(
+                    "WiFi",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+                AppCard {
+                    val allIfaces = radios.orEmpty().flatMap { radio ->
+                        radio.ifaces.map { it to radio }
+                    }
+                    if (allIfaces.isEmpty()) {
+                        Text(
+                            "无 WiFi 接口",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                    allIfaces.forEachIndexed { ifaceIndex, (iface, radio) ->
+                        if (ifaceIndex > 0) {
                             HorizontalDivider(color = colors.outline, modifier = Modifier.padding(vertical = 8.dp))
-                            Text(
-                                iface.section,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = iface.ssid,
-                                onValueChange = { v ->
-                                    updateIface(iface.section) { it.copy(ssid = v) }
-                                },
-                                singleLine = true,
-                                label = { Text("SSID（Wi-Fi 名称）") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = iface.key ?: "",
-                                onValueChange = { v ->
-                                    updateIface(iface.section) { it.copy(key = v) }
-                                },
-                                singleLine = true,
-                                label = { Text("密码") },
-                                visualTransformation = if (keyVisibleFor == iface.section) {
-                                    VisualTransformation.None
-                                } else {
-                                    PasswordVisualTransformation()
-                                },
-                                trailingIcon = {
-                                    TextButton(onClick = {
-                                        keyVisibleFor = if (keyVisibleFor == iface.section) null else iface.section
-                                    }) { Text(if (keyVisibleFor == iface.section) "隐藏" else "显示") }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "加密",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = colors.onSurface,
-                                    modifier = Modifier.weight(1f)
-                                )
+                        }
+                        Text(
+                            buildString {
+                                append(iface.section)
+                                append("　·　${radio.section}")
+                                radio.band?.let { append("　·　${if (it == "5g") "5 GHz" else if (it == "2g") "2.4 GHz" else it}") }
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = iface.ssid,
+                            onValueChange = { v ->
+                                updateIface(iface.section) { it.copy(ssid = v) }
+                            },
+                            singleLine = true,
+                            label = { Text("SSID（Wi-Fi 名称）") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = iface.key ?: "",
+                            onValueChange = { v ->
+                                updateIface(iface.section) { it.copy(key = v) }
+                            },
+                            singleLine = true,
+                            label = { Text("密码") },
+                            visualTransformation = if (keyVisibleFor == iface.section) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                            trailingIcon = {
                                 TextButton(onClick = {
-                                    encryptionMenuFor = if (encryptionMenuFor == iface.section) null else iface.section
-                                }) {
-                                    Text(iface.encryption ?: "未设置")
+                                    keyVisibleFor = if (keyVisibleFor == iface.section) null else iface.section
+                                }) { Text(if (keyVisibleFor == iface.section) "隐藏" else "显示") }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "加密",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = {
+                                encryptionMenuFor = if (encryptionMenuFor == iface.section) null else iface.section
+                            }) {
+                                Text(iface.encryption ?: "未设置")
+                            }
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = encryptionMenuFor == iface.section,
+                                onDismissRequest = { encryptionMenuFor = null }
+                            ) {
+                                ENCRYPTION_OPTIONS.forEach { option ->
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            updateIface(iface.section) { it.copy(encryption = option) }
+                                            encryptionMenuFor = null
+                                        }
+                                    )
                                 }
-                                androidx.compose.material3.DropdownMenu(
-                                    expanded = encryptionMenuFor == iface.section,
-                                    onDismissRequest = { encryptionMenuFor = null }
-                                ) {
-                                    ENCRYPTION_OPTIONS.forEach { option ->
-                                        androidx.compose.material3.DropdownMenuItem(
-                                            text = { Text(option) },
-                                            onClick = {
-                                                updateIface(iface.section) { it.copy(encryption = option) }
-                                                encryptionMenuFor = null
-                                            }
-                                        )
-                                    }
-                                }
                             }
-                            SettingRow("隐藏网络（不广播 SSID）", iface.hidden) {
-                                updateIface(iface.section) { it.copy(hidden = !it.hidden) }
-                            }
-                            SettingRow("启用此接口", !iface.disabled) {
-                                updateIface(iface.section) { it.copy(disabled = !it.disabled) }
-                            }
+                        }
+                        SettingRow("隐藏网络（不广播 SSID）", iface.hidden) {
+                            updateIface(iface.section) { it.copy(hidden = !it.hidden) }
+                        }
+                        SettingRow("启用此接口", !iface.disabled) {
+                            updateIface(iface.section) { it.copy(disabled = !it.disabled) }
                         }
                     }
                 }
