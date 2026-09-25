@@ -18,6 +18,7 @@ data class WirelessRadio(
     val txpower: String?,
     val country: String?,
     val band: String?,
+    val hwmode: String? = null,
     val disabled: Boolean,
     val ifaces: List<WirelessIface>
 )
@@ -119,9 +120,10 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         rts = str(sec, "rts"),
                         shortPreamble = if (sec.containsKey("short_preamble")) bool(sec, "short_preamble") else true,
                         macfilter = str(sec, "macfilter"),
-                        maclist = (sec["maclist"] as? JsonArray)
+                        maclist = ((sec["maclist"] as? JsonArray)
                             ?.mapNotNull { (it as? JsonPrimitive)?.content }
-                            .ifEmpty { str(sec, "maclist")?.split(Regex("[, ]+"))?.filter { m -> m.isNotEmpty() } } ?: emptyList(),
+                            ?: str(sec, "maclist")?.split(Regex("[, ]+"))?.filter { m -> m.isNotEmpty() }
+                            ?: emptyList()),
                         disabled = bool(sec, "disabled")
                     )
                 )
