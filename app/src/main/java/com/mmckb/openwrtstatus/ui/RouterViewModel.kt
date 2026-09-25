@@ -60,6 +60,9 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val _leases = MutableStateFlow<List<LeaseInfo>>(emptyList())
     val leases: StateFlow<List<LeaseInfo>> = _leases
 
+    private val _leaseError = MutableStateFlow<String?>(null)
+    val leaseError: StateFlow<String?> = _leaseError
+
     private val _history = MutableStateFlow<List<HistorySample>>(emptyList())
     val history: StateFlow<List<HistorySample>> = _history
 
