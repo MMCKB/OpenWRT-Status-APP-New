@@ -46,8 +46,9 @@ val OptionSwitcherEasing = CubicBezierEasing(0.34f, 0.96f, 0.6f, 0.99f)
  *
  * 交互：
  * - 单击某段：指示器以参考实现的缓动曲线滑到该段（无涟漪灰底）；
- * - 长按后拖动：指示器逐帧连续跟随手指，文字高亮实时跟随悬停段，
- *   松手后滑向最近的段并提交选择（往返可逆、等分段几何）。
+ * - 长按后拖动：手指划到哪个字上，指示器就完整落到那个字上，该字
+ *   同时变白、其余变灰——指示器与文字严格同步，不会出现指示器盖到
+ *   一半文字才变色的情况；松手提交选择（往返可逆、等分段几何）。
  *
  * 适配当前应用的色板与字体，不引入参考实现的配色与形状。
  */
@@ -85,30 +86,29 @@ fun SmoothOptionSwitcher(
                     ((x / size.width.coerceAtLeast(1)) * options.size)
                         .toInt().coerceIn(0, options.size - 1)
 
-                // 指示器中心跟随手指：段索引坐标下左移半段。
-                fun fractionAt(x: Float): Float {
-                    val seg = size.width.toFloat() / options.size
-                    return ((x - seg / 2f) / seg).coerceIn(0f, options.size - 1f)
-                }
-
                 detectDragGesturesAfterLongPress(
                     onDragStart = { offset ->
-                        dragIndex = indexAt(offset.x)
-                        scope.launch { indicator.snapTo(fractionAt(offset.x)) }
+                        val idx = indexAt(offset.x)
+                        dragIndex = idx
+                        scope.launch {
+                            indicator.animateTo(idx.toFloat(), tween(160, easing = OptionSwitcherEasing))
+                        }
                     },
                     onDrag = { change, _ ->
-                        dragIndex = indexAt(change.position.x)
-                        scope.launch { indicator.snapTo(fractionAt(change.position.x)) }
+                        val idx = indexAt(change.position.x)
+                        if (idx != dragIndex) {
+                            dragIndex = idx
+                            scope.launch {
+                                indicator.animateTo(idx.toFloat(), tween(180, easing = OptionSwitcherEasing))
+                            }
+                        }
                     },
                     onDragEnd = {
                         val idx = dragIndex
                         if (idx != null) {
                             currentOnSelect(options[idx].first)
                             scope.launch {
-                                indicator.animateTo(
-                                    idx.toFloat(),
-                                    tween(280, easing = OptionSwitcherEasing)
-                                )
+                                indicator.animateTo(idx.toFloat(), tween(280, easing = OptionSwitcherEasing))
                             }
                         }
                         dragIndex = null
@@ -118,7 +118,8 @@ fun SmoothOptionSwitcher(
             }
     ) {
         val segment = maxWidth / options.size
-        // 滑动指示器：拖动时跟手，其余时候按选中索引平滑平移。
+        // 滑动指示器：拖动时按段完整跟随手指（与文字变色同步），
+        // 其余时候按选中索引平滑平移。
         Box(
             modifier = Modifier
                 .offset(x = segment * indicator.value)
