@@ -1,12 +1,5 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -716,18 +709,20 @@ fun WirelessScreen(
                     onSelect = { ifaceSectionTab = it },
                     modifier = Modifier.fillMaxWidth()
                 )
-                // 分区切换动效（Android 官方文档方案：AnimatedContent + SizeTransform）：
-                // 旧分区淡出、新分区淡入，容器高度在两个内容之间平滑过渡且不裁剪内容。
-                AnimatedContent(
-                    targetState = ifaceSectionTab,
-                    transitionSpec = {
-                        (fadeIn(tween(280, easing = LinearEasing)) togetherWith
-                            fadeOut(tween(280, easing = LinearEasing)))
-                            .using(SizeTransform(clip = false))
-                    },
-                    label = "ifaceSection"
-                ) { tab ->
-                    when (tab) {
+                // 分区内容固定高度 + 滚动：弹窗整体尺寸恒定，切换分区不再改变窗口
+                // 大小，也不会出现新旧内容交叠（交叉淡入淡出会把两份表单叠在一起）。
+                // 高度取 300dp 与屏幕高度的比例较小值，避免横屏时超出屏幕。
+                val sectionBodyHeight = minOf(
+                    300.dp,
+                    androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.45f
+                )
+                Column(
+                    modifier = Modifier
+                        .height(sectionBodyHeight)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    when (ifaceSectionTab) {
                     "security" -> {
                         SelectRow("加密", encryptionLabel(ifaceEncryption)) {
                             selectState = SelectState(
