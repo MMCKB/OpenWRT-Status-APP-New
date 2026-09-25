@@ -1,5 +1,7 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
@@ -27,10 +30,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,10 +46,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.ScanNet
@@ -89,6 +99,47 @@ private fun bandLabel(band: String?): String = when (band) {
 
 private fun encryptionLabel(value: String?, live: String? = null): String =
     live ?: (SECURITY_OPTIONS.firstOrNull { it.first == value }?.second ?: (value ?: "未设置"))
+
+/**
+ * WiFi 分享二维码内容（安卓/iOS 相机通用格式）：
+ * `WIFI:T:<认证>;S:<SSID>;P:<密码>;H:<隐藏>;;`。WPA 涵盖 WPA/WPA2/WPA3 个人网络；
+ * 特殊字符（\ ; , : " '）需转义，开放网络用 nopass 且不携带 P 字段。
+ */
+private fun wifiQrContent(
+    ssid: String,
+    password: String?,
+    encryption: String?,
+    hidden: Boolean
+): String {
+    val esc = { raw: String -> raw.replace(Regex("([\\\\;,:\"'])"), "\\\\$1") }
+    val auth = if (encryption == "none") "nopass" else "WPA"
+    return buildString {
+        append("WIFI:T:$auth;S:${esc(ssid)};")
+        if (auth != "nopass") append("P:${esc(password.orEmpty())};")
+        if (hidden) append("H:true;")
+        append(";")
+    }
+}
+
+/** 生成二维码位图：白底黑码 + 1 模块静区，保证深色模式下也能被相机识别。 */
+private fun wifiQrBitmap(content: String): Bitmap? = runCatching {
+    val size = 720
+    val hints = mapOf(
+        EncodeHintType.MARGIN to 1,
+        EncodeHintType.CHARACTER_SET to "UTF-8"
+    )
+    val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size, hints)
+    val pixels = IntArray(size * size)
+    for (y in 0 until size) {
+        for (x in 0 until size) {
+            pixels[y * size + x] =
+                if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        }
+    }
+    Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
+        setPixels(pixels, 0, size, 0, 0, size, size)
+    }
+}.getOrNull()
 
 private fun channelOptions(band: String?): List<Pair<String, String>> {
     val list = mutableListOf("auto" to "auto")
@@ -220,6 +271,7 @@ fun WirelessScreen(
     var addEncryption by remember { mutableStateOf("psk2") }
 
     var deleteIfaceFor by remember { mutableStateOf<String?>(null) }
+    var shareIfaceFor by remember { mutableStateOf<WirelessIface?>(null) }
 
     var scanFor by remember { mutableStateOf<String?>(null) }
     var scanResults by remember { mutableStateOf<List<ScanNet>?>(null) }
@@ -606,6 +658,19 @@ fun WirelessScreen(
                             horizontalArrangement = Arrangement.End
                         ) {
                             TextButton(
+                                onClick = { shareIfaceFor = iface },
+                                enabled = !busy,
+                                modifier = Modifier.height(30.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.QrCode2,
+                                    contentDescription = "分享二维码",
+                                    tint = colors.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            TextButton(
                                 onClick = { deleteIfaceFor = iface.section },
                                 enabled = !busy,
                                 modifier = Modifier.height(30.dp),
@@ -987,6 +1052,76 @@ fun WirelessScreen(
             },
             onDismiss = { deleteIfaceFor = null }
         )
+    }
+
+    // ---- WiFi 分享二维码（底部弹窗，非居中） ----
+    shareIfaceFor?.let { shareIface ->
+        val qrContent = wifiQrContent(
+            shareIface.ssid, shareIface.key, shareIface.encryption, shareIface.hidden
+        )
+        val qrBitmap = remember(qrContent) { wifiQrBitmap(qrContent) }
+        ModalBottomSheet(
+            onDismissRequest = { shareIfaceFor = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = colors.surface,
+            contentColor = colors.onSurface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "分享二维码",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
+                Spacer(Modifier.height(16.dp))
+                // 白底容器保证深色模式下二维码同样可被相机识别。
+                Surface(
+                    shape = AppShapes.block,
+                    color = Color.White
+                ) {
+                    if (qrBitmap != null) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = "WiFi 二维码",
+                            modifier = Modifier
+                                .padding(10.dp)
+                                .size(240.dp)
+                        )
+                    } else {
+                        Text(
+                            "二维码生成失败。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.error,
+                            modifier = Modifier.padding(24.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    shareIface.ssid.ifEmpty { "（未设置 SSID）" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    maxLines = 2
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    when {
+                        shareIface.encryption == "none" -> "密码：无（开放网络）"
+                        shareIface.key.isNullOrBlank() -> "密码：未获取"
+                        else -> "密码：${shareIface.key}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+            }
+        }
     }
 
     // ---- 扫描结果对话框 ----
