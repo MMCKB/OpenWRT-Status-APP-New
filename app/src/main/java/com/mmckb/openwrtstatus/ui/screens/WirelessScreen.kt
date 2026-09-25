@@ -94,7 +94,7 @@ private fun htmodeOptions(band: String?): List<Pair<String, String>> = when (ban
     )
     "6g" -> listOf("HE20", "HE40", "HE80", "HE160")
     else -> listOf("HT20", "HT40", "VHT80", "HE80")
-}
+}.map { it to it }
 
 private fun txpowerOptions(): List<Pair<String, String>> {
     val list = mutableListOf("" to "默认")
