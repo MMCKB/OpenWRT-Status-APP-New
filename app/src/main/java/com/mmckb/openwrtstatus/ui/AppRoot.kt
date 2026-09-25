@@ -54,6 +54,7 @@ import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
+import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
@@ -86,6 +87,7 @@ private const val TAB_SETTINGS = 5
 private sealed interface SecondaryPage {
     data object FileManager : SecondaryPage
     data object PackageManager : SecondaryPage
+    data object Wireless : SecondaryPage
     data object About : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
@@ -153,6 +155,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.About
         }
     }
+    val wirelessLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(WirelessActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Wireless
+        }
+    }
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -181,6 +190,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.About -> AboutScreen(onBack = { secondary = null })
+                    SecondaryPage.Wireless -> WirelessScreen(
+                        config = cfg,
+                        onBack = { secondary = null }
+                    )
                     is SecondaryPage.DeviceEditor -> DeviceEditScreen(
                         initial = page.initial,
                         isNew = page.isNew,
@@ -226,6 +239,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     SecondaryPage.About -> aboutLauncher.launch(
                         Intent(context, AboutActivity::class.java)
                     )
+                    SecondaryPage.Wireless -> wirelessLauncher.launch(
+                        Intent(context, WirelessActivity::class.java)
+                            .putExtra(WirelessActivity.EXTRA_CONFIG, config)
+                    )
                     is SecondaryPage.DeviceEditor -> return
                 }
             }
@@ -270,6 +287,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     TAB_TOOL -> ToolScreen(
                         onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
                         onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
+                        onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
