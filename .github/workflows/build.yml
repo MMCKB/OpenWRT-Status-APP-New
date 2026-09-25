@@ -115,3 +115,18 @@ jobs:
             --notes "Dev 分支每次推送自动覆盖更新的构建产物：4 个架构的 APK，可直接下载 APK 文件。" \
             || true
           gh release upload dev-build apk-out/*.apk --clobber
+
+      # Artifact 下载时 GitHub 会强制套一层 zip（平台行为，无法关闭），
+      # 因此在运行页 Summary 里给出裸 APK 的直链（指向 dev-build release）。
+      - name: Write direct APK links to run summary
+        if: github.ref == 'refs/heads/Dev' && github.event_name != 'pull_request'
+        run: |
+          {
+            echo "## 📲 直接下载 APK（无需解压）"
+            echo ""
+            for a in arm64-v8a armeabi-v7a x86_64 x86; do
+              echo "- [OpenWrt-Status-$a.apk](https://github.com/${{ github.repository }}/releases/download/dev-build/OpenWrt-Status-$a.apk)"
+            done
+            echo ""
+            echo "> Artifact 由 GitHub 平台强制打包为 zip；裸 APK 请用上方直链或到 [Releases 页](https://github.com/${{ github.repository }}/releases/tag/dev-build) 下载。"
+          } >> "$GITHUB_STEP_SUMMARY"
