@@ -500,11 +500,43 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                 } else {
                     // 竖屏全屏二级页：从横屏旋转过来时保持停留在这个页面，不弹回首页。
-                    secondaryPane(page)
-                    ConnectionToastHost(
-                        Modifier.align(Alignment.CenterEnd),
-                        slideFromTop = false
-                    )
+                    // 预测性返回：页面跟手下滑淡出，提交关闭，取消回弹。
+                    val backAnim = remember(page) { androidx.compose.animation.core.Animatable(0f) }
+                    val paneScope = rememberCoroutineScope()
+                    androidx.activity.compose.PredictiveBackHandler { events ->
+                        try {
+                            events.collect { ev ->
+                                val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+                                    .transform(ev.progress).coerceIn(0f, 1f)
+                                backAnim.snapTo(p)
+                            }
+                            secondary = null
+                        } catch (_: kotlinx.coroutines.CancellationException) {
+                            paneScope.launch {
+                                backAnim.animateTo(
+                                    0f,
+                                    androidx.compose.animation.core.spring(
+                                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    val backP = backAnim.value
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationY = size.height * 0.22f * backP
+                                alpha = 1f - 0.6f * backP
+                            }
+                    ) {
+                        secondaryPane(page)
+                        ConnectionToastHost(
+                            Modifier.align(Alignment.CenterEnd),
+                            slideFromTop = false
+                        )
+                    }
                 }
             }
         }
