@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -51,12 +51,68 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val ENCRYPTION_OPTIONS = listOf("psk2", "psk2-mixed", "sae-mixed", "sae", "none")
+private val ENCRYPTION_OPTIONS = listOf(
+    "none" to "无加密",
+    "psk" to "WPA-PSK",
+    "psk2" to "WPA2-PSK",
+    "psk-mixed" to "WPA/WPA2 混合",
+    "sae" to "WPA3-SAE",
+    "sae-mixed" to "WPA2/WPA3 混合",
+    "wep-open" to "WEP 开放",
+    "wep-shared" to "WEP 共享"
+)
+
+/** 卡片信息行：标签 + 当前值。 */
+@Composable
+private fun InfoRow(label: String, value: String) {
+    val colors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** 卡片右下角的编辑小按钮。 */
+@Composable
+private fun EditButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = AppShapes.pill,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 14.dp, vertical = 4.dp
+        )
+    ) { Text(label) }
+}
+
+private fun bandLabel(band: String?): String = when (band) {
+    "5g" -> "5 GHz"
+    "2g" -> "2.4 GHz"
+    "6g" -> "6 GHz"
+    else -> band ?: ""
+}
 
 /**
- * 无线设置页（二级页，独立 Activity）：卡片内只展示当前值，编辑通过卡片里的
- * 按钮弹出对话框完成（信道 / SSID / 密码 / 加密），开关直接内联。
- * 应用时 uci 写回 + network reload 重载无线（Wi-Fi 会短暂断开）。
+ * 无线设置页（二级页，独立 Activity）：与 LuCI 对齐的全部无线设置。
+ * 卡片只展示当前值；信道/htmode/发射功率/国家、SSID/网络/加密/密码等
+ * 通过卡片右下角「编辑」按钮在对话框中修改；支持添加/删除 WiFi 接口。
  */
 @Composable
 fun WirelessScreen(
@@ -77,14 +133,26 @@ fun WirelessScreen(
     var messageIsError by remember { mutableStateOf(false) }
     var showApplyConfirm by remember { mutableStateOf(false) }
 
-    // 编辑对话框目标与临时输入。
-    var editChannelFor by remember { mutableStateOf<String?>(null) }
-    var channelText by remember { mutableStateOf("") }
-    var editSsidFor by remember { mutableStateOf<String?>(null) }
-    var ssidText by remember { mutableStateOf("") }
-    var editKeyFor by remember { mutableStateOf<String?>(null) }
-    var keyText by remember { mutableStateOf("") }
-    var editEncryptionFor by remember { mutableStateOf<String?>(null) }
+    // 组合编辑对话框目标与临时字段。
+    var editRadioFor by remember { mutableStateOf<String?>(null) }
+    var radioChannel by remember { mutableStateOf("") }
+    var radioHtmode by remember { mutableStateOf("") }
+    var radioTxpower by remember { mutableStateOf("") }
+    var radioCountry by remember { mutableStateOf("") }
+
+    var editIfaceFor by remember { mutableStateOf<String?>(null) }
+    var ifaceMode by remember { mutableStateOf("ap") }
+    var ifaceSsid by remember { mutableStateOf("") }
+    var ifaceNetwork by remember { mutableStateOf("") }
+    var ifaceEncryption by remember { mutableStateOf("psk2") }
+    var ifaceKey by remember { mutableStateOf("") }
+
+    var addWifiFor by remember { mutableStateOf<String?>(null) }
+    var addSsid by remember { mutableStateOf("") }
+    var addKey by remember { mutableStateOf("") }
+    var addEncryption by remember { mutableStateOf("psk2") }
+
+    var deleteIfaceFor by remember { mutableStateOf<String?>(null) }
 
     fun setMsg(text: String?, isError: Boolean) {
         message = text
@@ -135,6 +203,15 @@ fun WirelessScreen(
             if (radio.channel != old?.channel && !radio.channel.isNullOrBlank()) {
                 put(radio.section, "channel", radio.channel)
             }
+            if (radio.htmode != old?.htmode && !radio.htmode.isNullOrBlank()) {
+                put(radio.section, "htmode", radio.htmode)
+            }
+            if (radio.txpower != old?.txpower && !radio.txpower.isNullOrBlank()) {
+                put(radio.section, "txpower", radio.txpower)
+            }
+            if (radio.country != old?.country && !radio.country.isNullOrBlank()) {
+                put(radio.section, "country", radio.country)
+            }
             for (iface in radio.ifaces) {
                 val o = old?.ifaces?.firstOrNull { it.section == iface.section }
                 if (iface.ssid != (o?.ssid ?: "")) put(iface.section, "ssid", iface.ssid)
@@ -144,6 +221,18 @@ fun WirelessScreen(
                 }
                 if (iface.hidden != (o?.hidden ?: false)) {
                     put(iface.section, "hidden", if (iface.hidden) "1" else "0")
+                }
+                if (iface.mode != o?.mode && !iface.mode.isNullOrBlank()) {
+                    put(iface.section, "mode", iface.mode)
+                }
+                if (iface.network != o?.network && !iface.network.isNullOrBlank()) {
+                    put(iface.section, "network", iface.network)
+                }
+                if (iface.isolate != (o?.isolate ?: false)) {
+                    put(iface.section, "isolate", if (iface.isolate) "1" else "0")
+                }
+                if (iface.wmm != (o?.wmm ?: true)) {
+                    put(iface.section, "wmm", if (iface.wmm) "1" else "0")
                 }
                 if (iface.disabled != (o?.disabled ?: false)) {
                     put(iface.section, "disabled", if (iface.disabled) "1" else "0")
@@ -228,10 +317,9 @@ fun WirelessScreen(
                                 )
                                 Text(
                                     buildString {
-                                        radio.band?.let {
-                                            append(if (it == "5g") "5 GHz" else if (it == "2g") "2.4 GHz" else it)
-                                        }
-                                        append("　·　信道 ${radio.channel ?: "auto"}")
+                                        bandLabel(radio.band).let { if (it.isNotEmpty()) append("$it　·　") }
+                                        append("信道 ${radio.channel ?: "auto"}")
+                                        radio.htmode?.let { append("　·　$it") }
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colors.onSurfaceVariant
@@ -244,10 +332,20 @@ fun WirelessScreen(
                                 }
                             )
                         }
-                        Spacer(Modifier.height(4.dp))
-                        CardButton("修改信道") {
-                            channelText = radio.channel ?: ""
-                            editChannelFor = radio.section
+                        Spacer(Modifier.height(6.dp))
+                        InfoRow("发射功率", radio.txpower?.let { "$it dBm" } ?: "默认")
+                        InfoRow("国家代码", radio.country ?: "默认")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = {
+                                radioChannel = radio.channel ?: "auto"
+                                radioHtmode = radio.htmode ?: ""
+                                radioTxpower = radio.txpower ?: ""
+                                radioCountry = radio.country ?: ""
+                                editRadioFor = radio.section
+                            }) { Text("编辑") }
                         }
                     }
                 }
@@ -260,19 +358,7 @@ fun WirelessScreen(
                     color = colors.onSurface,
                     modifier = Modifier.padding(start = 4.dp)
                 )
-                val allIfaces = radios.orEmpty().flatMap { radio ->
-                    radio.ifaces.map { it to radio }
-                }
-                if (allIfaces.isEmpty()) {
-                    AppCard {
-                        Text(
-                            "无 WiFi 接口",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant
-                        )
-                    }
-                }
-                allIfaces.forEach { (iface, radio) ->
+                radios.orEmpty().forEach { radio ->
                     AppCard {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -280,46 +366,82 @@ fun WirelessScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    iface.ssid.ifEmpty { "（未设置 SSID）" },
+                                    buildString {
+                                        append(radio.section)
+                                        bandLabel(radio.band).let { if (it.isNotEmpty()) append("　·　$it") }
+                                    },
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = colors.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    color = colors.onSurface
                                 )
                                 Text(
-                                    buildString {
-                                        append(iface.section)
-                                        append("　·　${radio.section}")
-                                        radio.band?.let {
-                                            append("　·　${if (it == "5g") "5 GHz" else if (it == "2g") "2.4 GHz" else it}")
-                                        }
-                                    },
+                                    "接口 ${radio.ifaces.size} 个",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colors.onSurfaceVariant
                                 )
                             }
-                            Switch(
-                                checked = !iface.disabled,
-                                onCheckedChange = { on ->
-                                    updateIface(iface.section) { it.copy(disabled = !on) }
-                                }
+                            EditButton("添加 WiFi", enabled = !busy) {
+                                addSsid = ""
+                                addKey = ""
+                                addEncryption = "psk2"
+                                addWifiFor = radio.section
+                            }
+                        }
+                        if (radio.ifaces.isEmpty()) {
+                            Text(
+                                "此网卡暂无 WiFi 接口",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp)
                             )
                         }
-                        Spacer(Modifier.height(4.dp))
-                        CardButton("修改 SSID") {
-                            ssidText = iface.ssid
-                            editSsidFor = iface.section
+                        radio.ifaces.forEach { iface ->
+                            HorizontalDivider(color = colors.outline, modifier = Modifier.padding(vertical = 8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        iface.ssid.ifEmpty { "（未设置 SSID）" },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = colors.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        buildString {
+                                            append(iface.encryption ?: "未设置加密")
+                                            iface.mode?.let { append("　·　${if (it == "ap") "AP" else it.uppercase()}") }
+                                            if (iface.hidden) append("　·　隐藏")
+                                            if (iface.disabled) append("　·　已停用")
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.onSurfaceVariant
+                                    )
+                                }
+                                EditButton("编辑", enabled = !busy) {
+                                    ifaceMode = iface.mode ?: "ap"
+                                    ifaceSsid = iface.ssid
+                                    ifaceNetwork = iface.network ?: "lan"
+                                    ifaceEncryption = iface.encryption ?: "psk2"
+                                    ifaceKey = iface.key ?: ""
+                                    editIfaceFor = iface.section
+                                }
+                            }
                         }
-                        CardButton("修改密码", value = if (iface.key.isNullOrBlank()) "未设置" else "已设置") {
-                            keyText = iface.key ?: ""
-                            editKeyFor = iface.section
-                        }
-                        CardButton("加密方式", value = iface.encryption ?: "未设置") {
-                            editEncryptionFor = iface.section
-                        }
-                        SettingRow("隐藏网络（不广播 SSID）", iface.hidden) {
-                            updateIface(iface.section) { it.copy(hidden = !it.hidden) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    val iface = radio.ifaces.firstOrNull() ?: return@TextButton
+                                    deleteIfaceFor = iface.section
+                                },
+                                enabled = radio.ifaces.isNotEmpty()
+                            ) { Text("删除接口", color = colors.error) }
                         }
                     }
                 }
@@ -339,95 +461,239 @@ fun WirelessScreen(
 
     // ---- 编辑对话框 ----
 
-    editChannelFor?.let { section ->
+    editRadioFor?.let { section ->
         AppDialog(
-            title = "修改信道",
+            title = section,
             confirmLabel = "确定",
             onConfirm = {
-                updateRadio(section) { it.copy(channel = channelText.trim()) }
-                editChannelFor = null
+                updateRadio(section) {
+                    it.copy(
+                        channel = radioChannel.trim(),
+                        htmode = radioHtmode.trim(),
+                        txpower = radioTxpower.trim(),
+                        country = radioCountry.trim()
+                    )
+                }
+                editRadioFor = null
             },
-            onDismiss = { editChannelFor = null }
+            onDismiss = { editRadioFor = null }
         ) {
-            OutlinedTextField(
-                value = channelText,
-                onValueChange = { channelText = it.trim() },
-                singleLine = true,
-                label = { Text("信道（auto 或数字）") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = radioChannel,
+                    onValueChange = { radioChannel = it },
+                    singleLine = true,
+                    label = { Text("信道（auto 或数字）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = radioHtmode,
+                    onValueChange = { radioHtmode = it },
+                    singleLine = true,
+                    label = { Text("HT 模式（如 HE80 / HT20）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = radioTxpower,
+                    onValueChange = { radioTxpower = it },
+                    singleLine = true,
+                    label = { Text("发射功率 dBm（留空默认）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = radioCountry,
+                    onValueChange = { radioCountry = it },
+                    singleLine = true,
+                    label = { Text("国家代码（如 CN）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 
-    editSsidFor?.let { section ->
+    editIfaceFor?.let { section ->
+        val encLabel = ENCRYPTION_OPTIONS.firstOrNull { it.first == ifaceEncryption }?.second ?: ifaceEncryption
         AppDialog(
-            title = "修改 SSID",
+            title = section,
             confirmLabel = "确定",
             onConfirm = {
-                updateIface(section) { it.copy(ssid = ssidText.trim()) }
-                editSsidFor = null
+                updateIface(section) {
+                    it.copy(
+                        mode = ifaceMode,
+                        ssid = ifaceSsid.trim(),
+                        network = ifaceNetwork.trim(),
+                        encryption = ifaceEncryption,
+                        key = ifaceKey
+                    )
+                }
+                editIfaceFor = null
             },
-            onDismiss = { editSsidFor = null }
+            onDismiss = { editIfaceFor = null }
         ) {
-            OutlinedTextField(
-                value = ssidText,
-                onValueChange = { ssidText = it },
-                singleLine = true,
-                label = { Text("SSID（Wi-Fi 名称）") },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-
-    editKeyFor?.let { section ->
-        AppDialog(
-            title = "修改密码",
-            confirmLabel = "确定",
-            onConfirm = {
-                updateIface(section) { it.copy(key = keyText) }
-                editKeyFor = null
-            },
-            onDismiss = { editKeyFor = null }
-        ) {
-            OutlinedTextField(
-                value = keyText,
-                onValueChange = { keyText = it },
-                singleLine = true,
-                label = { Text("密码") },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-
-    editEncryptionFor?.let { section ->
-        AppDialog(
-            title = "加密方式",
-            confirmLabel = "关闭",
-            dismissLabel = "",
-            onConfirm = { editEncryptionFor = null },
-            onDismiss = { editEncryptionFor = null }
-        ) {
-            Column {
-                ENCRYPTION_OPTIONS.forEach { option ->
-                    val selected = radios.orEmpty()
-                        .firstOrNull { it.ifaces.any { f -> f.section == section } }
-                        ?.ifaces?.firstOrNull { it.section == section }?.encryption == option
-                    Text(
-                        text = if (selected) "● $option" else "○ $option",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (selected) colors.primary else colors.onSurface,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                updateIface(section) { it.copy(encryption = option) }
-                                editEncryptionFor = null
-                            }
-                            .padding(vertical = 10.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 模式
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("模式", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    var modeMenu by remember { mutableStateOf(false) }
+                    TextButton(onClick = { modeMenu = !modeMenu }) { Text(ifaceMode) }
+                    androidx.compose.material3.DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
+                        listOf("ap", "sta", "mesh").forEach { m ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(m) },
+                                onClick = {
+                                    ifaceMode = m
+                                    modeMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = ifaceSsid,
+                    onValueChange = { ifaceSsid = it },
+                    singleLine = true,
+                    label = { Text("SSID（Wi-Fi 名称）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // 网络
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("网络", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    var networkMenu by remember { mutableStateOf(false) }
+                    TextButton(onClick = { networkMenu = !networkMenu }) { Text(ifaceNetwork.ifBlank { "lan" }) }
+                    androidx.compose.material3.DropdownMenu(expanded = networkMenu, onDismissRequest = { networkMenu = false }) {
+                        listOf("lan", "wan", "wan6").forEach { n ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(n) },
+                                onClick = {
+                                    ifaceNetwork = n
+                                    networkMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                // 加密
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("加密", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    var encMenu by remember { mutableStateOf(false) }
+                    TextButton(onClick = { encMenu = !encMenu }) { Text(encLabel) }
+                    androidx.compose.material3.DropdownMenu(expanded = encMenu, onDismissRequest = { encMenu = false }) {
+                        ENCRYPTION_OPTIONS.forEach { (value, label) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("$label ($value)") },
+                                onClick = {
+                                    ifaceEncryption = value
+                                    encMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                if (ifaceEncryption != "none") {
+                    OutlinedTextField(
+                        value = ifaceKey,
+                        onValueChange = { ifaceKey = it },
+                        singleLine = true,
+                        label = { Text("密码") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
         }
+    }
+
+    addWifiFor?.let { device ->
+        val encLabel = ENCRYPTION_OPTIONS.firstOrNull { it.first == addEncryption }?.second ?: addEncryption
+        AppDialog(
+            title = "添加 WiFi（$device）",
+            confirmLabel = "添加",
+            confirmEnabled = addSsid.isNotBlank(),
+            onConfirm = {
+                val dev = device
+                val ssid = addSsid.trim()
+                val key = addKey
+                val enc = addEncryption
+                addWifiFor = null
+                scope.launch {
+                    busy = true
+                    message = null
+                    try {
+                        withContext(Dispatchers.IO) { client.addIface(config, dev, ssid, key, enc) }
+                        setMsg("WiFi 已添加并重载无线。", false)
+                        load()
+                    } catch (e: Exception) {
+                        setMsg(e.message ?: "添加失败。", true)
+                    } finally {
+                        busy = false
+                    }
+                }
+            },
+            onDismiss = { if (!busy) addWifiFor = null }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = addSsid,
+                    onValueChange = { addSsid = it },
+                    singleLine = true,
+                    label = { Text("SSID（Wi-Fi 名称）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("加密", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    var encMenu by remember { mutableStateOf(false) }
+                    TextButton(onClick = { encMenu = !encMenu }) { Text(encLabel) }
+                    androidx.compose.material3.DropdownMenu(expanded = encMenu, onDismissRequest = { encMenu = false }) {
+                        ENCRYPTION_OPTIONS.forEach { (value, label) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("$label ($value)") },
+                                onClick = {
+                                    addEncryption = value
+                                    encMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+                if (addEncryption != "none") {
+                    OutlinedTextField(
+                        value = addKey,
+                        onValueChange = { addKey = it },
+                        singleLine = true,
+                        label = { Text("密码") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+
+    deleteIfaceFor?.let { section ->
+        AppDialog(
+            title = "删除接口",
+            message = "确定删除「$section」吗？该 WiFi 将从路由器移除。",
+            confirmLabel = "删除",
+            confirmColor = colors.error,
+            onConfirm = {
+                val sec = section
+                deleteIfaceFor = null
+                scope.launch {
+                    busy = true
+                    message = null
+                    try {
+                        withContext(Dispatchers.IO) { client.deleteIface(config, sec) }
+                        setMsg("接口已删除并重载无线。", false)
+                        load()
+                    } catch (e: Exception) {
+                        setMsg(e.message ?: "删除失败。", true)
+                    } finally {
+                        busy = false
+                    }
+                }
+            },
+            onDismiss = { deleteIfaceFor = null }
+        )
     }
 
     if (showApplyConfirm) {
@@ -453,65 +719,5 @@ fun WirelessScreen(
             },
             onDismiss = { showApplyConfirm = false }
         )
-    }
-}
-
-/** 卡片内的编辑按钮行：左侧标签，右侧当前值 + 箭头。 */
-@Composable
-private fun CardButton(
-    label: String,
-    value: String? = null,
-    onClick: () -> Unit
-) {
-    val colors = LocalAppColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.surfaceVariant, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurface
-        )
-        Spacer(Modifier.weight(1f))
-        value?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
-            )
-        }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.onSurfaceVariant,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
-@Composable
-private fun SettingRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    val colors = LocalAppColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.onSurface,
-            modifier = Modifier.weight(1f)
-        )
-        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
