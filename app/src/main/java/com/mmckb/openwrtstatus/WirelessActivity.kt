@@ -36,6 +36,7 @@ class WirelessActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     WirelessScreen(
                         config = config,
+                        sshEnabled = config.sshEnabled,
                         onBack = { finish() }
                     )
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))

@@ -201,6 +201,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     SecondaryPage.About -> AboutScreen(onBack = { secondary = null })
                     SecondaryPage.Wireless -> WirelessScreen(
                         config = cfg,
+                        sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
                     )
                     is SecondaryPage.DeviceEditor -> DeviceEditScreen(
