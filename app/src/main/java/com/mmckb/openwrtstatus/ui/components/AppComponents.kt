@@ -1,13 +1,10 @@
 package com.mmckb.openwrtstatus.ui.components
 
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseOut
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -550,13 +547,7 @@ fun AppDialog(
                     alpha = 1f - 0.4f * p
                 }
         ) {
-            // 内容高度变化（如 WiFi 编辑里切换方案选择器分区）时平滑过渡，
-            // 不再瞬间跳变；线性缓动跟随内容逐帧改变窗口大小。
-            Column(
-                Modifier
-                    .padding(22.dp)
-                    .animateContentSize(animationSpec = tween(300, easing = LinearEasing))
-            ) {
+            Column(Modifier.padding(22.dp)) {
                 Text(
                     title,
                     style = MaterialTheme.typography.titleMedium,
