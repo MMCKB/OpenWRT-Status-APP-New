@@ -27,11 +27,13 @@ import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -208,6 +210,7 @@ private data class SelectState(
  * 网卡：实时信道/功率/噪声、重启、扫描、添加 WiFi、编辑设备配置（工作频率/频宽/信道/功率/国家）；
  * WiFi 接口：LuCI 同款信息（模式/加密/BSSID/信号/客户端）、编辑（常规/安全/MAC 过滤/高级）、删除。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WirelessScreen(
     config: RouterConfig,
