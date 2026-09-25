@@ -34,6 +34,12 @@ data class WirelessIface(
     val hidden: Boolean,
     val isolate: Boolean,
     val wmm: Boolean,
+    val bssid: String? = null,
+    val dtim: String? = null,
+    val beaconInt: String? = null,
+    val frag: String? = null,
+    val rts: String? = null,
+    val shortPreamble: Boolean = true,
     val disabled: Boolean
 )
 
@@ -104,6 +110,12 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         hidden = bool(sec, "hidden"),
                         isolate = bool(sec, "isolate"),
                         wmm = if (sec.containsKey("wmm")) bool(sec, "wmm") else true,
+                        bssid = str(sec, "bssid"),
+                        dtim = str(sec, "dtim"),
+                        beaconInt = str(sec, "beacon_int"),
+                        frag = str(sec, "frag"),
+                        rts = str(sec, "rts"),
+                        shortPreamble = if (sec.containsKey("short_preamble")) bool(sec, "short_preamble") else true,
                         disabled = bool(sec, "disabled")
                     )
                 )

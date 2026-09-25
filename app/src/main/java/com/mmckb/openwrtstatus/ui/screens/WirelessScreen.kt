@@ -8,13 +8,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,8 +24,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -52,7 +51,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 加密方式（value to 中文标签），与 LuCI 的无线加密选项对齐。 */
 private val ENCRYPTION_OPTIONS = listOf(
     "none" to "无加密",
     "psk" to "WPA-PSK",
@@ -87,14 +85,14 @@ private fun channelOptions(band: String?): List<Pair<String, String>> {
 }
 
 private fun htmodeOptions(band: String?): List<Pair<String, String>> = when (band) {
-    "2g" -> listOf("HT20", "HT40", "HE20", "HE40")
+    "2g" -> listOf("HT20", "HT40", "HE20", "HE40").map { it to it }
     "5g" -> listOf(
         "HT20", "HT40", "VHT20", "VHT40", "VHT80", "VHT160",
         "HE20", "HE40", "HE80", "HE160"
-    )
-    "6g" -> listOf("HE20", "HE40", "HE80", "HE160")
-    else -> listOf("HT20", "HT40", "VHT80", "HE80")
-}.map { it to it }
+    ).map { it to it }
+    "6g" -> listOf("HE20", "HE40", "HE80", "HE160").map { it to it }
+    else -> listOf("HT20", "HT40", "VHT80", "HE80").map { it to it }
+}
 
 private fun txpowerOptions(): List<Pair<String, String>> {
     val list = mutableListOf("" to "默认")
@@ -115,9 +113,8 @@ private data class SelectState(
 )
 
 /**
- * 无线设置页（二级页，独立 Activity）：卡片只展示当前值；
- * 网卡的信道/HT 模式/发射功率/国家代码通过选择项修改；
- * WiFi 接口支持添加、删除与全部 LuCI 字段编辑。
+ * 无线设置页（二级页，独立 Activity）：卡片只展示当前值（信息形态与 LuCI 一致），
+ * 全部编辑通过卡片右下角「编辑」按钮在对话框中完成；支持添加/删除 WiFi 接口。
  */
 @Composable
 fun WirelessScreen(
@@ -138,12 +135,27 @@ fun WirelessScreen(
     var messageIsError by remember { mutableStateOf(false) }
     var showApplyConfirm by remember { mutableStateOf(false) }
 
+    var editRadioFor by remember { mutableStateOf<String?>(null) }
+    var radioChannel by remember { mutableStateOf("auto") }
+    var radioHtmode by remember { mutableStateOf("") }
+    var radioTxpower by remember { mutableStateOf("") }
+    var radioCountry by remember { mutableStateOf("") }
+
     var editIfaceFor by remember { mutableStateOf<String?>(null) }
     var ifaceMode by remember { mutableStateOf("ap") }
     var ifaceSsid by remember { mutableStateOf("") }
     var ifaceNetwork by remember { mutableStateOf("lan") }
     var ifaceEncryption by remember { mutableStateOf("psk2") }
     var ifaceKey by remember { mutableStateOf("") }
+    var ifaceBssid by remember { mutableStateOf("") }
+    var ifaceDtim by remember { mutableStateOf("") }
+    var ifaceBeaconInt by remember { mutableStateOf("") }
+    var ifaceFrag by remember { mutableStateOf("") }
+    var ifaceRts by remember { mutableStateOf("") }
+    var ifaceShortPreamble by remember { mutableStateOf(true) }
+    var ifaceWmm by remember { mutableStateOf(true) }
+    var ifaceHidden by remember { mutableStateOf(false) }
+    var ifaceIsolate by remember { mutableStateOf(false) }
 
     var addWifiFor by remember { mutableStateOf<String?>(null) }
     var addSsid by remember { mutableStateOf("") }
@@ -234,6 +246,24 @@ fun WirelessScreen(
                 if (iface.wmm != (o?.wmm ?: true)) {
                     put(iface.section, "wmm", if (iface.wmm) "1" else "0")
                 }
+                if (iface.bssid != o?.bssid && !iface.bssid.isNullOrBlank()) {
+                    put(iface.section, "bssid", iface.bssid)
+                }
+                if (iface.dtim != o?.dtim && !iface.dtim.isNullOrBlank()) {
+                    put(iface.section, "dtim", iface.dtim)
+                }
+                if (iface.beaconInt != o?.beaconInt && !iface.beaconInt.isNullOrBlank()) {
+                    put(iface.section, "beacon_int", iface.beaconInt)
+                }
+                if (iface.frag != o?.frag && !iface.frag.isNullOrBlank()) {
+                    put(iface.section, "frag", iface.frag)
+                }
+                if (iface.rts != o?.rts && !iface.rts.isNullOrBlank()) {
+                    put(iface.section, "rts", iface.rts)
+                }
+                if (iface.shortPreamble != (o?.shortPreamble ?: true)) {
+                    put(iface.section, "short_preamble", if (iface.shortPreamble) "1" else "0")
+                }
                 if (iface.disabled != (o?.disabled ?: false)) {
                     put(iface.section, "disabled", if (iface.disabled) "1" else "0")
                 }
@@ -294,7 +324,7 @@ fun WirelessScreen(
                     .padding(top = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // —— 无线网卡（wifi-device）：全部为选择项 ——
+                // —— 无线网卡 ——
                 Text(
                     "无线网卡",
                     style = MaterialTheme.typography.titleMedium,
@@ -308,16 +338,22 @@ fun WirelessScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                buildString {
-                                    append(radio.section)
-                                    bandLabel(radio.band).let { if (it.isNotEmpty()) append("　·　$it") }
-                                },
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.onSurface
-                            )
-                            Spacer(Modifier.weight(1f))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    radio.section,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.onSurface
+                                )
+                                Text(
+                                    buildString {
+                                        bandLabel(radio.band).let { if (it.isNotEmpty()) append("$it　·　") }
+                                        append("信道 ${radio.channel ?: "auto"}　·　${radio.htmode ?: "-"}")
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
                             Switch(
                                 checked = !radio.disabled,
                                 onCheckedChange = { on ->
@@ -326,35 +362,33 @@ fun WirelessScreen(
                             )
                         }
                         Spacer(Modifier.height(4.dp))
-                        SelectRow("信道", radio.channel ?: "auto") {
-                            selectState = SelectState(
-                                "选择信道", channelOptions(radio.band), radio.channel
-                            ) { v -> updateRadio(radio.section) { it.copy(channel = v) } }
-                        }
-                        SelectRow("HT 模式", radio.htmode ?: "-") {
-                            selectState = SelectState(
-                                "选择 HT 模式", htmodeOptions(radio.band), radio.htmode
-                            ) { v -> updateRadio(radio.section) { it.copy(htmode = v) } }
-                        }
-                        SelectRow(
-                            "发射功率",
-                            radio.txpower?.let { "$it dBm" } ?: "默认"
+                        InfoRow("信道", radio.channel ?: "auto")
+                        InfoRow("HT 模式", radio.htmode ?: "-")
+                        InfoRow("发射功率", radio.txpower?.let { "$it dBm" } ?: "默认")
+                        InfoRow("国家代码", radio.country ?: "默认")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
                         ) {
-                            selectState = SelectState(
-                                "选择发射功率", txpowerOptions(), radio.txpower ?: ""
-                            ) { v -> updateRadio(radio.section) { it.copy(txpower = v) } }
-                        }
-                        SelectRow("国家代码", radio.country ?: "默认") {
-                            selectState = SelectState(
-                                "选择国家代码",
-                                COUNTRY_OPTIONS.map { it to it },
-                                radio.country
-                            ) { v -> updateRadio(radio.section) { it.copy(country = v) } }
+                            Button(
+                                onClick = {
+                                    radioChannel = radio.channel ?: "auto"
+                                    radioHtmode = radio.htmode ?: ""
+                                    radioTxpower = radio.txpower ?: ""
+                                    radioCountry = radio.country ?: ""
+                                    editRadioFor = radio.section
+                                },
+                                enabled = !busy,
+                                shape = AppShapes.pill,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 14.dp, vertical = 4.dp
+                                )
+                            ) { Text("编辑") }
                         }
                     }
                 }
 
-                // —— WiFi（wifi-iface 接口，LuCI 信息形态） ——
+                // —— WiFi ——
                 Text(
                     "WiFi",
                     style = MaterialTheme.typography.titleMedium,
@@ -411,25 +445,36 @@ fun WirelessScreen(
                         InfoRow("网络", iface.network ?: "lan")
                         if (iface.hidden) InfoRow("隐藏", "是")
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 6.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
                         ) {
                             TextButton(
                                 onClick = { deleteIfaceFor = iface.section },
                                 enabled = !busy
                             ) { Text("删除", color = colors.error) }
-                            TextButton(
+                            Button(
                                 onClick = {
                                     ifaceMode = iface.mode ?: "ap"
                                     ifaceSsid = iface.ssid
                                     ifaceNetwork = iface.network ?: "lan"
                                     ifaceEncryption = iface.encryption ?: "psk2"
                                     ifaceKey = iface.key ?: ""
+                                    ifaceBssid = iface.bssid ?: ""
+                                    ifaceDtim = iface.dtim ?: ""
+                                    ifaceBeaconInt = iface.beaconInt ?: ""
+                                    ifaceFrag = iface.frag ?: ""
+                                    ifaceRts = iface.rts ?: ""
+                                    ifaceShortPreamble = iface.shortPreamble
+                                    ifaceWmm = iface.wmm
+                                    ifaceHidden = iface.hidden
+                                    ifaceIsolate = iface.isolate
                                     editIfaceFor = iface.section
                                 },
-                                enabled = !busy
+                                enabled = !busy,
+                                shape = AppShapes.pill,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 14.dp, vertical = 4.dp
+                                )
                             ) { Text("编辑") }
                         }
                     }
@@ -444,6 +489,172 @@ fun WirelessScreen(
                     .padding(top = 4.dp)
             ) {
                 Text(if (changes.isEmpty()) "无更改" else "应用更改（${changes.size} 段）")
+            }
+        }
+    }
+
+    // ---- 网卡编辑对话框 ----
+    editRadioFor?.let { section ->
+        val radio = radios.orEmpty().firstOrNull { it.section == section }
+        AppDialog(
+            title = section,
+            confirmLabel = "确定",
+            onConfirm = {
+                updateRadio(section) {
+                    it.copy(
+                        channel = radioChannel.trim(),
+                        htmode = radioHtmode.trim(),
+                        txpower = radioTxpower.trim(),
+                        country = radioCountry.trim()
+                    )
+                }
+                editRadioFor = null
+            },
+            onDismiss = { editRadioFor = null }
+        ) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SelectRow("信道", channelLabel(radioChannel)) {
+                    selectState = SelectState(
+                        "选择信道", channelOptions(radio?.band), radioChannel
+                    ) { v -> radioChannel = v }
+                }
+                SelectRow("HT 模式", radioHtmode.ifBlank { "-" }) {
+                    selectState = SelectState(
+                        "选择 HT 模式", htmodeOptions(radio?.band), radioHtmode
+                    ) { v -> radioHtmode = v }
+                }
+                SelectRow("发射功率", radioTxpower.ifBlank { "默认" }) {
+                    selectState = SelectState(
+                        "选择发射功率", txpowerOptions(), radioTxpower
+                    ) { v -> radioTxpower = v }
+                }
+                SelectRow("国家代码", radioCountry.ifBlank { "默认" }) {
+                    selectState = SelectState(
+                        "选择国家代码", COUNTRY_OPTIONS.map { it to it }, radioCountry
+                    ) { v -> radioCountry = v }
+                }
+            }
+        }
+    }
+
+    // ---- WiFi 编辑对话框（含 LuCI 高级设置，内容可滚动） ----
+    editIfaceFor?.let { section ->
+        AppDialog(
+            title = section,
+            confirmLabel = "确定",
+            onConfirm = {
+                updateIface(section) {
+                    it.copy(
+                        mode = ifaceMode,
+                        ssid = ifaceSsid.trim(),
+                        network = ifaceNetwork.trim(),
+                        encryption = ifaceEncryption,
+                        key = ifaceKey,
+                        bssid = ifaceBssid.trim(),
+                        dtim = ifaceDtim.trim(),
+                        beaconInt = ifaceBeaconInt.trim(),
+                        frag = ifaceFrag.trim(),
+                        rts = ifaceRts.trim(),
+                        shortPreamble = ifaceShortPreamble,
+                        wmm = ifaceWmm,
+                        hidden = ifaceHidden,
+                        isolate = ifaceIsolate
+                    )
+                }
+                editIfaceFor = null
+            },
+            onDismiss = { editIfaceFor = null }
+        ) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SelectRow("模式", if (ifaceMode == "ap") "AP" else ifaceMode.uppercase()) {
+                    selectState = SelectState(
+                        "选择模式",
+                        listOf("ap" to "AP 接入点", "sta" to "STA 客户端", "mesh" to "Mesh"),
+                        ifaceMode
+                    ) { v -> ifaceMode = v }
+                }
+                OutlinedTextField(
+                    value = ifaceSsid,
+                    onValueChange = { ifaceSsid = it },
+                    singleLine = true,
+                    label = { Text("SSID（Wi-Fi 名称）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                SelectRow("网络", ifaceNetwork.ifBlank { "lan" }) {
+                    selectState = SelectState(
+                        "选择网络",
+                        listOf("lan" to "lan", "wan" to "wan", "wan6" to "wan6"),
+                        ifaceNetwork
+                    ) { v -> ifaceNetwork = v }
+                }
+                SelectRow("加密", encryptionLabel(ifaceEncryption)) {
+                    selectState = SelectState(
+                        "选择加密方式", ENCRYPTION_OPTIONS, ifaceEncryption
+                    ) { v -> ifaceEncryption = v }
+                }
+                if (ifaceEncryption != "none") {
+                    OutlinedTextField(
+                        value = ifaceKey,
+                        onValueChange = { ifaceKey = it },
+                        singleLine = true,
+                        label = { Text("密码") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                OutlinedTextField(
+                    value = ifaceBssid,
+                    onValueChange = { ifaceBssid = it },
+                    singleLine = true,
+                    label = { Text("BSSID（仅 STA 模式需要）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "高级设置",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                OutlinedTextField(
+                    value = ifaceDtim,
+                    onValueChange = { ifaceDtim = it },
+                    singleLine = true,
+                    label = { Text("DTIM 间隔") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ifaceBeaconInt,
+                    onValueChange = { ifaceBeaconInt = it },
+                    singleLine = true,
+                    label = { Text("信标间隔（Beacon Interval）") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ifaceFrag,
+                    onValueChange = { ifaceFrag = it },
+                    singleLine = true,
+                    label = { Text("分片阈值") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = ifaceRts,
+                    onValueChange = { ifaceRts = it },
+                    singleLine = true,
+                    label = { Text("RTS/CTS 阈值") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                SettingRow("短前导码", ifaceShortPreamble) { ifaceShortPreamble = it }
+                SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
+                SettingRow("隔离客户端", ifaceIsolate) { ifaceIsolate = it }
             }
         }
     }
@@ -502,65 +713,6 @@ fun WirelessScreen(
         }
     }
 
-    // ---- 接口编辑对话框（全部字段，选择项用应用风格对话框） ----
-    editIfaceFor?.let { section ->
-        AppDialog(
-            title = section,
-            confirmLabel = "确定",
-            onConfirm = {
-                updateIface(section) {
-                    it.copy(
-                        mode = ifaceMode,
-                        ssid = ifaceSsid.trim(),
-                        network = ifaceNetwork.trim(),
-                        encryption = ifaceEncryption,
-                        key = ifaceKey
-                    )
-                }
-                editIfaceFor = null
-            },
-            onDismiss = { editIfaceFor = null }
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SelectRow("模式", if (ifaceMode == "ap") "AP" else ifaceMode.uppercase()) {
-                    selectState = SelectState(
-                        "选择模式",
-                        listOf("ap" to "AP 接入点", "sta" to "STA 客户端", "mesh" to "Mesh"),
-                        ifaceMode
-                    ) { v -> ifaceMode = v }
-                }
-                OutlinedTextField(
-                    value = ifaceSsid,
-                    onValueChange = { ifaceSsid = it },
-                    singleLine = true,
-                    label = { Text("SSID（Wi-Fi 名称）") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                SelectRow("网络", ifaceNetwork.ifBlank { "lan" }) {
-                    selectState = SelectState(
-                        "选择网络",
-                        listOf("lan" to "lan", "wan" to "wan", "wan6" to "wan6"),
-                        ifaceNetwork
-                    ) { v -> ifaceNetwork = v }
-                }
-                SelectRow("加密", encryptionLabel(ifaceEncryption)) {
-                    selectState = SelectState(
-                        "选择加密方式", ENCRYPTION_OPTIONS, ifaceEncryption
-                    ) { v -> ifaceEncryption = v }
-                }
-                if (ifaceEncryption != "none") {
-                    OutlinedTextField(
-                        value = ifaceKey,
-                        onValueChange = { ifaceKey = it },
-                        singleLine = true,
-                        label = { Text("密码") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-    }
-
     deleteIfaceFor?.let { section ->
         AppDialog(
             title = "删除接口",
@@ -588,7 +740,7 @@ fun WirelessScreen(
         )
     }
 
-    // ---- 通用选择对话框（应用风格，替代 MD3 菜单） ----
+    // ---- 通用选择对话框 ----
     selectState?.let { sel ->
         AppDialog(
             title = sel.title,
@@ -597,11 +749,12 @@ fun WirelessScreen(
             onConfirm = { selectState = null },
             onDismiss = { selectState = null }
         ) {
-            LazyColumn(
-                modifier = Modifier.height(340.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                items(sel.options, key = { it.first }) { (value, label) ->
+                sel.options.forEach { (value, label) ->
                     val isSelected = value == sel.selected
                     Text(
                         text = if (isSelected) "● $label" else label,
@@ -622,7 +775,9 @@ fun WirelessScreen(
     }
 }
 
-/** 信息行：标签 + 当前值（LuCI 无线页同款信息形态）。 */
+private fun channelLabel(v: String): String = if (v == "auto") "自动" else v
+
+/** 信息行：标签 + 当前值。 */
 @Composable
 private fun InfoRow(label: String, value: String) {
     val colors = LocalAppColors.current
@@ -679,5 +834,24 @@ private fun SelectRow(label: String, value: String, onClick: () -> Unit) {
             tint = colors.onSurfaceVariant,
             modifier = Modifier.size(18.dp)
         )
+    }
+}
+
+@Composable
+private fun SettingRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
