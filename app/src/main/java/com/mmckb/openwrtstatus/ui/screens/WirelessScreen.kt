@@ -856,7 +856,7 @@ fun WirelessScreen(
                 }
                 SelectRow("国家代码", radioCountry.ifBlank { "驱动默认" }) {
                     selectState = SelectState(
-                        "选择国家代码", COUNTRY_OPTIONS.map { it to it }, radioCountry
+                        "选择国家代码", COUNTRY_OPTIONS, radioCountry
                     ) { v -> radioCountry = v }
                 }
             }
