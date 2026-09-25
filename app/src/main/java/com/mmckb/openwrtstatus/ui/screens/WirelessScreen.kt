@@ -673,12 +673,12 @@ fun WirelessScreen(
                                 .padding(top = 10.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
-                            // 圆形二维码分享按钮（紧贴「删除」左侧）。
+                            // 圆形二维码分享按钮（紧贴「删除」左侧），背景透明。
                             Surface(
                                 onClick = { shareIfaceFor = iface },
                                 enabled = !busy,
                                 shape = CircleShape,
-                                color = colors.surfaceVariant,
+                                color = Color.Transparent,
                                 modifier = Modifier.size(30.dp)
                             ) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
