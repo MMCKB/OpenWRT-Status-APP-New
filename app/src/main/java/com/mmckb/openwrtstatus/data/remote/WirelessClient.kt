@@ -171,6 +171,18 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         }
         if (radios.isEmpty()) return@withContext emptyList()
 
+        // 关键：把解析出的接口挂到所属 radio（缺失 device 字段时归入第一个网卡），
+        // 否则 WiFi 永远显示「无 WiFi 接口」。
+        val attached = radios.map { radio ->
+            radio.copy(ifaces = ifaces.filter { it.device == radio.section })
+        }
+        val orphans = ifaces.filter { f -> attached.none { r -> r.ifaces.any { it.section == f.section } } }
+        val attachedFinal = if (orphans.isNotEmpty() && attached.isNotEmpty()) {
+            attached.mapIndexed { index, radio ->
+                if (index == 0) radio.copy(ifaces = radio.ifaces + orphans) else radio
+            }
+        } else attached
+
         // iwinfo 实时数据：radio 级 + 接口级。
         val wifiIfaces = runCatching {
             (iwinfo(config, "devices", "wireless")?.get("devices") as? JsonArray)
@@ -180,7 +192,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 ?: emptyList()
         }.getOrDefault(emptyList())
 
-        radios.map { radio ->
+        attachedFinal.map { radio ->
             var r = radio
             iwinfo(config, "info", radio.section)?.let { info ->
                 val chan = (info["channel"] as? JsonPrimitive)?.content?.toIntOrNull()
