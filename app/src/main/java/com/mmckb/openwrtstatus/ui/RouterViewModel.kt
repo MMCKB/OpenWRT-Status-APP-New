@@ -70,6 +70,10 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         MutableStateFlow(settingsStore.isConnectionNotifyEnabled())
     val connNotifyEnabled: StateFlow<Boolean> = _connNotifyEnabled
 
+    /** 工具页排版：true = 两列磁贴，false = 列表卡片（默认）。 */
+    private val _toolsGridEnabled = MutableStateFlow(settingsStore.isToolsGridEnabled())
+    val toolsGridEnabled: StateFlow<Boolean> = _toolsGridEnabled
+
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
     private var previousTime = 0L
@@ -249,6 +253,12 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         if (!enabled) {
             AppNotifier.cancel(getApplication(), AppNotifier.ID_CONN_STATUS)
         }
+    }
+
+    /** 工具页排版切换（设置页开关），持久化到本地。 */
+    fun setToolsGridEnabled(enabled: Boolean) {
+        settingsStore.saveToolsGridEnabled(enabled)
+        _toolsGridEnabled.value = enabled
     }
 
     /** Adds a device and makes it the active one. */

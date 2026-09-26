@@ -107,6 +107,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var selectedTab by remember { mutableIntStateOf(TAB_DASHBOARD) }
     val config by viewModel.config.collectAsState()
     val devices by viewModel.devices.collectAsState()
+    val toolsGrid by viewModel.toolsGridEnabled.collectAsState()
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
@@ -295,6 +296,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_TOOL -> ToolScreen(
+                        grid = toolsGrid,
                         onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
                         onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
                         onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
