@@ -494,12 +494,15 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         }
         if (ssh != null) {
             onPhase("正在提交并重载无线…")
-            val out = SshExec.run(
-                ssh, "uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__", 30_000
-            )
-            if (!out.contains("__WIRELESS_APPLY_OK__")) {
-                throw RouterException("SSH 提交失败，未能完成提交与重载。", "请检查 SSH 连接后重试。")
-            }
+            // SSH 提交失败（连接/认证问题等）时退回 ubus uci apply，仍可完成应用。
+            val committed = runCatching {
+                SshExec.run(
+                    ssh, "uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__", 30_000
+                ).contains("__WIRELESS_APPLY_OK__")
+            }.getOrDefault(false)
+            if (committed) return@withContext
+            onPhase("SSH 提交失败，改用 uci apply 提交…")
+            applyAndReload(config, onPhase)
         } else {
             applyAndReload(config, onPhase)
         }
@@ -613,25 +616,43 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     /** LuCI 特性表（决定 Mesh 模式/802.11r/EAP/SAE/OWE 等选项是否出现）。 */
     suspend fun features(config: RouterConfig): LuciFeatures? = withContext(Dispatchers.IO) {
+        parseFeatures(runCatching { call(config, "luci", "getFeatures", buildJsonObject { }, fast = true) }.getOrNull())
+            ?: parseFeatures(runCatching { call(config, "luci-rpc", "getFeatures", buildJsonObject { }, fast = true) }.getOrNull())
+    }
+
+    private fun parseFeatures(payload: kotlinx.serialization.json.JsonElement?): LuciFeatures? {
+        val root = payload?.jsonObject ?: return null
+        val hostapd = root["hostapd"]?.jsonObject ?: return null
+        fun flag(key: String): Boolean = (hostapd[key] as? JsonPrimitive)?.content == "true"
+        return LuciFeatures(
+            hostapdMesh = flag("mesh"),
+            hostapd11r = flag("11r"),
+            hostapdEap = flag("eap"),
+            hostapdSae = flag("sae"),
+            hostapdSuiteb192 = flag("suiteb192"),
+            hostapdOwe = flag("owe"),
+            hostapdWep = flag("wep"),
+            hostapdWps = flag("wps"),
+            hostapd11ac = flag("11ac"),
+            hostapd11ax = flag("11ax"),
+            hostapd11be = flag("11be")
+        )
+    }
+
+    /** 网卡实际可用信道（iwinfo freqlist）：Triple(信道, 频率 MHz, 是否 DFS/no-IR)。 */
+    suspend fun freqList(config: RouterConfig, device: String): List<Triple<Int, Int, Boolean>> = withContext(Dispatchers.IO) {
         runCatching {
-            val payload = call(config, "luci", "getFeatures", buildJsonObject { }, fast = true)
-            val root = payload.jsonObject
-            val hostapd = root["hostapd"]?.jsonObject
-            fun flag(key: String): Boolean = (hostapd?.get(key) as? JsonPrimitive)?.content == "true"
-            LuciFeatures(
-                hostapdMesh = flag("mesh"),
-                hostapd11r = flag("11r"),
-                hostapdEap = flag("eap"),
-                hostapdSae = flag("sae"),
-                hostapdSuiteb192 = flag("suiteb192"),
-                hostapdOwe = flag("owe"),
-                hostapdWep = flag("wep"),
-                hostapdWps = flag("wps"),
-                hostapd11ac = flag("11ac"),
-                hostapd11ax = flag("11ax"),
-                hostapd11be = flag("11be")
-            )
-        }.getOrNull()
+            (iwinfo(config, "freqlist", device, fast = true)?.get("results") as? JsonArray)
+                ?.mapNotNull { el ->
+                    val obj = el as? JsonObject ?: return@mapNotNull null
+                    val channel = int(obj["channel"]) ?: return@mapNotNull null
+                    val mhz = int(obj["mhz"]) ?: return@mapNotNull null
+                    val noIr = ((obj["flags"] as? JsonArray)
+                        ?.any { flag -> (flag as? JsonPrimitive)?.content == "no_ir" }) == true
+                    Triple(channel, mhz, noIr)
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
     }
 
     /** 网卡实际支持的发射功率档（dBm，来自 iwinfo txpowerlist）。 */
