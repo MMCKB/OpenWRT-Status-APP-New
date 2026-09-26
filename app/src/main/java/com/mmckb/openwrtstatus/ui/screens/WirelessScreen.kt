@@ -1255,13 +1255,20 @@ fun WirelessScreen(
                     message = null
                     try {
                         if (addingDevice != null) {
-                            withContext(Dispatchers.IO) { client.addIface(config, addingDevice, addIfaceValues()) }
+                            withContext(Dispatchers.IO) {
+                                client.addIface(config, addingDevice, addIfaceValues(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                            }
                         }
-                        withContext(Dispatchers.IO) {
-                            client.apply(config, buildChanges(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                        if (addingDevice != null) {
+                            withContext(Dispatchers.IO) {
+                                client.apply(config, buildChanges(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                            }
+                            setMsg("WiFi 已添加并重载无线。", false)
+                            load()
+                        } else {
+                            // 编辑：仅暂存到待应用更改，由底部「应用更改」统一生效
+                            setMsg("更改已暂存，点击下方「应用更改」生效。", false)
                         }
-                        setMsg(if (addingDevice != null) "WiFi 已添加并重载无线。" else "已应用，Wi-Fi 正在重载。", false)
-                        load()
                     } catch (e: Exception) {
                         setMsg(e.message ?: "操作失败。", true)
                     } finally {
@@ -1921,9 +1928,7 @@ fun WirelessScreen(
                     message = null
                     try {
                         withContext(Dispatchers.IO) {
-                            client.deleteIface(config, sec)
-                            // uci delete 仅 staged，这里统一提交并重载（uci apply）。
-                            client.apply(config, emptyMap(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                            client.deleteIface(config, sec, if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
                         }
                         setMsg("接口已删除并重载无线。", false)
                         load()

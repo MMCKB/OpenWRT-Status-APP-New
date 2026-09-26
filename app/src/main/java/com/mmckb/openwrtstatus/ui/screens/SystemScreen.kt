@@ -55,6 +55,7 @@ private data class SysSelectState(
     val title: String,
     val options: List<Pair<String, String>>,
     val selected: String?,
+    val searchable: Boolean = false,
     val onPick: (String) -> Unit
 )
 
@@ -267,6 +268,7 @@ fun SystemScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
@@ -403,7 +405,8 @@ fun SystemScreen(
                                     zones.map { it.zone to it.zone }.ifEmpty {
                                         listOf("UTC" to "UTC", "Asia/Shanghai" to "Asia/Shanghai")
                                     },
-                                    zonename
+                                    zonename,
+                                    searchable = true
                                 ) { v ->
                                     zonename = v
                                     tzstring = zones.firstOrNull { it.zone == v }?.tzstring ?: "UTC"
@@ -581,6 +584,7 @@ fun SystemScreen(
 
             // 通用选择对话框（时区/协议/级别/算法/语言/主题等）
             selectState?.let { sel ->
+                var query by remember { mutableStateOf("") }
                 AppDialog(
                     title = sel.title,
                     confirmLabel = "关闭",
@@ -588,8 +592,34 @@ fun SystemScreen(
                     onConfirm = { selectState = null },
                     onDismiss = { selectState = null }
                 ) {
-                    Column(modifier = Modifier.heightIn(max = 380.dp)) {
-                        sel.options.forEach { (value, label) ->
+                    Column(modifier = Modifier.heightIn(max = 430.dp)) {
+                        if (sel.searchable) {
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                singleLine = true,
+                                label = { Text("搜索") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        val filtered = if (sel.searchable && query.isNotBlank()) {
+                            val q = query.trim()
+                            sel.options.filter { it.second.contains(q, ignoreCase = true) || it.first.contains(q, ignoreCase = true) }
+                        } else sel.options
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 320.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            if (filtered.isEmpty()) {
+                                Text(
+                                    "无匹配项",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
+                            filtered.forEach { (value, label) ->
                             val isSelected = value == sel.selected
                             Text(
                                 text = if (isSelected) "● $label" else label,
@@ -610,6 +640,7 @@ fun SystemScreen(
             }
         }
     }
+}
 }
 
 private fun conloglevelLabel(value: String?): String = when (value) {
