@@ -139,9 +139,6 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
         /** uci apply 的确认窗口（秒），与 LuCI 的 apply_timeout 对齐：无线重载会让手机断网片刻，窗口内连回即确认成功。 */
         internal const val APPLY_CONFIRM_TIMEOUT_SEC = 90
-
-        /** extra/列表值中的换行分隔符。 */
-        private const val NL_SEP = "\n"
     }
 
     private suspend fun call(
@@ -441,10 +438,10 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     }
 
     /**
-     * 应用变更：SSH 可用时与旧版 OpenWRT-Status-APP 完全一致——一条 SSH 脚本内完成
-     * uci set/delete + uci commit + wifi reload（set 与 commit 同进程，不依赖跨进程
-     * 的暂存传递）；空串值=删除选项，换行分隔=uci 列表，Boolean 写 "1"/"0"。
-     * 无 SSH 时退回 ubus 暂存 + uci apply {rollback} + confirm（90 秒确认窗口）。
+     * 应用变更：逐段 uci set/delete（staged）后提交。
+     * [ssh] 非空时走与旧版 OpenWRT-Status-APP 相同的方式：SSH 直跑
+     * `uci commit wireless && wifi reload`——立即生效，无确认/回滚流程。
+     * [ssh] 为空时退回 ubus `uci apply {rollback}` + confirm（90 秒确认窗口，超时自动还原）。
      * [onPhase] 逐阶段回报进度（会在 IO 线程回调），供界面提示当前状态。
      */
     suspend fun apply(
@@ -455,6 +452,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     ) = withContext(Dispatchers.IO) {
         if (ssh != null) {
             onPhase("正在写入并重载无线…")
+            // 与旧版 OpenWRT-Status-APP 一致：uci set + commit + reload 在同一条 SSH 脚本内完成，
+            // 不依赖 ubus 暂存的跨进程传递。
             val script = buildShellScript("wireless", changes) +
                 "uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__"
             val committed = runCatching {
@@ -475,43 +474,41 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     private fun buildShellScript(configName: String, changes: Map<String, Map<String, Any>>): String {
         val sb = StringBuilder()
         for ((section, values) in changes) {
-            val sec = shellQuote(section)
+            val sec = shq(section)
             for ((key, value) in values) {
-                val keyQ = shellQuote(key)
+                val keyQ = shq(key)
                 when {
                     value is String && value.isEmpty() ->
                         sb.append("uci -q delete ").append(configName).append(".").append(sec).append(".").append(keyQ).append("; ")
-                    value is String && value.contains(NL_SEP) -> {
+                    value is String && value.contains('\n') -> {
                         sb.append("uci -q delete ").append(configName).append(".").append(sec).append(".").append(keyQ).append("; ")
-                        for (line in value.split(NL_SEP).filter { it.isNotBlank() }) {
+                        for (line in value.split('\n').filter { it.isNotBlank() }) {
                             sb.append("uci add_list ").append(configName).append(".").append(sec).append(".").append(keyQ)
-                                .append("=").append(shellQuote(line)).append("; ")
+                                .append("=").append(shq(line)).append("; ")
                         }
                     }
                     value is List<*> -> {
                         sb.append("uci -q delete ").append(configName).append(".").append(sec).append(".").append(keyQ).append("; ")
                         for (item in value) {
                             sb.append("uci add_list ").append(configName).append(".").append(sec).append(".").append(keyQ)
-                                .append("=").append(shellQuote(item.toString())).append("; ")
+                                .append("=").append(shq(item.toString())).append("; ")
                         }
                     }
                     value is Boolean -> sb.append("uci set ").append(configName).append(".").append(sec).append(".").append(keyQ)
-                        .append("=").append(shellQuote(if (value) "1" else "0")).append("; ")
+                        .append("='").append(if (value) "1" else "0").append("'; ")
                     else -> sb.append("uci set ").append(configName).append(".").append(sec).append(".").append(keyQ)
-                        .append("=").append(shellQuote(value.toString())).append("; ")
+                        .append("=").append(shq(value.toString())).append("; ")
                 }
             }
         }
         return sb.toString()
     }
-    private fun shellQuote(v: String): String = "'" + v.replace("'", "'\\''") + "'"
+
+    /** 单引号 shell 转义（' → '\''）。 */
+    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
 
     /** 无 SSH 后备：ubus 逐段 uci set/delete（staged）。空字符串值表示删除该选项。 */
-    private suspend fun ubusWrite(
-        config: RouterConfig,
-        changes: Map<String, Map<String, Any>>,
-        onPhase: (String) -> Unit
-    ) {
+    private suspend fun ubusWrite(config: RouterConfig, changes: Map<String, Map<String, Any>>, onPhase: (String) -> Unit) = withContext(Dispatchers.IO) {
         for ((section, values) in changes) {
             val deletions = values.filterKeys { it.isEmpty() }.keys
             val writes = values.filterNot { it.value is String && (it.value as String).isEmpty() }
@@ -529,8 +526,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                                     )
                                     v is List<*> -> {}
                                     v is Boolean -> put(k, kotlinx.serialization.json.JsonPrimitive(if (v) "1" else "0"))
-                                    v is String && v.contains(NL_SEP) -> put(
-                                        k, JsonArray(v.split(NL_SEP).filter { it.isNotBlank() }
+                                    v is String && v.contains('\n') -> put(
+                                        k, JsonArray(v.split('\n').filter { it.isNotBlank() }
                                             .map { kotlinx.serialization.json.JsonPrimitive(it) })
                                     )
                                     else -> put(k, kotlinx.serialization.json.JsonPrimitive(v.toString()))
@@ -554,6 +551,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             }
         }
     }
+
     /**
      * 提交所有 staged 变更并重载无线（LuCI apply 协议）：
      * `uci apply {timeout, rollback:true}` 后延时确认 `uci confirm`，确认失败在超时窗口内
@@ -594,7 +592,6 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     }
 
     /**
-    /**
      * 添加 WiFi 接口。SSH 可用时一条 shell 完成 add+rename+set+commit（同旧版应用，
      * reload 由随后的 [apply] 统一执行）；无 SSH 时 ubus 暂存并由 [apply] 提交。
      * [values] 值支持 String（空串跳过）、Boolean（"1"/"0"）与 List<String>（uci 列表）。
@@ -610,23 +607,23 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             onPhase("正在创建无线接口…")
             val name = "app" + java.lang.Long.toString(System.currentTimeMillis(), 36)
             val sets = StringBuilder()
-            sets.append("uci set wireless.").append(shellQuote(name)).append(".device=").append(shellQuote(device)).append("; ")
+            sets.append("uci set wireless.").append(shq(name)).append(".device=").append(shq(device)).append("; ")
             values.forEach { (k, v) ->
                 when {
                     v is String && v.isEmpty() -> {}
                     v is List<*> && v.isNotEmpty() -> {
-                        sets.append("uci -q delete wireless.").append(shellQuote(name)).append(".").append(shellQuote(k)).append("; ")
-                        for (item in v) sets.append("uci add_list wireless.").append(shellQuote(name)).append(".").append(shellQuote(k)).append("=").append(shellQuote(item.toString())).append("; ")
+                        sets.append("uci -q delete wireless.").append(shq(name)).append(".").append(shq(k)).append("; ")
+                        for (item in v) sets.append("uci add_list wireless.").append(shq(name)).append(".").append(shq(k)).append("=").append(shq(item.toString())).append("; ")
                     }
-                    v is Boolean -> sets.append("uci set wireless.").append(shellQuote(name)).append(".").append(shellQuote(k)).append("=").append(shellQuote(if (v) "1" else "0")).append("; ")
-                    v is String && v.contains(NL_SEP) -> {
-                        sets.append("uci -q delete wireless.").append(shellQuote(name)).append(".").append(shellQuote(k)).append("; ")
-                        for (line in v.split(NL_SEP).filter { it.isNotBlank() }) sets.append("uci add_list wireless.").append(shellQuote(name)).append(".").append(shellQuote(k)).append("=").append(shellQuote(line)).append("; ")
+                    v is Boolean -> sets.append("uci set wireless.").append(shq(name)).append(".").append(shq(k)).append("=").append(shq(if (v) "1" else "0")).append("; ")
+                    v is String && v.contains('\n') -> {
+                        sets.append("uci -q delete wireless.").append(shq(name)).append(".").append(shq(k)).append("; ")
+                        for (line in v.split('\n').filter { it.isNotBlank() }) sets.append("uci add_list wireless.").append(shq(name)).append(".").append(shq(k)).append("=").append(shq(line)).append("; ")
                     }
-                    else -> sets.append("uci set wireless.").append(shellQuote(name)).append(".").append(shellQuote(k)).append("=").append(shellQuote(v.toString())).append("; ")
+                    else -> sets.append("uci set wireless.").append(shq(name)).append(".").append(shq(k)).append("=").append(shq(v.toString())).append("; ")
                 }
             }
-            val script = "S=$(uci add wireless wifi-iface) && uci rename wireless.$S=" + shellQuote(name) + " && " + sets + "uci commit wireless; echo __WIRELESS_ADD_OK__"
+            val script = "S=\$(uci add wireless wifi-iface) && uci rename wireless.\$S=" + shq(name) + " && " + sets + "uci commit wireless; echo __WIRELESS_ADD_OK__"
             val ok = runCatching { SshExec.run(ssh, script, 30_000).contains("__WIRELESS_ADD_OK__") }.getOrDefault(false)
             if (ok) return@withContext
             onPhase("SSH 创建失败，改用 ubus 暂存…")
@@ -646,8 +643,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                             )
                             v is List<*> -> {}
                             v is Boolean -> put(k, kotlinx.serialization.json.JsonPrimitive(if (v) "1" else "0"))
-                            v is String && v.contains(NL_SEP) -> put(
-                                k, JsonArray(v.split(NL_SEP).filter { it.isNotBlank() }
+                            v is String && v.contains('\n') -> put(
+                                k, JsonArray(v.split('\n').filter { it.isNotBlank() }
                                     .map { kotlinx.serialization.json.JsonPrimitive(it) })
                             )
                             else -> put(k, kotlinx.serialization.json.JsonPrimitive(v.toString()))
@@ -668,7 +665,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     ) = withContext(Dispatchers.IO) {
         if (ssh != null) {
             onPhase("正在删除并重载无线…")
-            val script = "uci -q delete wireless." + shellQuote(section) + "; uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__"
+            val script = "uci -q delete wireless." + shq(section) + "; uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__"
             val ok = runCatching { SshExec.run(ssh, script, 30_000).contains("__WIRELESS_APPLY_OK__") }.getOrDefault(false)
             if (ok) return@withContext
             onPhase("SSH 删除失败，改用 uci apply 提交…")
@@ -683,6 +680,90 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         )
         if (ssh == null) applyAndReload(config, onPhase)
     }
+
+    /** 路由器上的网络（/etc/config/network 的 interface 段名），供 WiFi 的「网络」选择。 */
+    suspend fun listNetworks(config: RouterConfig): List<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = call(
+                config, "uci", "get",
+                buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("network")) },
+                fast = true
+            )
+            val values = payload.jsonObject["values"] as? JsonObject ?: return@runCatching emptyList()
+            values.mapNotNull { (name, el) ->
+                val sec = el as? JsonObject ?: return@mapNotNull null
+                if (str(sec, ".type") != "interface") return@mapNotNull null
+                (str(sec, ".name") ?: name).takeUnless { it == "loopback" }
+            }.sorted()
+        }.getOrDefault(emptyList())
+    }
+
+    /** LuCI 特性表（决定 Mesh 模式/802.11r/EAP/SAE/OWE 等选项是否出现）。 */
+    suspend fun features(config: RouterConfig): LuciFeatures? = withContext(Dispatchers.IO) {
+        parseFeatures(runCatching { call(config, "luci", "getFeatures", buildJsonObject { }, fast = true) }.getOrNull())
+            ?: parseFeatures(runCatching { call(config, "luci-rpc", "getFeatures", buildJsonObject { }, fast = true) }.getOrNull())
+    }
+
+    private fun parseFeatures(payload: kotlinx.serialization.json.JsonElement?): LuciFeatures? {
+        val root = payload?.jsonObject ?: return null
+        val hostapd = root["hostapd"]?.jsonObject ?: return null
+        fun flag(key: String): Boolean = (hostapd[key] as? JsonPrimitive)?.content == "true"
+        return LuciFeatures(
+            hostapdMesh = flag("mesh"),
+            hostapd11r = flag("11r"),
+            hostapdEap = flag("eap"),
+            hostapdSae = flag("sae"),
+            hostapdSuiteb192 = flag("suiteb192"),
+            hostapdOwe = flag("owe"),
+            hostapdWep = flag("wep"),
+            hostapdWps = flag("wps"),
+            hostapd11ac = flag("11ac"),
+            hostapd11ax = flag("11ax"),
+            hostapd11be = flag("11be")
+        )
+    }
+
+    /** 网卡实际可用信道（iwinfo freqlist）：Triple(信道, 频率 MHz, 是否 DFS/no-IR)。 */
+    suspend fun freqList(config: RouterConfig, device: String): List<Triple<Int, Int, Boolean>> = withContext(Dispatchers.IO) {
+        runCatching {
+            (iwinfo(config, "freqlist", device, fast = true)?.get("results") as? JsonArray)
+                ?.mapNotNull { el ->
+                    val obj = el as? JsonObject ?: return@mapNotNull null
+                    val channel = int(obj["channel"]) ?: return@mapNotNull null
+                    val mhz = int(obj["mhz"]) ?: return@mapNotNull null
+                    val noIr = ((obj["flags"] as? JsonArray)
+                        ?.any { flag -> (flag as? JsonPrimitive)?.content == "no_ir" }) == true
+                    Triple(channel, mhz, noIr)
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 网卡实际支持的发射功率档（dBm，来自 iwinfo txpowerlist）。 */
+    suspend fun txPowerList(config: RouterConfig, device: String): List<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            (iwinfo(config, "txpowerlist", device, fast = true)?.get("results") as? JsonArray)
+                ?.mapNotNull { el ->
+                    (el as? JsonObject)?.get("dbm")?.let { int(it) }
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 国家代码表（来自 iwinfo countrylist），返回 (ISO 代码, "代码 - 国家名")。 */
+    suspend fun countryList(config: RouterConfig, device: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            (iwinfo(config, "countrylist", device, fast = true)?.get("results") as? JsonArray)
+                ?.mapNotNull { el ->
+                    val obj = el as? JsonObject ?: return@mapNotNull null
+                    val iso = str(obj, "iso3166") ?: return@mapNotNull null
+                    val name = str(obj, "country") ?: ""
+                    iso to "$iso - $name"
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
     /** 扫描 radio 附近的网络（iwinfo scan）。 */
     suspend fun scan(config: RouterConfig, device: String): List<ScanNet> = withContext(Dispatchers.IO) {
         val info = iwinfo(config, "scan", device) ?: return@withContext emptyList()
