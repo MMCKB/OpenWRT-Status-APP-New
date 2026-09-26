@@ -31,10 +31,14 @@ import javax.net.ssl.X509TrustManager
 
 /**
  * Error carrying a short message plus an actionable hint for the UI.
+ * [ubusCode] carries the raw ubus status code (result[0]) when the call was
+ * dispatched and rejected by ubus itself — callers use it to distinguish
+ * "nothing to do" (5) from real failures.
  */
 class RouterException(
     message: String,
-    val hint: String? = null
+    val hint: String? = null,
+    val ubusCode: Int? = null
 ) : IOException(message)
 
 /**
@@ -220,7 +224,7 @@ class UbusRpcClient {
 
         val code = (result[0] as? JsonPrimitive)?.content?.toIntOrNull() ?: -1
         if (code != 0) {
-            throw RouterException("ubus 调用 $target.$method 失败（代码 $code）。", ubusHint(code))
+            throw RouterException("ubus 调用 $target.$method 失败（代码 $code）。", ubusHint(code), code)
         }
         // result 只有状态码（如 uci set/commit、rc init 的 [0]）表示成功且无返回体。
         return if (result.size >= 2) result[1] else JsonNull
