@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +40,7 @@ import com.mmckb.openwrtstatus.data.remote.SystemClient
 import com.mmckb.openwrtstatus.data.remote.SystemData
 import com.mmckb.openwrtstatus.data.remote.ZoneEntry
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
@@ -575,6 +577,36 @@ fun SystemScreen(
                     )
                 }
             }
+
+            // 通用选择对话框（时区/协议/级别/算法/语言/主题等）
+            selectState?.let { sel ->
+                AppDialog(
+                    title = sel.title,
+                    confirmLabel = "关闭",
+                    dismissLabel = "",
+                    onConfirm = { selectState = null },
+                    onDismiss = { selectState = null }
+                ) {
+                    Column(modifier = Modifier.heightIn(max = 380.dp)) {
+                        sel.options.forEach { (value, label) ->
+                            val isSelected = value == sel.selected
+                            Text(
+                                text = if (isSelected) "● $label" else label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected) colors.primary else colors.onSurface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        sel.onPick(value)
+                                        selectState = null
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -597,7 +629,8 @@ private fun SysSelectRow(label: String, value: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                        .background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -616,7 +649,8 @@ private fun SysSettingRow(label: String, checked: Boolean, onChanged: (Boolean) 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                        .background(colors.surface, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
