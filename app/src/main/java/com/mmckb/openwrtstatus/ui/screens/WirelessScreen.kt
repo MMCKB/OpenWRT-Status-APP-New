@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -13,6 +14,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -1333,8 +1337,16 @@ fun WirelessScreen(
                     modifier = Modifier.height(sectionBodyHeight),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    AnimatedContent(
+                        targetState = Triple(dlgGroup, dlgDeviceTab, ifaceSectionTab),
+                        transitionSpec = {
+                            (fadeIn(tween(150)) + slideInVertically(tween(190, easing = OptionSwitcherEasing)) { it / 30 })
+                                .togetherWith(fadeOut(tween(110)) + slideOutVertically(tween(150)) { -it / 30 })
+                        },
+                        label = "sectionBody"
+                    ) { (grp, devTab, ifaceTab) ->
                     when {
-                        dlgGroup == "device" && dlgDeviceTab == "general" -> {
+                        grp == "device" && devTab == "general" -> {
                             SelectRow("工作频率", hwmodeDisplay(radioHwmode, radioHtmode)) {
                                 selectState = SelectState(
                                     "选择工作频率", hwmodeOptions(dialogHwmodes, features), radioHwmode
@@ -1391,7 +1403,7 @@ fun WirelessScreen(
                                 SettingRow("允许旧 802.11b 速率", radioLegacyRates) { radioLegacyRates = it }
                             }
                         }
-                        dlgGroup == "device" -> {
+                        grp == "device" -> {
                             SelectRow(
                                 "覆盖密度",
                                 when (radioCellDensity) {
@@ -1449,7 +1461,7 @@ fun WirelessScreen(
                             SettingRow("Rx LDPC", radioRxldpc) { radioRxldpc = it }
                             SettingRow("Tx LDPC", radioLdpc) { radioLdpc = it }
                         }
-                        ifaceSectionTab == "security" -> {
+                        ifaceTab == "security" -> {
                             SelectRow(
                                 "加密",
                                 securityOptions(features).firstOrNull { it.first == ifaceEncryption }?.second
@@ -1560,7 +1572,7 @@ fun WirelessScreen(
                                 SettingRow("RADIUS 每 STA VLAN", dlgPerStaVif) { dlgPerStaVif = it }
                             }
                         }
-                        ifaceSectionTab == "macfilter" -> {
+                        ifaceTab == "macfilter" -> {
                             SelectRow(
                                 "MAC 地址过滤",
                                 MACFILTER_OPTIONS.firstOrNull { it.first == ifaceMacfilter }?.second ?: "已禁用"
@@ -1578,7 +1590,7 @@ fun WirelessScreen(
                                 )
                             }
                         }
-                        ifaceSectionTab == "roaming" -> {
+                        ifaceTab == "roaming" -> {
                             SettingRow("802.11r 快速切换", dlgIeee80211r) { dlgIeee80211r = it }
                             if (dlgIeee80211r) {
                                 OutlinedTextField(
@@ -1672,7 +1684,7 @@ fun WirelessScreen(
                             SettingRow("BSS 切换 (802.11v)", dlgBssTransition) { dlgBssTransition = it }
                             SettingRow("ProxyARP (802.11v)", dlgProxyArp) { dlgProxyArp = it }
                         }
-                        ifaceSectionTab == "advanced" -> {
+                        ifaceTab == "advanced" -> {
                             SettingRow("隔离客户端", ifaceIsolate) { ifaceIsolate = it }
                             SettingRow("多播转单播", dlgMulticastToUnicast) { dlgMulticastToUnicast = it }
                             SettingRow("隔离网桥端口", dlgBridgeIsolate) { dlgBridgeIsolate = it }
@@ -1764,6 +1776,7 @@ fun WirelessScreen(
                             SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
                             SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
                         }
+                    }
                     }
                 }
             }
@@ -2157,8 +2170,14 @@ private fun GroupedSectionSwitcher(
                 rows.forEachIndexed { i, rowOpts ->
                     AnimatedVisibility(
                         visible = expanded || i == anchorRow,
-                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+                        enter = expandVertically(
+                            animationSpec = tween(260, easing = OptionSwitcherEasing),
+                            expandFrom = Alignment.Top
+                        ) + fadeIn(tween(180)),
+                        exit = shrinkVertically(
+                            animationSpec = tween(260, easing = OptionSwitcherEasing),
+                            shrinkTowards = Alignment.Top
+                        ) + fadeOut(tween(140))
                     ) {
                         SmoothOptionSwitcher(
                             options = rowOpts,
