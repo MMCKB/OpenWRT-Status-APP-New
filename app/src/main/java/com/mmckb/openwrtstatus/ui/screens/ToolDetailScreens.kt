@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -53,7 +54,7 @@ import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /**
- * 工具页：工具入口（文件管理 / 软件包 / 无线设置）。
+ * 工具页：工具入口（文件管理 / 软件包 / 无线设置 / 系统管理）。
  * [grid] = true 时两列磁贴排版（设置页可切换），false 为默认的列表卡片。
  */
 @Composable
@@ -62,6 +63,7 @@ fun ToolScreen(
     onOpenFileManager: () -> Unit,
     onOpenPackageManager: () -> Unit,
     onOpenWireless: () -> Unit,
+    onOpenSystem: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -96,7 +98,10 @@ fun ToolScreen(
                     Icons.Filled.Wifi, "无线设置", "SSID · 信道",
                     Modifier.weight(1f).fillMaxHeight(), onOpenWireless
                 )
-                ToolPlaceholderTile(Modifier.weight(1f).fillMaxHeight())
+                ToolTile(
+                    Icons.Filled.Settings, "系统管理", "主机名 · 时区 · 日志",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenSystem
+                )
             }
         } else {
             ToolEntryCard(
@@ -110,6 +115,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Wifi, "无线设置",
                 "SSID、密码、信道与开关，应用后重载无线", onOpenWireless
+            )
+            ToolEntryCard(
+                Icons.Filled.Settings, "系统管理",
+                "主机名、时区、日志、NTP 与 ZRam，保存后自动应用", onOpenSystem
             )
         }
     }
@@ -178,45 +187,6 @@ private fun ToolTile(
         )
         Text(
             tagline,
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant
-        )
-    }
-}
-
-/** 磁贴网格的预留位：虚线框 + 不可点击。 */
-@Composable
-private fun ToolPlaceholderTile(modifier: Modifier = Modifier) {
-    val colors = LocalAppColors.current
-    Column(
-        modifier = modifier
-            .drawBehind {
-                drawRoundRect(
-                    color = colors.outline,
-                    cornerRadius = CornerRadius(24.dp.toPx()),
-                    style = Stroke(
-                        width = 1.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 8.dp.toPx()))
-                    )
-                )
-            },
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Add,
-            contentDescription = null,
-            tint = colors.onSurfaceVariant,
-            modifier = Modifier.size(26.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "预留",
-            style = MaterialTheme.typography.titleSmall,
-            color = colors.onSurfaceVariant
-        )
-        Text(
-            "后续工具",
             style = MaterialTheme.typography.bodySmall,
             color = colors.onSurfaceVariant
         )
