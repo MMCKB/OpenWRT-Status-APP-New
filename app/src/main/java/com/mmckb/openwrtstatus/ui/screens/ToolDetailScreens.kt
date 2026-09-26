@@ -169,7 +169,7 @@ private fun ToolTile(
 ) {
     val colors = LocalAppColors.current
     AppCard(
-        modifier = modifier.clickable(enabled = onClick != null) { onClick?.invoke() },
+        modifier = modifier.clip(AppShapes.card).clickable(enabled = onClick != null) { onClick?.invoke() },
         contentPadding = 16.dp
     ) {
         Icon(
