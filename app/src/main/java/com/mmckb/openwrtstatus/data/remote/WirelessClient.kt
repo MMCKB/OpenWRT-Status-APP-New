@@ -1,6 +1,8 @@
 package com.mmckb.openwrtstatus.data.remote
 
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.ssh.SshExec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -10,6 +12,30 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+
+/** LuCI 特性表（ubus `luci getFeatures`）中影响无线选项展示的子集。 */
+data class LuciFeatures(
+    val hostapdMesh: Boolean,
+    val hostapd11r: Boolean,
+    val hostapdEap: Boolean,
+    val hostapdSae: Boolean,
+    val hostapdSuiteb192: Boolean,
+    val hostapdOwe: Boolean,
+    val hostapdWep: Boolean,
+    val hostapdWps: Boolean,
+    val hostapd11ac: Boolean,
+    val hostapd11ax: Boolean,
+    val hostapd11be: Boolean
+) {
+    /** getFeatures 不可用时的回退：按完整版 wpad（无 WEP）处理。 */
+    companion object {
+        val FALLBACK = LuciFeatures(
+            hostapdMesh = true, hostapd11r = true, hostapdEap = true, hostapdSae = true,
+            hostapdSuiteb192 = true, hostapdOwe = true, hostapdWep = false, hostapdWps = true,
+            hostapd11ac = true, hostapd11ax = true, hostapd11be = false
+        )
+    }
+}
 
 /** 一个无线 radio（wifi-device 段）及其下的接口（wifi-iface 段）。 */
 data class WirelessRadio(
@@ -28,6 +54,7 @@ data class WirelessRadio(
     val liveNoise: Int? = null,
     val liveHwmodesText: String? = null,
     val availableHtmodes: List<String> = emptyList(),
+    val availableHwmodes: List<String> = emptyList(),
     /** 当前速率（Mbit/s，LuCI 网卡行「速率」同源：接口 iwinfo bitrate 或最快客户端速率）。 */
     val liveRateMbits: Double? = null,
     /** typed 字段之外的 uci 选项（cell_density/distance/noscan/ieee80211r 等），值为字符串；列表以换行连接。 */
@@ -302,6 +329,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     liveNoise = int(info["noise"]),
                     availableHtmodes = (info["htmodes"] as? JsonArray)
                         ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList(),
+                    availableHwmodes = (info["hwmodes"] as? JsonArray)
+                        ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList(),
                     liveHwmodesText = str(info, "hwmodes_text")
                 )
             }
@@ -362,6 +391,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     liveNoise = int(radioInfo["noise"]),
                     availableHtmodes = (radioInfo["htmodes"] as? JsonArray)
                         ?.mapNotNull { mode -> (mode as? JsonPrimitive)?.content } ?: emptyList(),
+                    availableHwmodes = (radioInfo["hwmodes"] as? JsonArray)
+                        ?.mapNotNull { mode -> (mode as? JsonPrimitive)?.content } ?: emptyList(),
                     liveHwmodesText = str(radioInfo, "hwmodes_text")
                 )
             }
@@ -407,15 +438,16 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     }
 
     /**
-     * 应用变更：逐段 uci set/delete → `uci apply {rollback:true}` → `uci confirm`。
-     * 空字符串值表示删除该选项（LuCI rmempty 语义）；换行分隔的字符串按 uci 列表写入；
-     * Boolean 写成 "1"/"0"；List 直接作为 uci 列表写入。
-     * 无可应用变更时 rpcd 返回 ubus 代码 5（NO_DATA），视为成功。
+     * 应用变更：逐段 uci set/delete（staged）后提交。
+     * [ssh] 非空时走与旧版 OpenWRT-Status-APP 相同的方式：SSH 直跑
+     * `uci commit wireless && wifi reload`——立即生效，无确认/回滚流程。
+     * [ssh] 为空时退回 ubus `uci apply {rollback}` + confirm（90 秒确认窗口，超时自动还原）。
      * [onPhase] 逐阶段回报进度（会在 IO 线程回调），供界面提示当前状态。
      */
     suspend fun apply(
         config: RouterConfig,
         changes: Map<String, Map<String, Any>>,
+        ssh: SshConfig? = null,
         onPhase: (String) -> Unit = {}
     ) = withContext(Dispatchers.IO) {
         onPhase("正在写入配置…")
@@ -460,7 +492,17 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 )
             }
         }
-        applyAndReload(config, onPhase)
+        if (ssh != null) {
+            onPhase("正在提交并重载无线…")
+            val out = SshExec.run(
+                ssh, "uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__", 30_000
+            )
+            if (!out.contains("__WIRELESS_APPLY_OK__")) {
+                throw RouterException("SSH 提交失败，未能完成提交与重载。", "请检查 SSH 连接后重试。")
+            }
+        } else {
+            applyAndReload(config, onPhase)
+        }
     }
 
     /**
@@ -566,6 +608,54 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 if (str(sec, ".type") != "interface") return@mapNotNull null
                 (str(sec, ".name") ?: name).takeUnless { it == "loopback" }
             }.sorted()
+        }.getOrDefault(emptyList())
+    }
+
+    /** LuCI 特性表（决定 Mesh 模式/802.11r/EAP/SAE/OWE 等选项是否出现）。 */
+    suspend fun features(config: RouterConfig): LuciFeatures? = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = call(config, "luci", "getFeatures", buildJsonObject { }, fast = true)
+            val root = payload.jsonObject
+            val hostapd = root["hostapd"]?.jsonObject
+            fun flag(key: String): Boolean = (hostapd?.get(key) as? JsonPrimitive)?.content == "true"
+            LuciFeatures(
+                hostapdMesh = flag("mesh"),
+                hostapd11r = flag("11r"),
+                hostapdEap = flag("eap"),
+                hostapdSae = flag("sae"),
+                hostapdSuiteb192 = flag("suiteb192"),
+                hostapdOwe = flag("owe"),
+                hostapdWep = flag("wep"),
+                hostapdWps = flag("wps"),
+                hostapd11ac = flag("11ac"),
+                hostapd11ax = flag("11ax"),
+                hostapd11be = flag("11be")
+            )
+        }.getOrNull()
+    }
+
+    /** 网卡实际支持的发射功率档（dBm，来自 iwinfo txpowerlist）。 */
+    suspend fun txPowerList(config: RouterConfig, device: String): List<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            (iwinfo(config, "txpowerlist", device, fast = true)?.get("results") as? JsonArray)
+                ?.mapNotNull { el ->
+                    (el as? JsonObject)?.get("dbm")?.let { int(it) }
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 国家代码表（来自 iwinfo countrylist），返回 (ISO 代码, "代码 - 国家名")。 */
+    suspend fun countryList(config: RouterConfig, device: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            (iwinfo(config, "countrylist", device, fast = true)?.get("results") as? JsonArray)
+                ?.mapNotNull { el ->
+                    val obj = el as? JsonObject ?: return@mapNotNull null
+                    val iso = str(obj, "iso3166") ?: return@mapNotNull null
+                    val name = str(obj, "country") ?: ""
+                    iso to "$iso - $name"
+                }
+                .orEmpty()
         }.getOrDefault(emptyList())
     }
 

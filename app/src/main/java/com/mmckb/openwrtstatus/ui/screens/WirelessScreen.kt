@@ -66,6 +66,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.remote.LuciFeatures
 import com.mmckb.openwrtstatus.data.remote.ScanNet
 import com.mmckb.openwrtstatus.data.remote.WirelessClient
 import com.mmckb.openwrtstatus.data.remote.WirelessIface
@@ -85,31 +86,38 @@ import kotlinx.coroutines.withContext
 
 private const val UPLOAD_TMP_PATH = "/tmp/upload.apk"
 
-/** 加密方式（value to LuCI 中文标签，覆盖 LuCI 全部选项）。 */
-private val SECURITY_OPTIONS = listOf(
-    "none" to "无加密 (开放网络)",
-    "psk2" to "WPA2-PSK (强安全性)",
-    "psk-mixed" to "WPA-PSK/WPA2-PSK 混合 (中等安全性)",
-    "psk" to "WPA-PSK (弱安全性)",
-    "sae" to "WPA3-SAE (强安全性)",
-    "sae-mixed" to "WPA2-PSK/WPA3-SAE 混合 (强安全性)",
-    "sae-compat" to "WPA3-SAE 兼容模式",
-    "wpa2" to "WPA2-EAP (企业)",
-    "wpa" to "WPA-EAP (企业)",
-    "wpa3" to "WPA3-EAP (企业)",
-    "wpa3-mixed" to "WPA2-EAP/WPA3-EAP 混合 (企业)",
-    "wpa3-192" to "WPA3 192 位 (企业)",
-    "wpa-mixed" to "WPA-EAP/WPA2-EAP 混合 (企业)"
-)
+/** 加密方式清单：与 LuCI crypto_modes 同序同集（按特性裁剪，默认回退视为完整版 wpad）。 */
+private fun securityOptions(features: LuciFeatures?): List<Pair<String, String>> {
+    val f = features ?: LuciFeatures.FALLBACK
+    return buildList {
+        add("none" to "无加密")
+        if (f.hostapdEap) {
+            if (f.hostapdSuiteb192) add("wpa3-192" to "WPA3-EAP 192 位")
+            add("psk2" to "WPA2-PSK")
+            add("wpa2" to "WPA2-EAP")
+            add("wpa3" to "WPA3-EAP")
+            add("wpa3-mixed" to "WPA2-EAP/WPA3-EAP 混合")
+        }
+        if (f.hostapdSae) {
+            add("sae" to "WPA3-SAE")
+            add("sae-mixed" to "WPA2-PSK/WPA3-SAE 混合")
+            add("sae-compat" to "WPA2-PSK/WPA3-SAE 兼容模式")
+        }
+        add("psk-mixed" to "WPA-PSK/WPA2-PSK 混合")
+        add("wpa" to "WPA-EAP")
+        add("psk" to "WPA-PSK")
+        if (f.hostapdOwe) add("owe" to "OWE (增强开放)")
+    }
+}
 
 /** 需要填写 PSK 密码的加密方式。 */
 private val PSK_ENCRYPTIONS = setOf("psk", "psk2", "psk-mixed", "sae", "sae-mixed", "sae-compat")
 
 /** 企业级（EAP/RADIUS）加密方式。 */
-private val EAP_ENCRYPTIONS = setOf("wpa", "wpa2", "wpa-mixed", "wpa3", "wpa3-mixed", "wpa3-192")
+private val EAP_ENCRYPTIONS = setOf("wpa", "wpa2", "wpa3", "wpa3-mixed", "wpa3-192")
 
 /** 加密方式是否需要密码（含 802.11w/算法选择的家族，同 LuCI cipher 依赖）。 */
-private val CIPHER_ENCRYPTIONS = setOf("psk", "psk2", "psk-mixed", "sae", "wpa", "wpa2", "wpa-mixed", "wpa3", "wpa3-mixed", "wpa3-192")
+private val CIPHER_ENCRYPTIONS = setOf("psk", "psk2", "psk-mixed", "sae", "wpa", "wpa2", "wpa3", "wpa3-mixed", "wpa3-192")
 
 /** 算法选项（LuCI 同款）。 */
 private val CIPHER_OPTIONS = listOf(
@@ -128,15 +136,18 @@ private val MACFILTER_OPTIONS = listOf(
     "deny" to "仅允许列表外"
 )
 
-/** 模式选项（含 WDS 组合；保存时拆为 uci 的 mode + wds=1）。 */
+/** 模式选项（含 WDS 组合；保存时拆为 uci 的 mode + wds=1；Mesh 仅在固件支持时出现，同 LuCI）。 */
 private val MODE_OPTIONS = listOf(
     "ap" to "AP 接入点",
     "sta" to "客户端 (STA)",
     "adhoc" to "Ad-Hoc",
-    "mesh" to "Mesh (802.11s)",
+    "mesh" to "802.11s (Mesh)",
     "ap-wds" to "AP 接入点 (WDS)",
     "sta-wds" to "客户端 (WDS)"
 )
+
+private fun modeOptions(meshAvailable: Boolean): List<Pair<String, String>> =
+    MODE_OPTIONS.filter { meshAvailable || it.first != "mesh" }
 
 private fun modeLabel(value: String): String =
     MODE_OPTIONS.firstOrNull { it.first == value }?.second ?: value
@@ -149,7 +160,7 @@ private fun bandLabel(band: String?): String = when (band) {
 }
 
 private fun encryptionLabel(value: String?, live: String? = null): String =
-    live ?: (SECURITY_OPTIONS.firstOrNull { it.first == value }?.second ?: (value ?: "未设置"))
+    live ?: (securityOptions(null).firstOrNull { it.first == value }?.second ?: (value ?: "未设置"))
 
 /**
  * WiFi 分享二维码内容（安卓/iOS 相机通用格式）：
@@ -208,32 +219,60 @@ private fun channelOptions(band: String?): List<Pair<String, String>> {
     return list
 }
 
-private fun htmodeOptions(band: String?, hwmode: String?): List<Pair<String, String>> {
-    val mode = hwmode ?: when (band) {
-        "5g" -> "11ac"
-        else -> "11n"
+/**
+ * 频宽选项：按 LuCI CBIWifiFrequencyValue 的规则——每个工作频率只列该协议的频宽，
+ * 并按 iwinfo 实测支持的 htmodes 过滤，标签为纯 MHz（如 "80 MHz"），首项 "-" 表示仅 Legacy。
+ */
+private fun htmodeOptions(hwmode: String?, availableHtmodes: List<String>): List<Pair<String, String>> {
+    val entries = when (hwmode) {
+        "n" -> listOf("HT20" to "20 MHz", "HT40" to "40 MHz")
+        "ac" -> listOf("VHT20" to "20 MHz", "VHT40" to "40 MHz", "VHT80" to "80 MHz", "VHT160" to "160 MHz")
+        "ax" -> listOf("HE20" to "20 MHz", "HE40" to "40 MHz", "HE80" to "80 MHz", "HE160" to "160 MHz")
+        "be" -> listOf("EHT20" to "20 MHz", "EHT40" to "40 MHz", "EHT80" to "80 MHz", "EHT160" to "160 MHz", "EHT320" to "320 MHz")
+        else -> emptyList()
     }
-    val widths = when (mode) {
-        "11n" -> listOf(20, 40)
-        "11ac" -> listOf(20, 40, 80, 160)
-        "11ax" -> listOf(20, 40, 80, 160)
-        else -> listOf(20, 40)
-    }
-    val prefix = when (mode) {
-        "11n" -> "HT"
-        "11ac" -> "VHT"
-        "11ax" -> "HE"
-        else -> "HT"
-    }
-    return widths.map { w -> "$prefix$w" to "$w MHz" }
+    return listOf("" to "-") + entries.filter { it.first in availableHtmodes }
 }
 
 private fun htmodeLabel(htmode: String?): String = when {
-    htmode == null -> "-"
-    htmode.startsWith("HE") -> "${htmode.substring(2)} MHz (Wi-Fi 6)"
-    htmode.startsWith("VHT") -> "${htmode.substring(3)} MHz (Wi-Fi 5)"
-    htmode.startsWith("HT") -> "${htmode.substring(2)} MHz (Wi-Fi 4)"
+    htmode.isNullOrEmpty() -> "-"
+    htmode.startsWith("EHT") -> "${htmode.substring(3)} MHz"
+    htmode.startsWith("HE") -> "${htmode.substring(2)} MHz"
+    htmode.startsWith("VHT") -> "${htmode.substring(3)} MHz"
+    htmode.startsWith("HT") -> "${htmode.substring(2)} MHz"
     else -> htmode
+}
+
+/**
+ * 工作频率（hwmode）选项：按 iwinfo 实测的 hwmodes 与 hostapd 特性裁剪（同 LuCI）。
+ * uci 的 hwmode 值与 LuCI 一致为 ''/'n'/'ac'/'ax'/'be'。
+ */
+private fun hwmodeOptions(availableHwmodes: List<String>, features: LuciFeatures?): List<Pair<String, String>> {
+    val opts = mutableListOf<Pair<String, String>>()
+    if (availableHwmodes.any { it == "a" || it == "b" || it == "g" }) opts.add("" to "Legacy")
+    if ("n" in availableHwmodes) opts.add("n" to "N")
+    if ("ac" in availableHwmodes && features?.hostapd11ac != false) opts.add("ac" to "AC")
+    if ("ax" in availableHwmodes && features?.hostapd11ax != false) opts.add("ax" to "AX")
+    if ("be" in availableHwmodes && features?.hostapd11be == true) opts.add("be" to "BE")
+    return opts
+}
+
+/** 显示用工作频率：uci 未写 hwmode 时按 htmode 前缀推导（同 LuCI 的行为）。 */
+private fun effectiveHwmode(hwmode: String?, htmode: String?): String =
+    hwmode?.takeIf { it.isNotBlank() } ?: when {
+        htmode?.startsWith("HE") == true -> "ax"
+        htmode?.startsWith("VHT") == true -> "ac"
+        htmode?.startsWith("EHT") == true -> "be"
+        htmode?.startsWith("HT") == true -> "n"
+        else -> ""
+    }
+
+private fun hwmodeDisplay(hwmode: String?, htmode: String?): String = when (effectiveHwmode(hwmode, htmode)) {
+    "n" -> "N"
+    "ac" -> "AC"
+    "ax" -> "AX"
+    "be" -> "BE"
+    else -> "Legacy"
 }
 
 private val COUNTRY_OPTIONS = listOf(
@@ -321,6 +360,11 @@ fun WirelessScreen(
     var dlgDeviceTab by remember { mutableStateOf("general") }
     var dlgKeyError by remember { mutableStateOf<String?>(null) }
     var networkOptions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var features by remember { mutableStateOf<LuciFeatures?>(null) }
+    var txPowerChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var countryChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var networkPickerOpen by remember { mutableStateOf(false) }
+    var networkPicked by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     // 接口表单：常规（mesh）
     var dlgMeshId by remember { mutableStateOf("") }
@@ -417,7 +461,10 @@ fun WirelessScreen(
         }
     }
 
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(Unit) {
+        load()
+        features = client.features(config)
+    }
 
     fun updateRadio(section: String, transform: (WirelessRadio) -> WirelessRadio) {
         radios = radios.orEmpty().map { if (it.section == section) transform(it) else it }
@@ -437,8 +484,9 @@ fun WirelessScreen(
         radioHtmode = radio.htmode ?: ""
         radioTxpower = radio.txpower ?: ""
         radioCountry = radio.country ?: ""
-        radioHwmode = radio.hwmode ?: ""
-        radioCellDensity = radio.extra["cell_density"] ?: ""
+        // uci hwmode 与 LuCI 一致使用 ''/n/ac/ax/be；兼容旧式 11ax 写法。
+        radioHwmode = radio.hwmode?.removePrefix("11")?.takeIf { it.isNotBlank() } ?: ""
+        radioCellDensity = radio.extra["cell_density"] ?: "0"
         radioDistance = radio.extra["distance"] ?: ""
         radioFrag = radio.extra["frag"] ?: ""
         radioRts = radio.extra["rts"] ?: ""
@@ -449,6 +497,15 @@ fun WirelessScreen(
         radioLegacyRates = radio.extra["legacy_rates"] == "1"
         radioRxldpc = radio.extra["rxldpc"] != "0"
         radioLdpc = radio.extra["ldpc"] != "0"
+    }
+
+    /** 打开弹窗时拉取网络列表（uci get network），供「网络」选择器。 */
+    fun loadNetworkOptions() {
+        scope.launch {
+            networkOptions = runCatching {
+                withContext(Dispatchers.IO) { client.listNetworks(config) }
+            }.getOrDefault(emptyList())
+        }
     }
 
     /** 用接口现有配置填充接口页签；null 时填 LuCI 默认值（添加模式）。 */
@@ -579,12 +636,19 @@ fun WirelessScreen(
         ifaceSectionTab = "general"
     }
 
-    /** 打开弹窗时拉取网络列表（uci get network），供「网络」输入辅助。 */
-    fun loadNetworkOptions() {
+    /** 打开弹窗时拉取网络列表、该网卡的功率表与国家表（LuCI 同款数据源）。 */
+    fun loadDialogData(radioSection: String?) {
+        loadNetworkOptions()
+        if (radioSection == null) return
         scope.launch {
-            networkOptions = runCatching {
-                withContext(Dispatchers.IO) { client.listNetworks(config) }
+            val tx = runCatching {
+                withContext(Dispatchers.IO) { client.txPowerList(config, radioSection) }
             }.getOrDefault(emptyList())
+            if (tx.isNotEmpty()) txPowerChoices = tx.map { p -> p.toString() to "$p dBm" }
+            val co = runCatching {
+                withContext(Dispatchers.IO) { client.countryList(config, radioSection) }
+            }.getOrDefault(emptyList())
+            if (co.isNotEmpty()) countryChoices = co
         }
     }
 
@@ -962,7 +1026,7 @@ fun WirelessScreen(
                                 onClick = {
                                     fillIfaceForm(null)
                                     fillDeviceForm(radio)
-                                    loadNetworkOptions()
+                                    loadDialogData(radio.section)
                                     addWifiFor = radio.section
                                 },
                                 enabled = !busy,
@@ -1077,7 +1141,7 @@ fun WirelessScreen(
                                     fillIfaceForm(iface)
                                     radios.orEmpty().firstOrNull { it.section == iface.device }
                                         ?.let { fillDeviceForm(it) }
-                                    loadNetworkOptions()
+                                    loadDialogData(iface.device)
                                     editIfaceFor = iface.section
                                 },
                                 enabled = !busy,
@@ -1114,9 +1178,12 @@ fun WirelessScreen(
     val addingDevice = addWifiFor
     if (editingSection != null || addingDevice != null) {
         val editing = editingSection != null
-        val dialogRadioSection = addingDevice
-            ?: radios.orEmpty().firstOrNull { r -> r.ifaces.any { it.section == editingSection } }?.section
-        val dialogBand = radios.orEmpty().firstOrNull { it.section == dialogRadioSection }?.band
+        val dialogRadio = radios.orEmpty().firstOrNull { r -> r.section == (addingDevice
+            ?: radios.orEmpty().firstOrNull { r2 -> r2.ifaces.any { it.section == editingSection } }?.section) }
+        val dialogRadioSection = dialogRadio?.section
+        val dialogBand = dialogRadio?.band
+        val dialogHtmodes = dialogRadio?.availableHtmodes ?: emptyList()
+        val dialogHwmodes = dialogRadio?.availableHwmodes ?: emptyList()
         AppDialog(
             title = if (editing) "编辑 $editingSection" else "添加 WiFi（$addingDevice）",
             confirmLabel = if (editing) "保存" else "添加",
@@ -1143,7 +1210,9 @@ fun WirelessScreen(
                         it.copy(
                             mode = dlgRealMode(),
                             ssid = ifaceSsid.trim(),
-                            network = ifaceNetwork.trim().ifBlank { "lan" },
+                            // uci 的 network 是空格分隔的列表值；选择器里用逗号展示，这里转回。
+                            network = ifaceNetwork.split(Regex("[,，\\s]+"))
+                                .filter { it.isNotBlank() }.joinToString(" ").ifBlank { "lan" },
                             encryption = encValue,
                             key = if (ifaceEncryption in PSK_ENCRYPTIONS) ifaceKey else null,
                             hidden = ifaceHidden,
@@ -1177,7 +1246,7 @@ fun WirelessScreen(
                             withContext(Dispatchers.IO) { client.addIface(config, addingDevice, addIfaceValues()) }
                         }
                         withContext(Dispatchers.IO) {
-                            client.apply(config, buildChanges()) { phase -> setMsg(phase, false) }
+                            client.apply(config, buildChanges(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
                         }
                         setMsg(if (addingDevice != null) "WiFi 已添加并重载无线。" else "已应用，Wi-Fi 正在重载。", false)
                         load()
@@ -1229,34 +1298,9 @@ fun WirelessScreen(
                 ) {
                     when {
                         dlgGroup == "device" && dlgDeviceTab == "general" -> {
-                            SelectRow(
-                                "工作频率",
-                                when (radioHwmode) {
-                                    "11ax" -> "AX (Wi-Fi 6)"
-                                    "11ac" -> "AC (Wi-Fi 5)"
-                                    "11n" -> "N (Wi-Fi 4)"
-                                    "11g" -> "G"
-                                    "11b" -> "B"
-                                    else -> "驱动默认"
-                                }
-                            ) {
+                            SelectRow("工作频率", hwmodeDisplay(radioHwmode, radioHtmode)) {
                                 selectState = SelectState(
-                                    "选择工作频率",
-                                    listOf("" to "驱动默认") + if (dialogBand == "5g") {
-                                        listOf(
-                                            "11n" to "N (Wi-Fi 4)",
-                                            "11ac" to "AC (Wi-Fi 5)",
-                                            "11ax" to "AX (Wi-Fi 6)"
-                                        )
-                                    } else {
-                                        listOf(
-                                            "11b" to "B",
-                                            "11g" to "G",
-                                            "11n" to "N (Wi-Fi 4)",
-                                            "11ax" to "AX (Wi-Fi 6)"
-                                        )
-                                    },
-                                    radioHwmode
+                                    "选择工作频率", hwmodeOptions(dialogHwmodes, features), radioHwmode
                                 ) { v ->
                                     radioHwmode = v
                                     if (v.isBlank()) {
@@ -1264,23 +1308,25 @@ fun WirelessScreen(
                                     } else {
                                         // 切换协议后保持频宽数值，前缀跟随协议。
                                         val width = Regex("\\d+").find(radioHtmode)?.value ?: when (v) {
-                                            "11ac" -> "80"
-                                            "11ax" -> "80"
+                                            "ac", "ax", "be" -> "80"
                                             else -> "20"
                                         }
                                         val prefix = when (v) {
-                                            "11n" -> "HT"
-                                            "11ac" -> "VHT"
-                                            "11ax" -> "HE"
+                                            "n" -> "HT"
+                                            "ac" -> "VHT"
+                                            "ax" -> "HE"
+                                            "be" -> "EHT"
                                             else -> "HT"
                                         }
                                         radioHtmode = "$prefix$width"
                                     }
                                 }
                             }
-                            SelectRow("频宽", htmodeLabel(radioHtmode.ifBlank { null })) {
+                            SelectRow("频宽", htmodeLabel(radioHtmode)) {
                                 selectState = SelectState(
-                                    "选择频宽", htmodeOptions(dialogBand, radioHwmode.ifBlank { null }), radioHtmode
+                                    "选择频宽",
+                                    htmodeOptions(effectiveHwmode(radioHwmode, radioHtmode), dialogHtmodes),
+                                    radioHtmode
                                 ) { v -> radioHtmode = v }
                             }
                             SelectRow("信道", radioChannel.ifBlank { "auto" }) {
@@ -1290,12 +1336,16 @@ fun WirelessScreen(
                             }
                             SelectRow("最大发射功率", radioTxpower.ifBlank { "驱动默认" }) {
                                 selectState = SelectState(
-                                    "选择最大发射功率", txpowerOptions(), radioTxpower
+                                    "选择最大发射功率",
+                                    if (txPowerChoices.isNotEmpty()) listOf("" to "驱动默认") + txPowerChoices else txpowerOptions(),
+                                    radioTxpower
                                 ) { v -> radioTxpower = v }
                             }
                             SelectRow("国家代码", radioCountry.ifBlank { "驱动默认" }) {
                                 selectState = SelectState(
-                                    "选择国家代码", listOf("" to "驱动默认") + COUNTRY_OPTIONS, radioCountry
+                                    "选择国家代码",
+                                    listOf("" to "驱动默认") + if (countryChoices.isNotEmpty()) countryChoices else COUNTRY_OPTIONS,
+                                    radioCountry
                                 ) { v -> radioCountry = v }
                             }
                             if (dialogBand == "2g") {
@@ -1309,15 +1359,12 @@ fun WirelessScreen(
                                     "1" -> "普通"
                                     "2" -> "高"
                                     "3" -> "很高"
-                                    "0" -> "禁用"
-                                    else -> "驱动默认"
+                                    else -> "禁用"
                                 }
                             ) {
                                 selectState = SelectState(
                                     "选择覆盖密度",
-                                    listOf(
-                                        "" to "驱动默认", "0" to "禁用", "1" to "普通", "2" to "高", "3" to "很高"
-                                    ),
+                                    listOf("0" to "禁用", "1" to "普通", "2" to "高", "3" to "很高"),
                                     radioCellDensity
                                 ) { v -> radioCellDensity = v }
                             }
@@ -1364,9 +1411,13 @@ fun WirelessScreen(
                             SettingRow("Tx LDPC", radioLdpc) { radioLdpc = it }
                         }
                         ifaceSectionTab == "security" -> {
-                            SelectRow("加密", encryptionLabel(ifaceEncryption)) {
+                            SelectRow(
+                                "加密",
+                                securityOptions(features).firstOrNull { it.first == ifaceEncryption }?.second
+                                    ?: ifaceEncryption
+                            ) {
                                 selectState = SelectState(
-                                    "选择加密方式", SECURITY_OPTIONS, ifaceEncryption
+                                    "选择加密方式", securityOptions(features), ifaceEncryption
                                 ) { v -> ifaceEncryption = v }
                             }
                             if (ifaceEncryption in CIPHER_ENCRYPTIONS) {
@@ -1628,7 +1679,7 @@ fun WirelessScreen(
                         else -> {
                             SelectRow("模式", modeLabel(ifaceMode)) {
                                 selectState = SelectState(
-                                    "选择模式", MODE_OPTIONS, ifaceMode
+                                    "选择模式", modeOptions(features?.hostapdMesh == true), ifaceMode
                                 ) { v -> ifaceMode = v }
                             }
                             if (dlgRealMode() == "mesh") {
@@ -1656,26 +1707,20 @@ fun WirelessScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            OutlinedTextField(
-                                value = ifaceBssid,
-                                onValueChange = { ifaceBssid = it },
-                                singleLine = true,
-                                label = { Text("BSSID（STA 模式锁定对端）") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            OutlinedTextField(
-                                value = ifaceNetwork,
-                                onValueChange = { ifaceNetwork = it },
-                                singleLine = true,
-                                label = { Text("网络（多个用逗号分隔）") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            if (networkOptions.isNotEmpty()) {
-                                Text(
-                                    "可用网络：${networkOptions.joinToString("、")}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.onSurfaceVariant
+                            // LuCI 中 BSSID 仅在 Client/Ad-Hoc 模式下出现。
+                            if (dlgRealMode() == "sta" || dlgRealMode() == "adhoc") {
+                                OutlinedTextField(
+                                    value = ifaceBssid,
+                                    onValueChange = { ifaceBssid = it },
+                                    singleLine = true,
+                                    label = { Text("BSSID（锁定对端 MAC）") },
+                                    modifier = Modifier.fillMaxWidth()
                                 )
+                            }
+                            SelectRow("网络", ifaceNetwork.ifBlank { "未选择" }) {
+                                networkPicked = ifaceNetwork.split(Regex("[,，\\s]+"))
+                                    .filter { it.isNotBlank() }.toSet()
+                                networkPickerOpen = true
                             }
                             SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
                             SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
@@ -1686,15 +1731,58 @@ fun WirelessScreen(
         }
     }
 
-    // ---- 应用更改确认：列出将写入的段，应用走 uci apply（带回滚保护） ----
+    // ---- 网络选择器（多选，LuCI 网络下拉同源：uci get network 的 interface 段） ----
+    if (networkPickerOpen) {
+        AppDialog(
+            title = "选择网络（可多选）",
+            confirmLabel = "确定",
+            onConfirm = {
+                ifaceNetwork = networkPicked.toList().sorted().joinToString(",")
+                networkPickerOpen = false
+            },
+            onDismiss = { networkPickerOpen = false }
+        ) {
+            if (networkOptions.isEmpty()) {
+                Text(
+                    "未能读取网络列表，请稍后重试。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+            } else {
+                ThinScrollbarColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                    networkOptions.forEach { name ->
+                        val picked = name in networkPicked
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    networkPicked = if (picked) networkPicked - name else networkPicked + name
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (picked) "●" else "○",
+                                color = if (picked) colors.primary else colors.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(name, color = colors.onSurface)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 应用更改确认：列出将写入的段，应用走 SSH commit+wifi reload（无 SSH 时 uci apply） ----
     if (showApplyConfirm) {
         AppDialog(
             title = "应用更改",
             message = buildString {
                 append("将以下 ${changes.size} 个段的更改写入路由器并重载无线：\n\n")
                 append(changes.keys.joinToString("、"))
-                append("\n\n应用后需保持网络可达以完成确认（最长 90 秒，手机重连 Wi-Fi 后会自动完成）；")
-                append("若本次修改导致 Wi-Fi 断开且始终无法恢复，路由器将在 90 秒后自动回滚还原配置。")
+                append("\n\n已开启 SSH 时通过 SSH 提交并立即重载（与 LuCI 保存应用一致）；")
+                append("未开启 SSH 时使用 uci apply，确认窗口 90 秒，超时未确认会自动回滚。")
             },
             confirmLabel = "应用",
             onConfirm = {
@@ -1704,7 +1792,7 @@ fun WirelessScreen(
                     message = null
                     try {
                         withContext(Dispatchers.IO) {
-                            client.apply(config, buildChanges()) { phase -> setMsg(phase, false) }
+                            client.apply(config, buildChanges(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
                         }
                         setMsg("已应用，Wi-Fi 正在重载。", false)
                         load()
@@ -1778,7 +1866,9 @@ fun WirelessScreen(
                 }
                 SelectRow("频宽", htmodeLabel(radioHtmode.ifBlank { null })) {
                     selectState = SelectState(
-                        "选择频宽", htmodeOptions(band, hwmode), radioHtmode
+                        "选择频宽",
+                        htmodeOptions(effectiveHwmode(hwmode, radioHtmode), radio?.availableHtmodes ?: emptyList()),
+                        radioHtmode
                     ) { v -> radioHtmode = v }
                 }
                 SelectRow("信道", "${radioChannel.ifBlank { "auto" }}") {
@@ -1819,7 +1909,7 @@ fun WirelessScreen(
                         withContext(Dispatchers.IO) {
                             client.deleteIface(config, sec)
                             // uci delete 仅 staged，这里统一提交并重载（uci apply）。
-                            client.apply(config, emptyMap()) { phase -> setMsg(phase, false) }
+                            client.apply(config, emptyMap(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
                         }
                         setMsg("接口已删除并重载无线。", false)
                         load()
