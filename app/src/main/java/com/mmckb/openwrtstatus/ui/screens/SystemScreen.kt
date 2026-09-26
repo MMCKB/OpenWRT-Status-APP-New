@@ -22,7 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -692,7 +692,7 @@ private fun SysSettingRow(label: String, checked: Boolean, onChanged: (Boolean) 
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-        Switch(
+        AppSwitch(
             checked = checked,
             onCheckedChange = onChanged,
             modifier = Modifier.scale(0.75f)
