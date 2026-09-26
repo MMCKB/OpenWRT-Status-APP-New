@@ -344,14 +344,14 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         return radios.map { radio ->
             var r = radio
             val info = iwinfo(config, "info", radio.section)
-            info?.let {
+            info?.let { radioInfo ->
                 r = r.copy(
-                    liveChannel = int(it["channel"]),
-                    liveTxpower = int(it["txpower"]),
-                    liveNoise = int(it["noise"]),
-                    availableHtmodes = (it["htmodes"] as? JsonArray)
-                        ?.mapNotNull { (it2 as? JsonPrimitive)?.content } ?: emptyList(),
-                    liveHwmodesText = str(it, "hwmodes_text")
+                    liveChannel = int(radioInfo["channel"]),
+                    liveTxpower = int(radioInfo["txpower"]),
+                    liveNoise = int(radioInfo["noise"]),
+                    availableHtmodes = (radioInfo["htmodes"] as? JsonArray)
+                        ?.mapNotNull { mode -> (mode as? JsonPrimitive)?.content } ?: emptyList(),
+                    liveHwmodesText = str(radioInfo, "hwmodes_text")
                 )
             }
             val phyName = info?.get("phy")?.let { p -> (p as? JsonPrimitive)?.content }
