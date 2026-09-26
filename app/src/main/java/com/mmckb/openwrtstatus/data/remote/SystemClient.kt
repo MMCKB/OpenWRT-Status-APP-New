@@ -176,8 +176,8 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                             tablefilters = bool(sec, "tablefilters")
                         }
                         str(sec, ".type") == "themes" -> {
-                            val url = str(sec, "mediaurlbase") ?: return@continue
-                            themes.add(url to (str(sec, ".name") ?: name))
+                            val url = str(sec, "mediaurlbase")
+                            if (url != null) themes.add(url to (str(sec, ".name") ?: name))
                         }
                     }
                 }
