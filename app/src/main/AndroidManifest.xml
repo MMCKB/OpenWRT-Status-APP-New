@@ -4,9 +4,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -20,12 +23,56 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.OpenWrtStatus">
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus" />
+
+        <activity
+            android:name=".FileManagerActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".PackageManagerActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".WirelessActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus" />
+
+        <activity
+            android:name=".DeviceEditActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:windowSoftInputMode="adjustResize" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

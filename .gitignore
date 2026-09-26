@@ -33,3 +33,9 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Signing secrets (never commit)
+keystore.properties
+app/keystore/*.p12
+app/keystore/*.jks
+*.idsig
