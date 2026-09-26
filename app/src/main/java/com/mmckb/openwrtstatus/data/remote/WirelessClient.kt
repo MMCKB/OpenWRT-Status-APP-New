@@ -2,6 +2,7 @@ package com.mmckb.openwrtstatus.data.remote
 
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -26,7 +27,11 @@ data class WirelessRadio(
     val liveTxpower: Int? = null,
     val liveNoise: Int? = null,
     val liveHwmodesText: String? = null,
-    val availableHtmodes: List<String> = emptyList()
+    val availableHtmodes: List<String> = emptyList(),
+    /** 当前速率（Mbit/s，LuCI 网卡行「速率」同源：接口 iwinfo bitrate 或最快客户端速率）。 */
+    val liveRateMbits: Double? = null,
+    /** typed 字段之外的 uci 选项（cell_density/distance/noscan/ieee80211r 等），值为字符串；列表以换行连接。 */
+    val extra: Map<String, String> = emptyMap()
 )
 
 /** 一个无线接口（wifi-iface 段）。 */
@@ -58,7 +63,10 @@ data class WirelessIface(
     val liveSsid: String? = null,
     val liveSignal: Int? = null,
     val liveNoise: Int? = null,
-    val clientCount: Int? = null
+    val liveRateMbits: Double? = null,
+    val clientCount: Int? = null,
+    /** typed 字段之外的 uci 选项（ifname/macaddr/ieee80211w/802.11r 漫游等），值为字符串；列表以换行连接。 */
+    val extra: Map<String, String> = emptyMap()
 )
 
 /** iwinfo 扫描到的邻近网络。 */
@@ -71,10 +79,37 @@ data class ScanNet(
 )
 
 /**
- * 无线设置数据层：uci get/set/commit + iwinfo 实时数据全部走 ubus（无需 SSH）。
- * 应用变更后调用 netifd 的 network reload 重新加载无线。
+ * 无线设置数据层：uci 读写 + 实时数据全部走 ubus（无需 SSH）。
+ *
+ * 数据源（与本机路由器实测的 rpcd/uhttpd 会话 ACL 对齐）：
+ * - `uci get/set/add/delete`：读改配置，全部放行；
+ * - `luci-rpc getWirelessDevices`（LuCI 自己的数据通路）：一次返回 radio/接口的
+ *   ifname、iwinfo 与已连接客户端，`iwinfo devices` 与 `network.*` 在部分固件上
+ *   被 ACL 拒绝，不能依赖；
+ * - **应用变更走 `uci apply {timeout, rollback:true}` + `uci confirm`**（LuCI 同款），
+ *   而不是 `uci commit` + `network reload`——会话 ACL 拒绝 commit/reload，且 apply
+ *   自带回滚保护：应用后若 unable confirm（例如无线被配挂导致手机断网），rpcd 会在
+ *   超时后自动还原配置，避免把用户锁在路由器外面。
  */
 class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
+
+    companion object {
+        /** load() 解析时排除的 radio typed/系统键，其余进入 extra。 */
+        private val RADIO_TYPED_KEYS = setOf(
+            "channel", "htmode", "txpower", "country", "band", "hwmode", "disabled",
+            "type", "path"
+        )
+
+        /** load() 解析时排除的 iface typed/系统键，其余进入 extra。 */
+        private val IFACE_TYPED_KEYS = setOf(
+            "device", "mode", "ssid", "network", "key", "encryption", "hidden",
+            "isolate", "wmm", "bssid", "dtim", "beacon_int", "frag", "rts",
+            "short_preamble", "macfilter", "maclist", "disabled"
+        )
+
+        /** 固件/驱动默认开启的开关：关闭时必须显式写 0，不能靠缺省。 */
+        internal val DEFAULT_ON_FLAGS = setOf("wmm", "short_preamble", "disassoc_low_ack", "rxldpc", "ldpc", "ft_psk_generate_local")
+    }
 
     private suspend fun call(
         config: RouterConfig,
@@ -101,6 +136,22 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     private fun bool(section: JsonObject, key: String): Boolean =
         (section[key] as? JsonPrimitive)?.content == "1"
 
+    private fun int(element: kotlinx.serialization.json.JsonElement?): Int? =
+        (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toInt()
+
+    private fun long(element: kotlinx.serialization.json.JsonElement?): Long? =
+        (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+
+    /** uci 选项值 → extra 字符串：列表以换行连接。 */
+    private fun extraValue(element: kotlinx.serialization.json.JsonElement?): String? = when (element) {
+        is JsonArray -> element.mapNotNull { (it as? JsonPrimitive)?.content }
+            .filter { it.isNotBlank() }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("\n")
+        is JsonPrimitive -> element.content.takeIf { it.isNotBlank() }
+        else -> null
+    }
+
     private fun wpaName(wpa: Int): String = when (wpa) {
         1 -> "WPA"
         2 -> "WPA2"
@@ -108,7 +159,23 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         else -> "WPA"
     }
 
-    /** 读取无线配置（uci）+ iwinfo 实时数据合并。 */
+    private fun encryptionText(enc: JsonObject?): String? {
+        enc ?: return null
+        val enabled = (enc["enabled"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
+        if (!enabled) return "无加密"
+        val wpa = (enc["wpa"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content?.toIntOrNull() }
+            ?.maxOrNull()
+            ?: (enc["wpa"] as? JsonPrimitive)?.content?.toIntOrNull()
+        val ciphers = (enc["ciphers"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+        return when {
+            wpa != null -> "${wpaName(wpa)} (${ciphers.joinToString("/")})"
+            else -> "已加密"
+        }
+    }
+
+    /** 读取无线配置（uci）+ 实时数据合并。 */
     suspend fun load(config: RouterConfig): List<WirelessRadio> = withContext(Dispatchers.IO) {
         val payload = call(
             config, "uci", "get",
@@ -120,6 +187,10 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         val ifaces = mutableListOf<WirelessIface>()
         for ((sectionName, el) in values) {
             val sec = el as? JsonObject ?: continue
+            val extra = sec.mapNotNull { (k, v) ->
+                if (k.startsWith(".")) null
+                else extraValue(v)?.let { k to it }
+            }.toMap()
             when (str(sec, ".type")) {
                 "wifi-device" -> radios.add(
                     WirelessRadio(
@@ -131,7 +202,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         band = str(sec, "band"),
                         hwmode = str(sec, "hwmode"),
                         disabled = bool(sec, "disabled"),
-                        ifaces = emptyList()
+                        ifaces = emptyList(),
+                        extra = extra.filterKeys { it !in RADIO_TYPED_KEYS }
                     )
                 )
                 "wifi-iface" -> ifaces.add(
@@ -164,7 +236,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                             ?.mapNotNull { (it as? JsonPrimitive)?.content }
                             ?: str(sec, "maclist")?.split(Regex("[, ]+"))?.filter { m -> m.isNotEmpty() }
                             ?: emptyList()),
-                        disabled = bool(sec, "disabled")
+                        disabled = bool(sec, "disabled"),
+                        extra = extra.filterKeys { it !in IFACE_TYPED_KEYS }
                     )
                 )
             }
@@ -183,7 +256,83 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             }
         } else attached
 
-        // iwinfo 实时数据：radio 级 + 接口级。
+        val merged = mergeLiveData(config, attachedFinal)
+        merged.map { radio ->
+            radio.copy(liveRateMbits = radio.ifaces.firstOrNull()?.liveRateMbits)
+        }
+    }
+
+    /**
+     * 实时数据合并：优先 `luci-rpc getWirelessDevices`（LuCI 同款数据通路，
+     * 一次拿到 ifname/加密/客户端数/速率）；失败时回退到 iwinfo info/assoclist 逐个查询。
+     */
+    private suspend fun mergeLiveData(
+        config: RouterConfig,
+        radios: List<WirelessRadio>
+    ): List<WirelessRadio> {
+        val viaLuci = runCatching { liveViaLuciRpc(config, radios) }.getOrNull()
+        if (viaLuci != null) return viaLuci
+        return liveViaIwinfo(config, radios)
+    }
+
+    private suspend fun liveViaLuciRpc(
+        config: RouterConfig,
+        radios: List<WirelessRadio>
+    ): List<WirelessRadio>? {
+        val payload = call(config, "luci-rpc", "getWirelessDevices", buildJsonObject { })
+        val root = payload.jsonObject
+        return radios.map { radio ->
+            var r = radio
+            val live = root[radio.section]?.jsonObject
+            live?.get("iwinfo")?.jsonObject?.let { info ->
+                r = r.copy(
+                    liveChannel = int(info["channel"]),
+                    liveTxpower = int(info["txpower"]),
+                    liveNoise = int(info["noise"]),
+                    availableHtmodes = (info["htmodes"] as? JsonArray)
+                        ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList(),
+                    liveHwmodesText = str(info, "hwmodes_text")
+                )
+            }
+            val ifaceEls = (live?.get("interfaces") as? JsonArray) ?: JsonArray(emptyList())
+            r = r.copy(ifaces = r.ifaces.map { iface ->
+                val entry = ifaceEls.firstOrNull {
+                    (it as? JsonObject)?.get("section")?.let { s -> (s as? JsonPrimitive)?.content } == iface.section
+                } as? JsonObject ?: return@map iface
+                val info = entry["iwinfo"]?.jsonObject
+                val stations = entry["stations"] as? JsonArray ?: JsonArray(emptyList())
+                val stationRate = stations.mapNotNull { st ->
+                    val obj = st as? JsonObject ?: return@mapNotNull null
+                    long(obj["rate"])
+                        ?: ((obj["rx"] as? JsonObject)?.get("rate"))?.let { long(it) }
+                        ?: ((obj["tx"] as? JsonObject)?.get("rate"))?.let { long(it) }
+                }.maxOrNull()
+                val bitrateKbits = info?.get("bitrate")?.let {
+                    (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+                        ?: (it as? JsonObject)?.get("rate")?.let { rr -> long(rr) }
+                }
+                iface.copy(
+                    liveIfname = str(entry, "ifname") ?: iface.liveIfname,
+                    liveBssid = info?.let { str(it, "bssid") } ?: iface.liveBssid,
+                    liveSsid = info?.let { str(it, "ssid") } ?: iface.liveSsid,
+                    liveMode = info?.let { str(it, "mode") } ?: iface.liveMode,
+                    liveEncryption = info?.get("encryption")?.jsonObject?.let { encryptionText(it) }
+                        ?: iface.liveEncryption,
+                    liveSignal = info?.let { int(it["signal"]) } ?: iface.liveSignal,
+                    liveNoise = info?.let { int(it["noise"]) } ?: iface.liveNoise,
+                    clientCount = stations.size.takeIf { it > 0 } ?: 0,
+                    liveRateMbits = (bitrateKbits ?: stationRate)?.let { it / 1000.0 }
+                )
+            })
+            r
+        }
+    }
+
+    /** 旧回退路径：iwinfo devices（部分固件被 ACL 拒绝）+ info + assoclist。 */
+    private suspend fun liveViaIwinfo(
+        config: RouterConfig,
+        radios: List<WirelessRadio>
+    ): List<WirelessRadio> {
         val wifiIfaces = runCatching {
             (iwinfo(config, "devices", "wireless")?.get("devices") as? JsonArray)
                 ?.mapNotNull { dev ->
@@ -192,60 +341,50 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 ?: emptyList()
         }.getOrDefault(emptyList())
 
-        attachedFinal.map { radio ->
+        return radios.map { radio ->
             var r = radio
-            iwinfo(config, "info", radio.section)?.let { info ->
-                val chan = (info["channel"] as? JsonPrimitive)?.content?.toIntOrNull()
-                val txp = (info["txpower"] as? JsonPrimitive)?.content?.toIntOrNull()
-                val noise = (info["noise"] as? JsonPrimitive)?.content?.toIntOrNull()
-                val htmodes = (info["htmodes"] as? JsonArray)
-                    ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+            val info = iwinfo(config, "info", radio.section)
+            info?.let {
                 r = r.copy(
-                    liveChannel = chan,
-                    liveTxpower = txp,
-                    liveNoise = noise,
-                    availableHtmodes = htmodes,
-                    liveHwmodesText = str(info, "hwmodes_text")
+                    liveChannel = int(it["channel"]),
+                    liveTxpower = int(it["txpower"]),
+                    liveNoise = int(it["noise"]),
+                    availableHtmodes = (it["htmodes"] as? JsonArray)
+                        ?.mapNotNull { (it2 as? JsonPrimitive)?.content } ?: emptyList(),
+                    liveHwmodesText = str(it, "hwmodes_text")
                 )
             }
-            val phy = runCatching {
-                iwinfo(config, "info", radio.section)?.get("phy")?.let { p -> (p as? JsonPrimitive)?.content }
-            }.getOrNull().orEmpty()
-            val ifn = wifiIfaces.firstOrNull { it.startsWith("$phy-") }
+            val phyName = info?.get("phy")?.let { p -> (p as? JsonPrimitive)?.content }
+            val ifn = wifiIfaces.firstOrNull { it.startsWith("$phyName-") }
             if (ifn != null) {
-                iwinfo(config, "info", ifn)?.let { info ->
-                    val liveB = str(info, "bssid")
-                    val liveSsid = str(info, "ssid")
-                    val liveMode = str(info, "mode")
-                    val signal = (info["signal"] as? JsonPrimitive)?.content?.toIntOrNull()
-                    val noise = (info["noise"] as? JsonPrimitive)?.content?.toIntOrNull()
-                    val enc = info["encryption"]?.jsonObject ?: kotlinx.serialization.json.buildJsonObject { }
-                    val encEnabled = (enc["enabled"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
-                    val wpa = (enc["wpa"] as? JsonPrimitive)?.content?.toIntOrNull()
-                    val ciphers = (enc["ciphers"] as? JsonArray)
-                        ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
-                    val liveEnc = when {
-                        !encEnabled -> "无加密"
-                        wpa != null -> "${wpaName(wpa)} (${ciphers.joinToString("/")})"
-                        else -> "已加密"
-                    }
+                iwinfo(config, "info", ifn)?.let { ifaceInfo ->
                     val assoc = runCatching {
                         (call(
                             config, "iwinfo", "assoclist",
                             buildJsonObject { put("device", kotlinx.serialization.json.JsonPrimitive(ifn)) }
-                        ).jsonObject["results"] as? JsonArray)?.size
+                        ).jsonObject["results"] as? JsonArray)
                     }.getOrNull()
+                    val maxRate = assoc.orEmpty().mapNotNull { entry ->
+                        val obj = entry as? JsonObject ?: return@mapNotNull null
+                        ((obj["rx"] as? JsonObject)?.get("rate"))?.let { long(it) }
+                            ?: ((obj["tx"] as? JsonObject)?.get("rate"))?.let { long(it) }
+                    }.maxOrNull()
+                    val bitrateKbits = ifaceInfo["bitrate"]?.let {
+                        (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+                    }
                     r = r.copy(ifaces = r.ifaces.map { f ->
                         if (f.device == radio.section) {
                             f.copy(
                                 liveIfname = ifn,
-                                liveBssid = liveB ?: f.liveBssid,
-                                liveSsid = liveSsid ?: f.liveSsid,
-                                liveMode = liveMode ?: f.liveMode,
-                                liveEncryption = liveEnc,
-                                liveSignal = signal,
-                                liveNoise = noise,
-                                clientCount = assoc
+                                liveBssid = str(ifaceInfo, "bssid") ?: f.liveBssid,
+                                liveSsid = str(ifaceInfo, "ssid") ?: f.liveSsid,
+                                liveMode = str(ifaceInfo, "mode") ?: f.liveMode,
+                                liveEncryption = ifaceInfo["encryption"]?.jsonObject?.let { encryptionText(it) }
+                                    ?: f.liveEncryption,
+                                liveSignal = int(ifaceInfo["signal"]),
+                                liveNoise = int(ifaceInfo["noise"]),
+                                clientCount = assoc?.size,
+                                liveRateMbits = (bitrateKbits ?: maxRate)?.let { it / 1000.0 }
                             )
                         } else f
                     })
@@ -256,43 +395,102 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     }
 
     /**
-     * 应用变更：逐段 uci set → uci commit wireless → network reload。
-     * values 值支持 String（标量）、Boolean（0/1）与 List<String>（uci 列表）。
+     * 应用变更：逐段 uci set/delete → `uci apply {rollback:true}` → `uci confirm`。
+     *
+     * 空字符串值表示删除该选项（LuCI rmempty 语义）；换行分隔的字符串按 uci 列表写入；
+     * Boolean 写成 "1"/"0"；List 直接作为 uci 列表写入。
+     * 无可应用变更时 rpcd 返回 ubus 代码 5（NO_DATA），视为成功。
      */
     suspend fun apply(
         config: RouterConfig,
         changes: Map<String, Map<String, Any>>
     ) = withContext(Dispatchers.IO) {
         for ((section, values) in changes) {
-            call(
-                config, "uci", "set",
-                buildJsonObject {
-                    put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
-                    put("section", kotlinx.serialization.json.JsonPrimitive(section))
-                    put("values", buildJsonObject {
-                        values.forEach { (k, v) ->
-                            when (v) {
-                                is List<*> -> put(
-                                    k, JsonArray(v.map { kotlinx.serialization.json.JsonPrimitive(it.toString()) })
-                                )
-                                is Boolean -> put(k, kotlinx.serialization.json.JsonPrimitive(if (v) "1" else "0"))
-                                else -> put(k, kotlinx.serialization.json.JsonPrimitive(v.toString()))
+            val deletions = values.filterKeys { it.isEmpty() }.keys
+            val writes = values.filterNot { it.value is String && (it.value as String).isEmpty() }
+            if (writes.isNotEmpty()) {
+                call(
+                    config, "uci", "set",
+                    buildJsonObject {
+                        put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
+                        put("section", kotlinx.serialization.json.JsonPrimitive(section))
+                        put("values", buildJsonObject {
+                            writes.forEach { (k, v) ->
+                                when {
+                                    v is List<*> && v.isNotEmpty() -> put(
+                                        k, JsonArray(v.map { kotlinx.serialization.json.JsonPrimitive(it.toString()) })
+                                    )
+                                    v is List<*> -> {}
+                                    v is Boolean -> put(k, kotlinx.serialization.json.JsonPrimitive(if (v) "1" else "0"))
+                                    v is String && v.contains('\n') -> put(
+                                        k, JsonArray(v.split('\n').filter { it.isNotBlank() }
+                                            .map { kotlinx.serialization.json.JsonPrimitive(it) })
+                                    )
+                                    else -> put(k, kotlinx.serialization.json.JsonPrimitive(v.toString()))
+                                }
                             }
-                        }
-                    })
-                }
-            )
+                        })
+                    }
+                )
+            }
+            for (opt in deletions) {
+                call(
+                    config, "uci", "delete",
+                    buildJsonObject {
+                        put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
+                        put("section", kotlinx.serialization.json.JsonPrimitive(section))
+                        put("option", kotlinx.serialization.json.JsonPrimitive(opt))
+                    }
+                )
+            }
         }
-        commitAndReload(config)
+        applyAndReload(config)
     }
 
-    /** 添加 WiFi 接口（LuCI「添加」按钮）：uci add → commit → network reload。 */
+    /**
+     * 提交所有 staged 变更并重载无线（LuCI apply 协议）：
+     * `uci apply {timeout, rollback:true}` 后延时确认 `uci confirm`，确认失败在超时窗口内
+     * 每 250ms 重试；全程无法确认时 rpcd 自动回滚——本方法抛出异常提示用户配置将被还原。
+     */
+    private suspend fun applyAndReload(config: RouterConfig) {
+        try {
+            call(
+                config, "uci", "apply",
+                buildJsonObject {
+                    put("timeout", kotlinx.serialization.json.JsonPrimitive(15))
+                    put("rollback", kotlinx.serialization.json.JsonPrimitive(true))
+                }
+            )
+        } catch (e: RouterException) {
+            if (e.ubusCode != 5) throw e // 5 = 无变更可应用，同样视为成功
+        }
+        delay(1000)
+        val deadline = System.currentTimeMillis() + 15_000
+        while (true) {
+            try {
+                call(config, "uci", "confirm", buildJsonObject { })
+                return
+            } catch (e: RouterException) {
+                if (System.currentTimeMillis() >= deadline) {
+                    throw RouterException(
+                        "无法确认应用（路由器不可达），配置将在超时后自动回滚。",
+                        "若 Wi-Fi 被本次修改断开，请等待约 15 秒让路由器自动还原配置后重试。"
+                    )
+                }
+                delay(250)
+            }
+        }
+    }
+
+    /**
+     * 添加 WiFi 接口（仅 staged 的 `uci add`，不提交）：
+     * [values] 值支持 String（空串跳过）、Boolean（"1"/"0"）与 List<String>（uci 列表）。
+     * 返回后由 [apply] 与其余待应用变更一起提交并重载。
+     */
     suspend fun addIface(
         config: RouterConfig,
         device: String,
-        ssid: String,
-        key: String?,
-        encryption: String
+        values: Map<String, Any>
     ) = withContext(Dispatchers.IO) {
         call(
             config, "uci", "add",
@@ -301,18 +499,27 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 put("type", kotlinx.serialization.json.JsonPrimitive("wifi-iface"))
                 put("values", buildJsonObject {
                     put("device", kotlinx.serialization.json.JsonPrimitive(device))
-                    put("mode", kotlinx.serialization.json.JsonPrimitive("ap"))
-                    put("ssid", kotlinx.serialization.json.JsonPrimitive(ssid))
-                    put("network", kotlinx.serialization.json.JsonPrimitive("lan"))
-                    put("encryption", kotlinx.serialization.json.JsonPrimitive(encryption))
-                    if (!key.isNullOrEmpty()) put("key", kotlinx.serialization.json.JsonPrimitive(key))
+                    values.forEach { (k, v) ->
+                        when {
+                            v is String && v.isEmpty() -> {}
+                            v is List<*> && v.isNotEmpty() -> put(
+                                k, JsonArray(v.map { kotlinx.serialization.json.JsonPrimitive(it.toString()) })
+                            )
+                            v is List<*> -> {}
+                            v is Boolean -> put(k, kotlinx.serialization.json.JsonPrimitive(if (v) "1" else "0"))
+                            v is String && v.contains('\n') -> put(
+                                k, JsonArray(v.split('\n').filter { it.isNotBlank() }
+                                    .map { kotlinx.serialization.json.JsonPrimitive(it) })
+                            )
+                            else -> put(k, kotlinx.serialization.json.JsonPrimitive(v.toString()))
+                        }
+                    }
                 })
             }
         )
-        commitAndReload(config)
     }
 
-    /** 删除接口段：uci delete → commit → network reload。 */
+    /** 删除接口段（仅 staged 的 `uci delete`，不提交），提交由 [apply] 统一完成。 */
     suspend fun deleteIface(config: RouterConfig, section: String) = withContext(Dispatchers.IO) {
         call(
             config, "uci", "delete",
@@ -321,7 +528,22 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 put("section", kotlinx.serialization.json.JsonPrimitive(section))
             }
         )
-        commitAndReload(config)
+    }
+
+    /** 路由器上的网络（/etc/config/network 的 interface 段名），供 WiFi 的「网络」选择。 */
+    suspend fun listNetworks(config: RouterConfig): List<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = call(
+                config, "uci", "get",
+                buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("network")) }
+            )
+            val values = payload.jsonObject["values"] as? JsonObject ?: return@runCatching emptyList()
+            values.mapNotNull { (name, el) ->
+                val sec = el as? JsonObject ?: return@mapNotNull null
+                if (str(sec, ".type") != "interface") return@mapNotNull null
+                (str(sec, ".name") ?: name).takeUnless { it == "loopback" }
+            }.sorted()
+        }.getOrDefault(emptyList())
     }
 
     /** 扫描 radio 附近的网络（iwinfo scan）。 */
@@ -338,14 +560,6 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 encrypted = (enc["enabled"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
             )
         }.orEmpty()
-    }
-
-    private suspend fun commitAndReload(config: RouterConfig) {
-        call(
-            config, "uci", "commit",
-            buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("wireless")) }
-        )
-        call(config, "network", "reload", buildJsonObject { })
     }
 }
 
