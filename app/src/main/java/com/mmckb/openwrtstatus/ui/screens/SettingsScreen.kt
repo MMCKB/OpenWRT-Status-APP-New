@@ -14,8 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -73,7 +73,7 @@ fun SettingsScreen(
                         color = colors.onSurfaceVariant
                     )
                 }
-                Switch(
+                AppSwitch(
                     checked = connNotify,
                     onCheckedChange = { enabled ->
                         viewModel.setConnectionNotifyEnabled(enabled)
@@ -102,7 +102,7 @@ fun SettingsScreen(
                         color = colors.onSurfaceVariant
                     )
                 }
-                Switch(
+                AppSwitch(
                     checked = toolsGrid,
                     onCheckedChange = { viewModel.setToolsGridEnabled(it) }
                 )

@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.drawText
@@ -58,21 +59,29 @@ val OptionSwitcherEasing = CubicBezierEasing(0.34f, 0.96f, 0.6f, 0.99f)
 @Composable
 fun SmoothOptionSwitcher(
     options: List<Pair<String, String>>,
-    selected: String,
+    selected: String?,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val n = options.size
-    val selectedIndex = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    // selected 为 null 表示当前没有选中项（多行选择器中选中落在其他行）：指示器整体淡出。
+    val selectedIndex = options.indexOfFirst { it.first == selected }
+    val hasSelection = selectedIndex >= 0
     val currentOnSelect by rememberUpdatedState(onSelect)
 
     // 持久指示器：位置以「段索引」（可带小数）表示。拖动 snapTo 逐帧跟手，
     // 松手 / 点击 / 外部选中变化时按 skill 缓动曲线平滑归位。
-    val indicator = remember { Animatable(selectedIndex.toFloat()) }
+    val indicator = remember { Animatable(selectedIndex.coerceAtLeast(0).toFloat()) }
+    val indicatorAlpha = remember { Animatable(if (hasSelection) 1f else 0f) }
     LaunchedEffect(selected, options.size) {
-        indicator.animateTo(selectedIndex.toFloat(), tween(300, easing = OptionSwitcherEasing))
+        if (hasSelection) {
+            launch { indicatorAlpha.animateTo(1f, tween(200)) }
+            indicator.animateTo(selectedIndex.toFloat(), tween(300, easing = OptionSwitcherEasing))
+        } else {
+            indicatorAlpha.animateTo(0f, tween(180))
+        }
     }
 
     BoxWithConstraints(
@@ -119,13 +128,14 @@ fun SmoothOptionSwitcher(
             }
         }
 
-        // 1) 指示器（持久元素，GPU 平移，不重建）
+        // 1) 指示器（持久元素，GPU 平移，不重建；无选中项时整体淡出）
         Box(
             modifier = Modifier
                 .offset(x = segW * indicator.value)
                 .width(segW)
                 .fillMaxHeight()
                 .padding(3.dp)
+                .graphicsLayer { alpha = indicatorAlpha.value }
                 .clip(RoundedCornerShape(17.dp))
                 .background(colors.primary)
         )
@@ -148,7 +158,7 @@ fun SmoothOptionSwitcher(
                     val charRight = left + box.right
                     val overlap = min(charRight, ir) - max(charLeft, il)
                     if (overlap <= 0f) continue
-                    val alpha = (overlap / box.width.coerceAtLeast(1f)).coerceIn(0f, 1f)
+                    val alpha = (overlap / box.width.coerceAtLeast(1f)).coerceIn(0f, 1f) * indicatorAlpha.value
                     clipRect(left = charLeft, top = top, right = charRight, bottom = size.height) {
                         drawText(
                             textLayoutResult = layout,

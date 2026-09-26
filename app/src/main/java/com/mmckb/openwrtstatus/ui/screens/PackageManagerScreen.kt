@@ -41,7 +41,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -797,13 +797,13 @@ fun PackageManagerScreen(
                                     color = colors.onSurfaceVariant
                                 )
                             }
-                            Switch(
+                            AppSwitch(
                                 checked = repo.enabled,
                                 onCheckedChange = { enabled ->
                                     // 至少启用一个仓库：关掉最后一个启用项时阻止并提示。
                                     if (!enabled && sources.orEmpty().count { it.enabled } <= 1) {
                                         sourcesError = "至少启用一个软件包仓库。"
-                                        return@Switch
+                                        return@AppSwitch
                                     }
                                     sourcesError = null
                                     sources = sources.orEmpty().mapIndexed { i, r ->

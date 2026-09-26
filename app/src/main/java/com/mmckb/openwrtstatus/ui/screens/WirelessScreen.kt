@@ -6,7 +6,15 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,6 +37,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Wifi
@@ -40,7 +50,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -50,16 +59,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -74,6 +89,8 @@ import com.mmckb.openwrtstatus.data.remote.WirelessRadio
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.OptionSwitcherEasing
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
@@ -83,6 +100,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.ceil
 
 private const val UPLOAD_TMP_PATH = "/tmp/upload.apk"
 
@@ -1293,7 +1311,7 @@ fun WirelessScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
-                    SmoothOptionSwitcher(
+                    GroupedSectionSwitcher(
                         options = listOf(
                             "general" to "常规设置",
                             "security" to "无线安全",
@@ -2074,11 +2092,107 @@ private fun StatCell(label: String, value: String, modifier: Modifier = Modifier
 /** 缩小版的开关：默认 M3 Switch 视觉上太大，整体缩放约 3/4。 */
 @Composable
 private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Switch(
+    AppSwitch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = Modifier.scale(0.75f)
     )
+}
+
+/**
+ * 分区选择器多行版：一行放不下全部选项时按文字宽度自适应拆成 2~3 行
+ * SmoothOptionSwitcher（每行独立实例，选中项所在行高亮、其余行无选中）。
+ * 收起时只显示选中项所在行；末行右侧的圆形按钮展开/收起其余行，
+ * 行展开（expandVertically）与按钮下移（animateDpAsState）均带动画。
+ */
+@Composable
+private fun GroupedSectionSwitcher(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalAppColors.current
+    val rowH = 40.dp
+    val rowGap = 8.dp
+    val btnSize = 36.dp
+
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
+        val labelStyle = MaterialTheme.typography.labelMedium
+        // 选项文字的固有宽度（Dp），决定每行最多能放几个而不截断
+        val textWidths = remember(options, textMeasurer) {
+            options.map { (_, label) ->
+                with(density) {
+                    textMeasurer
+                        .measure(AnnotatedString(label), labelStyle, maxLines = 1, constraints = Constraints())
+                        .size.width.toDp()
+                }
+            }
+        }
+        val maxTextW = textWidths.maxOrNull() ?: 0.dp
+        val rowAvail = maxWidth - btnSize - 8.dp
+        val cap = ((rowAvail.value) / (maxTextW.value + 14f)).toInt().coerceAtLeast(1)
+        // 两行优先：每行放不下再增行数
+        var rowsCount = if (options.size <= cap) 1 else 2
+        while (rowsCount < options.size && ceil(options.size.toDouble() / rowsCount) > cap) rowsCount++
+        rowsCount = rowsCount.coerceAtMost(options.size)
+        val perRow = ceil(options.size.toDouble() / rowsCount).toInt()
+        val rows = options.chunked(perRow)
+
+        val selRow = rows.indexOfFirst { row -> row.any { it.first == selected } }
+        val anchorRow = if (selRow >= 0) selRow else 0
+        var expanded by rememberSaveable { mutableStateOf(false) }
+
+        val lastVisible = if (expanded) rows.size - 1 else 0
+        val btnY by animateDpAsState(
+            targetValue = lastVisible * (rowH + rowGap),
+            animationSpec = tween(260, easing = OptionSwitcherEasing),
+            label = "groupBtnY"
+        )
+
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
+                rows.forEachIndexed { i, rowOpts ->
+                    AnimatedVisibility(
+                        visible = expanded || i == anchorRow,
+                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+                    ) {
+                        SmoothOptionSwitcher(
+                            options = rowOpts,
+                            selected = selected.takeIf { rowOpts.any { o -> o.first == selected } },
+                            onSelect = onSelect,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.width(btnSize)) {
+                Surface(
+                    onClick = { expanded = !expanded },
+                    shape = CircleShape,
+                    color = colors.surfaceVariant,
+                    modifier = Modifier
+                        .size(btnSize)
+                        .offset(y = btnY)
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.ExpandMore,
+                            contentDescription = if (expanded) "收起更多分区" else "展开更多分区",
+                            tint = colors.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .rotate(if (expanded) 180f else 0f)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** WiFi 分享二维码内容：标题 + 白底二维码 + WiFi 名称 + 灰字密码（竖屏/横屏共用）。 */

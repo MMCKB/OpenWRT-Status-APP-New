@@ -32,6 +32,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -617,3 +619,28 @@ fun rememberTopBarPadding(): Dp =
  * same way system surfaces do.
  */
 val PredictiveBackEasing: CubicBezierEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)
+
+/**
+ * 统一开关：关闭态轨道为纯白（不沿用 M3 默认的灰轨道），滑块用灰色并带浅描边，
+ * 在白色卡片上仍有清晰边界；选中态沿用主题 primary。
+ */
+@Composable
+fun AppSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            uncheckedTrackColor = Color.White,
+            uncheckedThumbColor = Color(0xFFB4B2A9),
+            uncheckedBorderColor = Color(0xFFD9DDE3),
+            uncheckedIconColor = Color.Transparent
+        )
+    )
+}
