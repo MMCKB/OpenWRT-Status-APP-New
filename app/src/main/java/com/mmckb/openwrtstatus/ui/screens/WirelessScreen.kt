@@ -6,15 +6,14 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -1331,18 +1330,26 @@ fun WirelessScreen(
                     360.dp,
                     androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.44f
                 )
+                // 分区切换过渡（单份组合，比 AnimatedContent 轻）：key 变化时新内容
+                // 从 alpha 0 + 轻微下移淡入；动画值在 graphicsLayer lambda 内读取，
+                // 停留在绘制阶段——无双份组合、无过渡期重组。
+                val sectionKey = Triple(dlgGroup, dlgDeviceTab, ifaceSectionTab)
+                val sectionAnim = remember { Animatable(0f) }
+                LaunchedEffect(sectionKey) {
+                    sectionAnim.snapTo(0f)
+                    sectionAnim.animateTo(1f, tween(150, easing = OptionSwitcherEasing))
+                }
+                val (grp, devTab, ifaceTab) = sectionKey
                 ThinScrollbarColumn(
-                    modifier = Modifier.height(sectionBodyHeight),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.height(sectionBodyHeight)
                 ) {
-                    AnimatedContent(
-                        targetState = Triple(dlgGroup, dlgDeviceTab, ifaceSectionTab),
-                        transitionSpec = { fadeIn(tween(130)).togetherWith(fadeOut(tween(100))) },
-                        modifier = Modifier.fillMaxSize(),
-                        label = "sectionBody"
-                    ) { (grp, devTab, ifaceTab) ->
                     Column(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = sectionAnim.value
+                                translationY = (1f - sectionAnim.value) * 20f
+                            },
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                     when {
@@ -1776,7 +1783,6 @@ fun WirelessScreen(
                             SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
                             SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
                         }
-                    }
                     }
                     }
                 }
