@@ -363,6 +363,7 @@ fun WirelessScreen(
     var features by remember { mutableStateOf<LuciFeatures?>(null) }
     var txPowerChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var countryChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var channelChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var networkPickerOpen by remember { mutableStateOf(false) }
     var networkPicked by remember { mutableStateOf<Set<String>>(emptySet()) }
 
@@ -636,11 +637,22 @@ fun WirelessScreen(
         ifaceSectionTab = "general"
     }
 
-    /** 打开弹窗时拉取网络列表、该网卡的功率表与国家表（LuCI 同款数据源）。 */
+    /** 打开弹窗时拉取网络列表、该网卡的信道表/功率表/国家表（LuCI 同款数据源）。 */
     fun loadDialogData(radioSection: String?) {
         loadNetworkOptions()
         if (radioSection == null) return
+        channelChoices = emptyList()
+        txPowerChoices = emptyList()
+        countryChoices = emptyList()
         scope.launch {
+            val fr = runCatching {
+                withContext(Dispatchers.IO) { client.freqList(config, radioSection) }
+            }.getOrDefault(emptyList())
+            if (fr.isNotEmpty()) {
+                channelChoices = listOf("auto" to "auto") + fr.map { (ch, mhz, dfs) ->
+                    "$ch" to "$ch ($mhz MHz)" + if (dfs) "（DFS）" else ""
+                }
+            }
             val tx = runCatching {
                 withContext(Dispatchers.IO) { client.txPowerList(config, radioSection) }
             }.getOrDefault(emptyList())
@@ -1331,7 +1343,9 @@ fun WirelessScreen(
                             }
                             SelectRow("信道", radioChannel.ifBlank { "auto" }) {
                                 selectState = SelectState(
-                                    "选择信道", channelOptions(dialogBand), radioChannel
+                                    "选择信道",
+                                    if (channelChoices.isNotEmpty()) channelChoices else channelOptions(dialogBand),
+                                    radioChannel
                                 ) { v -> radioChannel = v }
                             }
                             SelectRow("最大发射功率", radioTxpower.ifBlank { "驱动默认" }) {
