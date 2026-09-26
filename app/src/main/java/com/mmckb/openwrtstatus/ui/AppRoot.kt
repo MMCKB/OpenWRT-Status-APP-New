@@ -61,6 +61,7 @@ import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
+import com.mmckb.openwrtstatus.SystemActivity
 import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
@@ -78,6 +79,7 @@ import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
+import com.mmckb.openwrtstatus.ui.screens.SystemScreen
 import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalOutputPane
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
@@ -96,6 +98,7 @@ private const val TAB_SETTINGS = 5
 private sealed interface SecondaryPage {
     data object FileManager : SecondaryPage
     data object PackageManager : SecondaryPage
+    data object System : SecondaryPage
     data object Wireless : SecondaryPage
     data object About : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
@@ -165,6 +168,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.About
         }
     }
+    val systemLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(SystemActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.System
+        }
+    }
     val wirelessLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -201,6 +211,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     SecondaryPage.About -> AboutScreen(onBack = { secondary = null })
                     SecondaryPage.Wireless -> WirelessScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.System -> SystemScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -254,6 +269,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, WirelessActivity::class.java)
                             .putExtra(WirelessActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.System -> systemLauncher.launch(
+                        Intent(context, SystemActivity::class.java)
+                            .putExtra(SystemActivity.EXTRA_CONFIG, config)
+                    )
                     is SecondaryPage.DeviceEditor -> return
                 }
             }
@@ -300,6 +319,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
                         onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
                         onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
+                        onOpenSystem = { openSecondary(SecondaryPage.System) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
