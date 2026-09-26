@@ -2147,7 +2147,7 @@ private fun GroupedSectionSwitcher(
 
         val lastVisible = if (expanded) rows.size - 1 else 0
         val btnY by animateDpAsState(
-            targetValue = lastVisible * (rowH + rowGap),
+            targetValue = (rowH + rowGap) * lastVisible,
             animationSpec = tween(260, easing = OptionSwitcherEasing),
             label = "groupBtnY"
         )
