@@ -44,6 +44,7 @@ fun SettingsScreen(
 ) {
     val colors = LocalAppColors.current
     val connNotify by viewModel.connNotifyEnabled.collectAsStateWithLifecycle()
+    val toolsGrid by viewModel.toolsGridEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Column(
@@ -80,6 +81,30 @@ fun SettingsScreen(
                             AppNotifier.requestPermission(it)
                         }
                     }
+                )
+            }
+        }
+        AppCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "工具页两列磁贴",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "开启后工具页以两列磁贴显示；关闭为列表卡片",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = toolsGrid,
+                    onCheckedChange = { viewModel.setToolsGridEnabled(it) }
                 )
             }
         }

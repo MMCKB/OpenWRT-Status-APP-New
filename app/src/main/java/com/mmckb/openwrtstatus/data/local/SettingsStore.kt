@@ -43,6 +43,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_CONN_NOTIFY, enabled).apply()
     }
 
+    /** 工具页排版：true = 两列磁贴；默认 false = 列表卡片。 */
+    fun isToolsGridEnabled(): Boolean = prefs.getBoolean(KEY_TOOLS_GRID, false)
+
+    fun saveToolsGridEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TOOLS_GRID, enabled).apply()
+    }
+
     fun saveDevices(devices: List<RouterConfig>, activeId: String) {
         val array = JSONArray()
         devices.forEach { array.put(it.toJson()) }
@@ -108,5 +115,6 @@ class SettingsStore(context: Context) {
         private const val KEY_DEVICES = "devices_json"
         private const val KEY_ACTIVE = "activeDeviceId"
         private const val KEY_CONN_NOTIFY = "connection_notify_enabled"
+        private const val KEY_TOOLS_GRID = "tools_grid_enabled"
     }
 }

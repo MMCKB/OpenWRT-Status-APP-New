@@ -3,12 +3,15 @@ package com.mmckb.openwrtstatus.ui.screens
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.drawBehind
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Wifi
@@ -33,6 +37,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,9 +52,13 @@ import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
-/** 工具页：工具入口列表，提供路由器文件管理、软件包管理与无线设置。 */
+/**
+ * 工具页：工具入口（文件管理 / 软件包 / 无线设置）。
+ * [grid] = true 时两列磁贴排版（设置页可切换），false 为默认的列表卡片。
+ */
 @Composable
 fun ToolScreen(
+    grid: Boolean,
     onOpenFileManager: () -> Unit,
     onOpenPackageManager: () -> Unit,
     onOpenWireless: () -> Unit,
@@ -62,90 +74,152 @@ fun ToolScreen(
             .padding(top = rememberTopBarPadding(), bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenFileManager)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Folder,
-                    contentDescription = null,
-                    tint = colors.primary
+        if (grid) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Folder, "文件管理", "浏览 · 上传 · 传输",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFileManager
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "文件管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Text(
-                        "浏览路由器文件，支持查看、上传、下载、重命名与删除",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant
+                ToolTile(
+                    Icons.Filled.Inventory2, "软件包", "安装 · 升级",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenPackageManager
                 )
             }
-        }
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenPackageManager)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Inventory2,
-                    contentDescription = null,
-                    tint = colors.primary
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Wifi, "无线设置", "SSID · 信道",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenWireless
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "软件包",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Text(
-                        "已安装/可用软件包，支持安装、删除、升级与更新列表",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant
+                ToolPlaceholderTile(Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            ToolEntryCard(
+                Icons.Filled.Folder, "文件管理",
+                "浏览路由器文件，支持查看、上传、下载、重命名与删除", onOpenFileManager
+            )
+            ToolEntryCard(
+                Icons.Filled.Inventory2, "软件包",
+                "已安装/可用软件包，支持安装、删除、升级与更新列表", onOpenPackageManager
+            )
+            ToolEntryCard(
+                Icons.Filled.Wifi, "无线设置",
+                "SSID、密码、信道与开关，应用后重载无线", onOpenWireless
+            )
+        }
+    }
+}
+
+/** 列表卡片排版（默认）：与历史版本完全一致的整卡入口。 */
+@Composable
+private fun ToolEntryCard(icon: ImageVector, title: String, desc: String, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.primary
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
+                Text(
+                    desc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
                 )
             }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant
+            )
         }
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenWireless)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Wifi,
-                    contentDescription = null,
-                    tint = colors.primary
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "无线设置",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
+    }
+}
+
+/** 两列磁贴：大图标 + 名称 + 短语；[onClick] 为空时不可点。 */
+@Composable
+private fun ToolTile(
+    icon: ImageVector,
+    title: String,
+    tagline: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val colors = LocalAppColors.current
+    AppCard(
+        modifier = modifier.clickable(enabled = onClick != null) { onClick?.invoke() },
+        contentPadding = 16.dp
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = colors.primary,
+            modifier = Modifier.size(30.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Text(
+            tagline,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
+    }
+}
+
+/** 磁贴网格的预留位：虚线框 + 不可点击。 */
+@Composable
+private fun ToolPlaceholderTile(modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = modifier
+            .drawBehind {
+                drawRoundRect(
+                    color = colors.outline,
+                    cornerRadius = CornerRadius(24.dp.toPx()),
+                    style = Stroke(
+                        width = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 8.dp.toPx()))
                     )
-                    Text(
-                        "SSID、密码、信道与开关，应用后重载无线",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant
                 )
-            }
-        }
+            },
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Add,
+            contentDescription = null,
+            tint = colors.onSurfaceVariant,
+            modifier = Modifier.size(26.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "预留",
+            style = MaterialTheme.typography.titleSmall,
+            color = colors.onSurfaceVariant
+        )
+        Text(
+            "后续工具",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
     }
 }
 
