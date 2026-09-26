@@ -14,8 +14,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1339,12 +1337,14 @@ fun WirelessScreen(
                 ) {
                     AnimatedContent(
                         targetState = Triple(dlgGroup, dlgDeviceTab, ifaceSectionTab),
-                        transitionSpec = {
-                            (fadeIn(tween(150)) + slideInVertically(tween(190, easing = OptionSwitcherEasing)) { it / 30 })
-                                .togetherWith(fadeOut(tween(110)) + slideOutVertically(tween(150)) { -it / 30 })
-                        },
+                        transitionSpec = { fadeIn(tween(130)).togetherWith(fadeOut(tween(100))) },
+                        modifier = Modifier.fillMaxSize(),
                         label = "sectionBody"
                     ) { (grp, devTab, ifaceTab) ->
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                     when {
                         grp == "device" && devTab == "general" -> {
                             SelectRow("工作频率", hwmodeDisplay(radioHwmode, radioHtmode)) {
@@ -1776,6 +1776,7 @@ fun WirelessScreen(
                             SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
                             SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
                         }
+                    }
                     }
                     }
                 }
