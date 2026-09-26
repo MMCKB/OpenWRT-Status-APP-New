@@ -1176,7 +1176,9 @@ fun WirelessScreen(
                         if (addingDevice != null) {
                             withContext(Dispatchers.IO) { client.addIface(config, addingDevice, addIfaceValues()) }
                         }
-                        withContext(Dispatchers.IO) { client.apply(config, buildChanges()) }
+                        withContext(Dispatchers.IO) {
+                            client.apply(config, buildChanges()) { phase -> setMsg(phase, false) }
+                        }
                         setMsg(if (addingDevice != null) "WiFi 已添加并重载无线。" else "已应用，Wi-Fi 正在重载。", false)
                         load()
                     } catch (e: Exception) {
@@ -1691,7 +1693,8 @@ fun WirelessScreen(
             message = buildString {
                 append("将以下 ${changes.size} 个段的更改写入路由器并重载无线：\n\n")
                 append(changes.keys.joinToString("、"))
-                append("\n\n应用后需保持网络可达以完成确认；若 Wi-Fi 被本次修改断开且无法恢复，路由器将在 15 秒后自动回滚。")
+                append("\n\n应用后需保持网络可达以完成确认（最长 90 秒，手机重连 Wi-Fi 后会自动完成）；")
+                append("若本次修改导致 Wi-Fi 断开且始终无法恢复，路由器将在 90 秒后自动回滚还原配置。")
             },
             confirmLabel = "应用",
             onConfirm = {
@@ -1700,7 +1703,9 @@ fun WirelessScreen(
                     busy = true
                     message = null
                     try {
-                        withContext(Dispatchers.IO) { client.apply(config, buildChanges()) }
+                        withContext(Dispatchers.IO) {
+                            client.apply(config, buildChanges()) { phase -> setMsg(phase, false) }
+                        }
                         setMsg("已应用，Wi-Fi 正在重载。", false)
                         load()
                     } catch (e: Exception) {
@@ -1814,7 +1819,7 @@ fun WirelessScreen(
                         withContext(Dispatchers.IO) {
                             client.deleteIface(config, sec)
                             // uci delete 仅 staged，这里统一提交并重载（uci apply）。
-                            client.apply(config, emptyMap())
+                            client.apply(config, emptyMap()) { phase -> setMsg(phase, false) }
                         }
                         setMsg("接口已删除并重载无线。", false)
                         load()

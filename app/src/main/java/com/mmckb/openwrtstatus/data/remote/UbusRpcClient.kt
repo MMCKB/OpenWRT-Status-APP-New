@@ -69,7 +69,7 @@ class UbusRpcClient {
     /** The "null" ubus session used before authenticating. */
     private val nullSession = "00000000000000000000000000000000"
 
-    private val clients = mutableMapOf<Boolean, OkHttpClient>()
+    private val clients = mutableMapOf<Pair<Boolean, Boolean>, OkHttpClient>()
 
     /**
      * Builds `http(s)://host:port/ubus`.
@@ -92,15 +92,27 @@ class UbusRpcClient {
         return "$scheme://$value:$safePort/ubus"
     }
 
-    private fun client(allowInsecureTls: Boolean): OkHttpClient = clients.getOrPut(allowInsecureTls) {
-        val builder = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .writeTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(25, TimeUnit.SECONDS)
-        if (allowInsecureTls) builder.trustAllCertificates()
-        builder.build()
-    }
+    /**
+     * [fast] 档供断连期间需要快速失败的调用使用（确认应用、无线配置读取等）：
+     * 6 秒内无应答即视为路由器不可达；正常档留给 iwinfo scan 这类本身耗时的调用。
+     */
+    private fun client(allowInsecureTls: Boolean, fast: Boolean = false): OkHttpClient =
+        clients.getOrPut(allowInsecureTls to fast) {
+            val builder = OkHttpClient.Builder()
+            if (fast) {
+                builder.connectTimeout(3, TimeUnit.SECONDS)
+                    .writeTimeout(3, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .callTimeout(6, TimeUnit.SECONDS)
+            } else {
+                builder.connectTimeout(8, TimeUnit.SECONDS)
+                    .writeTimeout(8, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .callTimeout(25, TimeUnit.SECONDS)
+            }
+            if (allowInsecureTls) builder.trustAllCertificates()
+            builder.build()
+        }
 
     /**
      * Routers commonly serve LuCI over HTTPS with a self-signed certificate, which OkHttp
@@ -123,13 +135,14 @@ class UbusRpcClient {
         endpoint: String,
         username: String,
         password: String,
-        allowInsecureTls: Boolean
+        allowInsecureTls: Boolean,
+        fast: Boolean = false
     ): String = withContext(Dispatchers.IO) {
         val params = buildJsonObject {
             put("username", JsonPrimitive(username))
             put("password", JsonPrimitive(password))
         }
-        val result = callInternal(endpoint, nullSession, "session", "login", params, allowInsecureTls)
+        val result = callInternal(endpoint, nullSession, "session", "login", params, allowInsecureTls, fast)
         val sid = result
             .takeIf { it is JsonObject }
             ?.jsonObject
@@ -153,9 +166,10 @@ class UbusRpcClient {
         target: String,
         method: String,
         params: JsonObject = JsonObject(emptyMap()),
-        allowInsecureTls: Boolean = false
+        allowInsecureTls: Boolean = false,
+        fast: Boolean = false
     ): JsonElement = withContext(Dispatchers.IO) {
-        callInternal(endpoint, token, target, method, params, allowInsecureTls)
+        callInternal(endpoint, token, target, method, params, allowInsecureTls, fast)
     }
 
     private fun callInternal(
@@ -164,7 +178,8 @@ class UbusRpcClient {
         target: String,
         method: String,
         params: JsonObject,
-        allowInsecureTls: Boolean
+        allowInsecureTls: Boolean,
+        fast: Boolean
     ): JsonElement {
         val bodyText = buildJsonObject {
             put("jsonrpc", JsonPrimitive("2.0"))
@@ -183,7 +198,7 @@ class UbusRpcClient {
                 .url(endpoint)
                 .post(bodyText.toRequestBody(mediaType))
                 .build()
-            client(allowInsecureTls).newCall(request).execute().use { response ->
+            client(allowInsecureTls, fast).newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw httpError(response.code, endpoint)
                 response.body?.string().orEmpty()
             }
