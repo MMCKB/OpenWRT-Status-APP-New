@@ -24,7 +24,7 @@ data class RouterConfig(
     val sshPort: Int = 22,
     val sshUsername: String = "root",
     val sshPassword: String = ""
-) {
+) : java.io.Serializable {
     /** Label shown in device lists. */
     val displayName: String get() = name.ifBlank { ip }
 }
@@ -47,6 +47,7 @@ data class InterfaceInfo(
     val device: String,
     val up: Boolean,
     val ipv4: List<String>,
+    val ipv6: List<String> = emptyList(),
     val uptimeSeconds: Long,
     val rxBytes: Long,
     val txBytes: Long
@@ -112,6 +113,19 @@ data class RouterStatus(
     val leases: List<LeaseInfo>,
     val firmware: String?,
     val model: String?,
+    val boardName: String? = null,
+    val cpuInfo: String? = null,
+    val kernel: String? = null,
+    val rootfsType: String? = null,
+    val distribution: String? = null,
+    val releaseVersion: String? = null,
+    val releaseRevision: String? = null,
+    val target: String? = null,
+    val localtime: Long? = null,
+    val rootFsTotalBytes: Long = 0L,
+    val rootFsFreeBytes: Long = 0L,
+    val tmpTotalBytes: Long = 0L,
+    val tmpFreeBytes: Long = 0L,
     val warnings: List<String> = emptyList()
 )
 
@@ -134,6 +148,19 @@ data class DashboardData(
     val wireless: List<WirelessInfo>,
     val firmware: String?,
     val model: String?,
+    val boardName: String? = null,
+    val cpuInfo: String? = null,
+    val kernel: String? = null,
+    val rootfsType: String? = null,
+    val distribution: String? = null,
+    val releaseVersion: String? = null,
+    val releaseRevision: String? = null,
+    val target: String? = null,
+    val localtime: Long? = null,
+    val rootFsTotalBytes: Long = 0L,
+    val rootFsFreeBytes: Long = 0L,
+    val tmpTotalBytes: Long = 0L,
+    val tmpFreeBytes: Long = 0L,
     val warnings: List<String>,
     val lastUpdated: Long
 )

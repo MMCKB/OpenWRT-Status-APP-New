@@ -1,6 +1,8 @@
 package com.mmckb.openwrtstatus.ui.components
 
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -11,16 +13,26 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -28,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -36,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -47,6 +62,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -59,7 +75,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
@@ -70,6 +85,8 @@ import com.mmckb.openwrtstatus.ui.glass.LiquidTab
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -78,23 +95,26 @@ import kotlin.math.sign
 
 /**
  * The primary layout unit: a large rounded card with generous padding and a hairline border.
+ * [contentPadding] lets compact screens (e.g. wireless settings) tighten the insets without
+ * stacking a second padding layer inside the content.
  */
 @Composable
 fun AppCard(
     modifier: Modifier = Modifier,
+    contentPadding: Dp = 20.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val colors = LocalAppColors.current
+    // Flat card: separation comes from the border only, matching the RN predecessor
+    // (no tonal/shadow elevation, so cards never cast a grey halo on the background).
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = AppShapes.card,
         color = colors.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline.copy(alpha = 0.55f)),
-        tonalElevation = 1.dp,
-        shadowElevation = 2.dp
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(contentPadding),
             content = content
         )
     }
@@ -197,7 +217,6 @@ fun AppTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.background)
             .statusBarsPadding()
             .height(60.dp)
             .padding(horizontal = 20.dp),
@@ -207,22 +226,27 @@ fun AppTopBar(
             navigationIcon()
             Spacer(Modifier.width(8.dp))
         }
-        Column(modifier = Modifier.weight(1f, fill = false)) {
+        // 标题列占满剩余宽度：动作键在所有机型上都严格贴右（部分机型在
+        // fill=false 的加权布局下会出现右侧留白导致动作键偏左）。
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (!subtitle.isNullOrBlank()) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
-                    color = colors.onSurfaceVariant
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
         Row(verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
@@ -351,7 +375,6 @@ fun FloatingTabBar(
                     backdrop = backdrop,
                     shape = { Capsule() },
                     effects = {
-                        vibrancy()
                         blur(8.dp.toPx())
                         lens(24.dp.toPx(), 24.dp.toPx())
                     },
@@ -401,7 +424,6 @@ fun FloatingTabBar(
                         shape = { Capsule() },
                         effects = {
                             val progress = dampedDragAnimation.pressProgress
-                            vibrancy()
                             blur(8.dp.toPx())
                             lens(24.dp.toPx() * progress, 24.dp.toPx() * progress)
                         },
@@ -474,3 +496,124 @@ fun FloatingTabBar(
         )
     }
 }
+
+/**
+ * App-styled modal dialog: the same flat bordered card language as [AppCard] instead of
+ * the Material3 AlertDialog look. Hosted in a raw [androidx.compose.ui.window.Dialog] so
+ * only the visual style is ours.
+ *
+ * Pass [content] for custom bodies (input fields, scrollable previews); otherwise
+ * [message] is shown. An empty [dismissLabel] hides the dismiss button.
+ */
+@Composable
+fun AppDialog(
+    title: String,
+    message: String = "",
+    confirmLabel: String = "确定",
+    dismissLabel: String = "取消",
+    confirmColor: Color? = null,
+    confirmEnabled: Boolean = true,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    content: (@Composable ColumnScope.() -> Unit)? = null
+) {
+    val colors = LocalAppColors.current
+    var backProgress by remember { mutableStateOf(0f) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        // 对话框窗口也走 edge-to-edge，避免弹窗期间手势条区域变成不透明色块。
+        properties = DialogProperties(decorFitsSystemWindows = false)
+    ) {
+        // 预测性返回：手势中跟随系统规范缩放淡出（一级页面返回同款动效），取消则回弹，提交则关闭。
+        PredictiveBackHandler {
+            try {
+                it.collect { event -> backProgress = event.progress }
+                backProgress = 1f
+                onDismiss()
+            } catch (_: CancellationException) {
+                backProgress = 0f
+            }
+        }
+        val p = PredictiveBackEasing.transform(backProgress).coerceIn(0f, 1f)
+        Surface(
+            shape = RoundedCornerShape(24.dp + 20.dp * p),
+            color = colors.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
+            modifier = Modifier
+                .widthIn(min = 280.dp, max = 360.dp)
+                .graphicsLayer {
+                    scaleX = 1f - 0.1f * p
+                    scaleY = 1f - 0.1f * p
+                    alpha = 1f - 0.4f * p
+                }
+        ) {
+            Column(Modifier.padding(22.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(10.dp))
+                if (content != null) {
+                    content()
+                } else {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (dismissLabel.isNotEmpty()) {
+                        TextButton(onClick = onDismiss) {
+                            Text(dismissLabel, color = colors.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    TextButton(onClick = onConfirm, enabled = confirmEnabled) {
+                        Text(
+                            confirmLabel,
+                            color = if (confirmEnabled) (confirmColor ?: colors.primary) else colors.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 统一的二级页返回按钮：系统返回箭头图标，替代各页各自的文字“返回”。 */
+@Composable
+fun AppBackButton(onBack: () -> Unit) {
+    val colors = LocalAppColors.current
+    IconButton(
+        onClick = onBack,
+        modifier = Modifier.size(40.dp)
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "返回",
+            tint = colors.onSurface
+        )
+    }
+}
+
+/** Top inset consumed by the translucent blurred top bar: status bar + bar height + gap. */
+@Composable
+fun rememberTopBarPadding(): Dp =
+    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp + 12.dp
+
+/**
+ * Interpolator mandated by the Material predictive back spec (0.1, 0.1, 0, 1) - matches
+ * the SystemUI back animation interpolator so in-app previews track the gesture the
+ * same way system surfaces do.
+ */
+val PredictiveBackEasing: CubicBezierEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)

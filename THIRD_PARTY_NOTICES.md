@@ -3,14 +3,18 @@
 本应用使用了以下开源组件。除特别说明外，相应许可文本全文位于 [`licenses/`](./licenses/) 目录，
 再分发本应用（含以 APK 形式）时应一并提供本文件与对应许可文本。
 
+版本信息对应 **Dev 分支**（`main` 分支的依赖版本以其自身构建文件为准）。
+
 ---
 
 ## 一、随源码复制并修改的代码
 
-### Kyant0/AndroidLiquidGlass（Backdrop）— Apache License 2.0
+### Kyant0/AndroidLiquidGlass（Backdrop catalog）— Apache License 2.0
 
-- 来源：<https://github.com/Kyant0/AndroidLiquidGlass>（tag `1.0.6`）
-- 用途：底部悬浮 Tab 的液态玻璃效果（blur / vibrancy / lens / 高光 / 阴影）
+- 来源：<https://github.com/Kyant0/AndroidLiquidGlass>（基于 tag `1.0.6` 的 catalog 示例复制，
+  已适配 backdrop 2.0 API——包括调用在 2.0 中移除的 `vibrancy` 效果的部分）
+- 用途：底部悬浮 Tab 的按压 / 拖拽果冻动效与交互高亮（液态玻璃**渲染**由二进制依赖
+  `io.github.kyant0:backdrop:2.0.1` 提供，见下节）
 - 修改声明：本项目复制了其 catalog（demo）模块的 4 个文件并做了适配——包名调整、
   尺寸参数改为固定宽度紧凑胶囊、点击回调改为可空以避免录制层拦截触摸。
   涉及文件（均保留来源与许可注释）：
@@ -25,35 +29,41 @@
 
 ## 二、二进制依赖
 
-### JSch（`com.github.mwiede:jsch:0.2.22`）— BSD-3-Clause
+### Kyant0 Backdrop（`io.github.kyant0:backdrop:2.0.1`）— Apache License 2.0
 
-- 来源：<https://github.com/mwiede/jsch>（tag `jsch-0.2.22`）
+- 来源：<https://github.com/Kyant0/AndroidLiquidGlass>
+- 用途：液态玻璃渲染核心（`drawBackdrop`、blur / lens / 高光 / 阴影等效果）
+
+### Kyant0 Shapes（`io.github.kyant0:shapes:1.2.1`）— Apache License 2.0
+
+- 来源：<https://github.com/Kyant0/Shapes>
+- 用途：`Capsule()` 等形状
+
+### JSch（`com.github.mwiede:jsch:2.28.7`）— BSD-3-Clause（Revised BSD）
+
+- 来源：<https://github.com/mwiede/jsch>（tag `jsch-2.28.7`）
 - 用途：SSH 远程终端（PTY Shell）、读取 `/tmp/dhcp.leases` 获取 DHCP 租约
 - 版权声明（BSD-3-Clause 要求二进制再分发时保留）：
   **Copyright (c) 2002-2015 Atsuhiko Yamanaka, JCraft,Inc. All rights reserved.**
 - 许可文本全文：[licenses/bsd-3-clause.txt](./licenses/bsd-3-clause.txt)
 
-### OkHttp（`com.squareup.okhttp3:okhttp:4.12.0`）— Apache License 2.0
+### OkHttp（`com.squareup.okhttp3:okhttp:5.5.0`）— Apache License 2.0
 
 - 来源：<https://github.com/square/okhttp>
 - 用途：rpcd ubus JSON-RPC 的 HTTP 通信
 
 ### Jetpack Compose / AndroidX — Apache License 2.0
 
-- 组件：`androidx.compose:compose-bom:2026.02.00`（ui / ui-graphics / material3 /
-  material-icons-extended）、`androidx.activity:activity-compose:1.9.0`、
-  `androidx.core:core-ktx:1.13.1`、`androidx.lifecycle:lifecycle-*:2.7.0`
+- 组件：`androidx.compose:compose-bom:2026.09.00`（ui / ui-graphics / material3 /
+  material-icons-extended）、`androidx.activity:activity-compose:1.13.0`、
+  `androidx.core:core-ktx:1.19.0`、`androidx.lifecycle:lifecycle-*:2.11.0`
 - 来源：<https://developer.android.com/jetpack>
 
 ### Kotlin 及官方库 — Apache License 2.0
 
-- 组件：`org.jetbrains.kotlin:*`（Kotlin 2.3.10）、`org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1`、
-  `org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3`
-
-### Kyant0 Shapes（`io.github.kyant0:shapes:1.2.0`）— Apache License 2.0
-
-- 来源：<https://github.com/Kyant0/AndroidLiquidGlass>
-- 用途：`Capsule()` 等形状
+- 组件：`org.jetbrains.kotlin:*`（Kotlin 2.4.20）、
+  `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0`、
+  `org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0`
 
 ## 三、义务摘要（非法律意见）
 

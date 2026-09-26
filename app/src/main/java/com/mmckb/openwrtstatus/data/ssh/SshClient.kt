@@ -5,6 +5,8 @@ import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
+import com.jcraft.jsch.UIKeyboardInteractive
+import com.jcraft.jsch.UserInfo
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +23,27 @@ import java.util.Properties
 
 private const val CONNECT_TIMEOUT_MS = 10_000
 private const val MAX_OUTPUT_CHARS = 24_000
+
+/**
+ * Answers password / keyboard-interactive auth prompts with the stored password.
+ * These are background operations, so nothing ever pops UI; some sshd builds only
+ * authenticate via keyboard-interactive, which JSch cancels without a callback.
+ */
+internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyboardInteractive {
+    override fun getPassword(): String = password
+    override fun getPassphrase(): String = password
+    override fun promptYesNo(str: String?): Boolean = false
+    override fun showMessage(message: String?) {}
+    override fun promptPassword(message: String?): Boolean = true
+    override fun promptPassphrase(message: String?): Boolean = true
+    override fun promptKeyboardInteractive(
+        destination: String?,
+        name: String?,
+        instruction: String?,
+        prompts: Array<out String>?,
+        echo: BooleanArray?
+    ): Array<String>? = prompts?.map { password }?.toTypedArray()
+}
 
 /**
  * Interactive SSH shell backed by JSch (`com.github.mwiede:jsch`, the maintained fork that
@@ -59,7 +82,11 @@ class SshTerminal {
             val jsch = JSch()
             val newSession = jsch.getSession(config.username, config.host, config.port)
             newSession.setPassword(config.password)
-            newSession.setConfig(Properties().apply { put("StrictHostKeyChecking", "no") })
+            newSession.setConfig(Properties().apply {
+                put("StrictHostKeyChecking", "no")
+                put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+            })
+            newSession.userInfo = PasswordUserInfo(config.password)
             newSession.timeout = CONNECT_TIMEOUT_MS
             newSession.connect(CONNECT_TIMEOUT_MS)
 
@@ -166,7 +193,11 @@ object SshExec {
             val session = jsch.getSession(config.username, config.host, config.port)
             try {
                 session.setPassword(config.password)
-                session.setConfig(Properties().apply { put("StrictHostKeyChecking", "no") })
+                session.setConfig(Properties().apply {
+                    put("StrictHostKeyChecking", "no")
+                    put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+                })
+                session.userInfo = PasswordUserInfo(config.password)
                 session.timeout = timeoutMs
                 session.connect(timeoutMs)
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.BuildConfig
 import com.mmckb.openwrtstatus.R
+import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
@@ -46,20 +48,25 @@ private const val REPO_URL = "https://github.com/MMCKB/OpenWRT-Status-APP-New"
 /**
  * About page: launcher glyph, app name and version (read from BuildConfig), and a link to
  * the GitHub repository. Visual language matches the settings screen (AppCard + palette).
+ * A secondary page: it has its own slim back header instead of the app top bar.
  */
 @Composable
-fun AboutScreen(modifier: Modifier = Modifier) {
+fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 16.dp)
+            .padding(top = 2.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AppBackButton(onBack = onBack)
+        }
         AppCard {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),

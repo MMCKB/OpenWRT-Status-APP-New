@@ -36,6 +36,7 @@ import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.components.MetricTile
+import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatRate
 import com.mmckb.openwrtstatus.ui.formatUptime
@@ -54,12 +55,6 @@ fun DashboardScreen(
     val config by viewModel.config.collectAsStateWithLifecycle()
     val leases by viewModel.leases.collectAsStateWithLifecycle()
 
-    LaunchedEffect(config.refreshIntervalSec) {
-        while (true) {
-            delay((config.refreshIntervalSec * 1000L).coerceAtLeast(2000L))
-            viewModel.refresh()
-        }
-    }
 
     when (val state = uiState) {
         is StatusUiState.Initial, is StatusUiState.Loading -> LoadingView()
@@ -129,9 +124,9 @@ private fun ErrorView(message: String, hint: String?, onRetry: () -> Unit) {
 @Composable
 private fun DashboardContent(data: DashboardData, modifier: Modifier = Modifier) {
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(bottom = 96.dp)
+        contentPadding = PaddingValues(top = rememberTopBarPadding(), bottom = 96.dp)
     ) {
         item { StatusCard(data) }
         item { ResourceCard(data) }
