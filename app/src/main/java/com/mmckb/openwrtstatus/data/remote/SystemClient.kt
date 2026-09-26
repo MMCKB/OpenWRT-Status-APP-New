@@ -300,8 +300,8 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 val sec = shq(section)
                 if (createName != null) {
                     sb.append("uci -q get ").append(uciConfig).append('.').append(sec)
-                        .append(" >/dev/null 2>&1 || { S=$(uci add ").append(uciConfig).append(" timeserver) && uci rename ")
-                        .append(uciConfig).append(".$S=").append(sec).append("; }; ")
+                        .append(" >/dev/null 2>&1 || { S=\$(uci add ").append(uciConfig).append(" timeserver) && uci rename ")
+                        .append(uciConfig).append(".\$S=").append(sec).append("; }; ")
                 }
                 for ((key, value) in values) {
                     val keyQ = shq(key)
