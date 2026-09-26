@@ -257,8 +257,91 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         ssh: SshConfig? = null,
         onPhase: (String) -> Unit = {}
     ) = withContext(Dispatchers.IO) {
-        onPhase("正在写入配置…")
-        val touchedConfigs = changes.keys
+        if (ssh != null) {
+            onPhase("正在写入并重载服务…")
+            var logTouched = false
+            var zramTouched = false
+            changes["system"]?.forEach { (_, values) ->
+                if (values.keys.any { it.startsWith("log_") || it == "conloglevel" || it == "cronloglevel" }) logTouched = true
+                if (values.keys.any { it.startsWith("zram_") }) zramTouched = true
+            }
+            val ntpTouched = changes["system"]?.containsKey("ntp") == true
+            // 与旧版 OpenWRT-Status-APP 一致：uci set/delete + commit + 服务重载在同一条 SSH 脚本内完成
+            val script = buildString {
+                append(buildShellScript(changes))
+                append("uci commit system; ")
+                if (changes.containsKey("luci")) append("uci commit luci; ")
+                append("/etc/init.d/system reload >/dev/null 2>&1; ")
+                if (logTouched) append("/etc/init.d/log restart >/dev/null 2>&1; ")
+                if (zramTouched) append("/etc/init.d/zram restart >/dev/null 2>&1; ")
+                if (ntpTouched) append("/etc/init.d/sysntpd restart >/dev/null 2>&1; ")
+                append("echo __SYS_APPLY_OK__")
+            }
+            val committed = runCatching {
+                SshExec.run(ssh, script, 30_000).contains("__SYS_APPLY_OK__")
+            }.getOrDefault(false)
+            if (committed) return@withContext
+            onPhase("SSH 提交失败，改用 uci apply 提交…")
+            applyViaUbus(config, changes.keys.toList(), onPhase)
+        } else {
+            onPhase("正在写入配置…")
+            ubusWrite(config, changes, onPhase)
+            applyViaUbus(config, changes.keys.toList(), onPhase)
+        }
+    }
+
+    /** 把 changes 转成 uci set/delete 的 shell 命令；`section!name` 形式先确保命名段存在。 */
+    private fun buildShellScript(changes: Map<String, Map<String, Map<String, Any>>>): String {
+        val sb = StringBuilder()
+        for ((uciConfig, sections) in changes) {
+            for ((sectionSpec, values) in sections) {
+                val createName = sectionSpec.takeIf { it.contains('!') }?.substringAfter('!')
+                val section = sectionSpec.substringBefore('!')
+                val sec = shq(section)
+                if (createName != null) {
+                    sb.append("uci -q get ").append(uciConfig).append('.').append(sec)
+                        .append(" >/dev/null 2>&1 || { S=$(uci add ").append(uciConfig).append(" timeserver) && uci rename ")
+                        .append(uciConfig).append(".$S=").append(sec).append("; }; ")
+                }
+                for ((key, value) in values) {
+                    val keyQ = shq(key)
+                    when {
+                        value is String && value.isEmpty() ->
+                            sb.append("uci -q delete ").append(uciConfig).append('.').append(sec).append('.').append(keyQ).append("; ")
+                        value is String && value.contains('\n') -> {
+                            sb.append("uci -q delete ").append(uciConfig).append('.').append(sec).append('.').append(keyQ).append("; ")
+                            for (line in value.split('\n').filter { it.isNotBlank() }) {
+                                sb.append("uci add_list ").append(uciConfig).append('.').append(sec).append('.').append(keyQ)
+                                    .append('=').append(shq(line)).append("; ")
+                            }
+                        }
+                        value is List<*> -> {
+                            sb.append("uci -q delete ").append(uciConfig).append('.').append(sec).append('.').append(keyQ).append("; ")
+                            for (item in value) {
+                                sb.append("uci add_list ").append(uciConfig).append('.').append(sec).append('.').append(keyQ)
+                                    .append('=').append(shq(item.toString())).append("; ")
+                            }
+                        }
+                        value is Boolean -> sb.append("uci set ").append(uciConfig).append('.').append(sec).append('.').append(keyQ)
+                            .append("='").append(if (value) "1" else "0").append("'; ")
+                        else -> sb.append("uci set ").append(uciConfig).append('.').append(sec).append('.').append(keyQ)
+                            .append('=').append(shq(value.toString())).append("; ")
+                    }
+                }
+            }
+        }
+        return sb.toString()
+    }
+
+    /** 单引号 shell 转义（' → '\''）。 */
+    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
+
+    /** 无 SSH 后备：ubus 逐段 uci set/delete（staged）。空字符串值表示删除该选项。 */
+    private suspend fun ubusWrite(
+        config: RouterConfig,
+        changes: Map<String, Map<String, Map<String, Any>>>,
+        onPhase: (String) -> Unit
+    ) = withContext(Dispatchers.IO) {
         for ((uciConfig, sections) in changes) {
             for ((sectionSpec, values) in sections) {
                 val createName = sectionSpec.takeIf { it.contains('!') }?.substringAfter('!')
@@ -266,7 +349,6 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 val deletions = values.filterKeys { it.isEmpty() }.keys
                 val writes = values.filterNot { it.value is String && (it.value as String).isEmpty() }
                 if (createName != null) {
-                    // 命名段不存在时创建（uci add 支持命名段）
                     runCatching {
                         call(
                             config, "uci", "add",
@@ -329,34 +411,6 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     )
                 }
             }
-        }
-
-        if (ssh != null) {
-            onPhase("正在提交并重载服务…")
-            var logTouched = false
-            var zramTouched = false
-            changes["system"]?.forEach { (_, values) ->
-                if (values.keys.any { it.startsWith("log_") || it == "conloglevel" || it == "cronloglevel" }) logTouched = true
-                if (values.keys.any { it.startsWith("zram_") }) zramTouched = true
-            }
-            val ntpTouched = changes["system"]?.containsKey("ntp") == true
-            val script = buildString {
-                append("uci commit system; ")
-                if (touchedConfigs.contains("luci")) append("uci commit luci; ")
-                append("/etc/init.d/system reload >/dev/null 2>&1; ")
-                if (logTouched) append("/etc/init.d/log restart >/dev/null 2>&1; ")
-                if (zramTouched) append("/etc/init.d/zram restart >/dev/null 2>&1; ")
-                if (ntpTouched) append("/etc/init.d/sysntpd restart >/dev/null 2>&1; ")
-                append("echo __SYS_APPLY_OK__")
-            }
-            val committed = runCatching {
-                SshExec.run(ssh, script, 30_000).contains("__SYS_APPLY_OK__")
-            }.getOrDefault(false)
-            if (committed) return@withContext
-            onPhase("SSH 提交失败，改用 uci apply 提交…")
-            applyViaUbus(config, touchedConfigs.toList(), onPhase)
-        } else {
-            applyViaUbus(config, touchedConfigs.toList(), onPhase)
         }
     }
 
