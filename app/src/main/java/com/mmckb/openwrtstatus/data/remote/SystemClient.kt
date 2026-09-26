@@ -41,7 +41,8 @@ data class SystemData(
     val luciLang: String?,
     val luciTheme: String?,
     val luciTablefilters: Boolean,
-    val luciThemes: List<Pair<String, String>>
+    val luciThemes: List<Pair<String, String>>,
+    val luciLanguages: List<Pair<String, String>>
 )
 
 /** 时区：zonename → tzstring（与 LuCI getTimezones 同源）。 */
@@ -145,7 +146,8 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     }
                     "timeserver" -> if (str(sec, ".name") == "ntp") {
                         ntpExists = true
-                        ntpEnabled = bool(sec, "enabled")
+                        // LuCI 语义：uci 无 enabled 选项时视为启用，仅显式 0 为关闭
+                        ntpEnabled = str(sec, "enabled") != "0"
                         ntpProvide = bool(sec, "enable_server")
                         ntpUseDhcp = if (sec.containsKey("use_dhcp")) bool(sec, "use_dhcp") else true
                         ntpServers = (sec["server"] as? JsonArray)
@@ -157,11 +159,19 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 }
             }
 
+            // sysntpd 服务是否随系统启用（LuCI 的 NTP 开关判定条件之一）
+            val sysntpdRcEnabled = runCatching {
+                call(config, "rc", "list", buildJsonObject { put("name", JsonPrimitive("sysntpd")) })
+                    .jsonObject["sysntpd"]?.jsonObject?.get("enabled")
+                    ?.let { (it as? JsonPrimitive)?.content?.toBooleanStrictOrNull() } ?: true
+            }.getOrDefault(true)
+
             // luci 配置：语言 / 主题 / 表格过滤器
             var luciLang: String? = null
             var luciTheme: String? = null
             var tablefilters = false
             val themes = mutableListOf<Pair<String, String>>()
+            val languages = mutableListOf<Pair<String, String>>()
             runCatching {
                 val luciPayload = call(
                     config, "uci", "get",
@@ -169,15 +179,27 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 ).jsonObject["values"]?.jsonObject
                 for ((name, el) in luciPayload ?: emptyMap<String, kotlinx.serialization.json.JsonElement>()) {
                     val sec = el as? JsonObject ?: continue
-                    when {
-                        str(sec, ".type") == "core" || name == "main" -> {
+                    when (name) {
+                        "main" -> {
                             luciLang = str(sec, "lang")
                             luciTheme = str(sec, "mediaurlbase")
                             tablefilters = bool(sec, "tablefilters")
                         }
-                        str(sec, ".type") == "themes" -> {
-                            val url = str(sec, "mediaurlbase")
-                            if (url != null) themes.add(url to (str(sec, ".name") ?: name))
+                        // 语言/主题是命名段（.type=internal），实际选项在键值里：
+                        // languages: zh_cn=简体中文…；themes: Aurora=/luci-static/aurora…
+                        "languages" -> {
+                            for ((k, v) in sec) {
+                                if (k.startsWith(".")) continue
+                                val title = (v as? JsonPrimitive)?.content ?: continue
+                                languages.add(k to title)
+                            }
+                        }
+                        "themes" -> {
+                            for ((k, v) in sec) {
+                                if (k.startsWith(".")) continue
+                                val url = (v as? JsonPrimitive)?.content ?: continue
+                                themes.add(url to k)
+                            }
                         }
                     }
                 }
@@ -202,7 +224,8 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 zramSizeMb = zramSize,
                 zramCompAlgo = zramAlgo,
                 ntpSectionExists = ntpExists,
-                ntpEnabled = ntpEnabled,
+                // LuCI 判定还需 rc 服务启用；rc 不可用时按 uci 值
+                ntpEnabled = ntpEnabled && sysntpdRcEnabled,
                 ntpProvideServer = ntpProvide,
                 ntpUseDhcp = ntpUseDhcp,
                 ntpServers = ntpServers,
@@ -210,7 +233,8 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 luciLang = luciLang,
                 luciTheme = luciTheme,
                 luciTablefilters = tablefilters,
-                luciThemes = themes
+                luciThemes = themes,
+                luciLanguages = languages
             )
         }.getOrNull()
     }

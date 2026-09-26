@@ -540,23 +540,26 @@ fun SystemScreen(
                             }
                         }
                         else -> {
-                            SysSelectRow(
-                                "语言",
-                                if (lang == "auto" || lang.isBlank()) "自动" else lang
-                            ) {
-                                selectState = SysSelectState(
-                                    "选择 LuCI 语言",
-                                    listOf("auto" to "auto", "en" to "English"),
-                                    lang
-                                ) { v -> lang = v }
+                            val langOptions = buildList {
+                                add("auto" to "自动")
+                                add("en" to "English")
+                                (data?.luciLanguages ?: emptyList()).forEach { (code, title) -> add(code to title) }
                             }
                             SysSelectRow(
-                                "设计（主题）",
-                                theme.ifBlank { "默认" }
+                                "语言",
+                                langOptions.firstOrNull { it.first == lang }?.second ?: lang
                             ) {
-                                val opts = (data?.luciThemes ?: emptyList())
-                                    .ifEmpty { listOf(theme to theme) }
-                                selectState = SysSelectState("选择设计", opts, theme) { v -> theme = v }
+                                selectState = SysSelectState(
+                                    "选择 LuCI 语言", langOptions, lang
+                                ) { v -> lang = v }
+                            }
+                            val themeOptions = data?.luciThemes ?: emptyList()
+                            SysSelectRow(
+                                "主题",
+                                themeOptions.firstOrNull { it.first == theme }?.second
+                                    ?: theme.substringAfterLast("/").ifBlank { "默认" }
+                            ) {
+                                selectState = SysSelectState("选择主题", themeOptions, theme) { v -> theme = v }
                             }
                             SysSettingRow("表格过滤器", tablefilters) { tablefilters = it }
                         }
