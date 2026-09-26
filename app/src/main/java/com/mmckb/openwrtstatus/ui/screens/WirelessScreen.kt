@@ -1151,7 +1151,7 @@ fun WirelessScreen(
                             isolate = ifaceIsolate,
                             macfilter = ifaceMacfilter.ifBlank { null },
                             maclist = ifaceMaclist.lines().map { m -> m.trim() }.filter { m -> m.isNotEmpty() },
-                            bssid = ifaceBsid.trim(),
+                            bssid = ifaceBssid.trim(),
                             shortPreamble = ifaceShortPreamble,
                             extra = ifaceExtra()
                         )
