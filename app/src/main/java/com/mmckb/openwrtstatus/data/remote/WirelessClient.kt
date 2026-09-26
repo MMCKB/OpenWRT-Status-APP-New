@@ -109,24 +109,34 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
         /** 固件/驱动默认开启的开关：关闭时必须显式写 0，不能靠缺省。 */
         internal val DEFAULT_ON_FLAGS = setOf("wmm", "short_preamble", "disassoc_low_ack", "rxldpc", "ldpc", "ft_psk_generate_local")
+
+        /** uci apply 的确认窗口（秒），与 LuCI 的 apply_timeout 对齐：无线重载会让手机断网片刻，窗口内连回即确认成功。 */
+        internal const val APPLY_CONFIRM_TIMEOUT_SEC = 90
     }
 
     private suspend fun call(
         config: RouterConfig,
         target: String,
         method: String,
-        params: kotlinx.serialization.json.JsonObject
+        params: kotlinx.serialization.json.JsonObject,
+        fast: Boolean = false
     ): kotlinx.serialization.json.JsonElement = withContext(Dispatchers.IO) {
         val endpoint = rpc.buildEndpoint(config.ip, config.port, config.useHttps)
-        val token = rpc.login(endpoint, config.username, config.password, config.allowInsecureTls)
-        rpc.call(endpoint, token, target, method, params, config.allowInsecureTls)
+        val token = rpc.login(endpoint, config.username, config.password, config.allowInsecureTls, fast)
+        rpc.call(endpoint, token, target, method, params, config.allowInsecureTls, fast)
     }
 
-    private suspend fun iwinfo(config: RouterConfig, method: String, device: String): JsonObject? =
+    private suspend fun iwinfo(
+        config: RouterConfig,
+        method: String,
+        device: String,
+        fast: Boolean = false
+    ): JsonObject? =
         runCatching {
             call(
                 config, "iwinfo", method,
-                buildJsonObject { put("device", kotlinx.serialization.json.JsonPrimitive(device)) }
+                buildJsonObject { put("device", kotlinx.serialization.json.JsonPrimitive(device)) },
+                fast
             ).jsonObject
         }.getOrNull()
 
@@ -175,11 +185,12 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         }
     }
 
-    /** 读取无线配置（uci）+ 实时数据合并。 */
+    /** 读取无线配置（uci）+ 实时数据合并。全部走快速档：路由器不可达时秒级失败，不拖住界面。 */
     suspend fun load(config: RouterConfig): List<WirelessRadio> = withContext(Dispatchers.IO) {
         val payload = call(
             config, "uci", "get",
-            buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("wireless")) }
+            buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("wireless")) },
+            fast = true
         )
         val values = (payload.jsonObject["values"] as? JsonObject) ?: return@withContext emptyList()
 
@@ -279,7 +290,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         config: RouterConfig,
         radios: List<WirelessRadio>
     ): List<WirelessRadio>? {
-        val payload = call(config, "luci-rpc", "getWirelessDevices", buildJsonObject { })
+        val payload = call(config, "luci-rpc", "getWirelessDevices", buildJsonObject { }, fast = true)
         val root = payload.jsonObject
         return radios.map { radio ->
             var r = radio
@@ -334,7 +345,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         radios: List<WirelessRadio>
     ): List<WirelessRadio> {
         val wifiIfaces = runCatching {
-            (iwinfo(config, "devices", "wireless")?.get("devices") as? JsonArray)
+            (iwinfo(config, "devices", "wireless", fast = true)?.get("devices") as? JsonArray)
                 ?.mapNotNull { dev ->
                     ((dev as? JsonObject)?.get("name") as? JsonPrimitive)?.content
                 }
@@ -343,7 +354,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
         return radios.map { radio ->
             var r = radio
-            val info = iwinfo(config, "info", radio.section)
+            val info = iwinfo(config, "info", radio.section, fast = true)
             info?.let { radioInfo ->
                 r = r.copy(
                     liveChannel = int(radioInfo["channel"]),
@@ -357,11 +368,12 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             val phyName = info?.get("phy")?.let { p -> (p as? JsonPrimitive)?.content }
             val ifn = wifiIfaces.firstOrNull { it.startsWith("$phyName-") }
             if (ifn != null) {
-                iwinfo(config, "info", ifn)?.let { ifaceInfo ->
+                iwinfo(config, "info", ifn, fast = true)?.let { ifaceInfo ->
                     val assoc = runCatching {
                         (call(
                             config, "iwinfo", "assoclist",
-                            buildJsonObject { put("device", kotlinx.serialization.json.JsonPrimitive(ifn)) }
+                            buildJsonObject { put("device", kotlinx.serialization.json.JsonPrimitive(ifn)) },
+                            fast = true
                         ).jsonObject["results"] as? JsonArray)
                     }.getOrNull()
                     val maxRate = assoc.orEmpty().mapNotNull { entry ->
@@ -396,15 +408,17 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     /**
      * 应用变更：逐段 uci set/delete → `uci apply {rollback:true}` → `uci confirm`。
-     *
      * 空字符串值表示删除该选项（LuCI rmempty 语义）；换行分隔的字符串按 uci 列表写入；
      * Boolean 写成 "1"/"0"；List 直接作为 uci 列表写入。
      * 无可应用变更时 rpcd 返回 ubus 代码 5（NO_DATA），视为成功。
+     * [onPhase] 逐阶段回报进度（会在 IO 线程回调），供界面提示当前状态。
      */
     suspend fun apply(
         config: RouterConfig,
-        changes: Map<String, Map<String, Any>>
+        changes: Map<String, Map<String, Any>>,
+        onPhase: (String) -> Unit = {}
     ) = withContext(Dispatchers.IO) {
+        onPhase("正在写入配置…")
         for ((section, values) in changes) {
             val deletions = values.filterKeys { it.isEmpty() }.keys
             val writes = values.filterNot { it.value is String && (it.value as String).isEmpty() }
@@ -430,7 +444,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                                 }
                             }
                         })
-                    }
+                    },
+                    fast = true
                 )
             }
             for (opt in deletions) {
@@ -440,41 +455,46 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
                         put("section", kotlinx.serialization.json.JsonPrimitive(section))
                         put("option", kotlinx.serialization.json.JsonPrimitive(opt))
-                    }
+                    },
+                    fast = true
                 )
             }
         }
-        applyAndReload(config)
+        applyAndReload(config, onPhase)
     }
 
     /**
      * 提交所有 staged 变更并重载无线（LuCI apply 协议）：
      * `uci apply {timeout, rollback:true}` 后延时确认 `uci confirm`，确认失败在超时窗口内
-     * 每 250ms 重试；全程无法确认时 rpcd 自动回滚——本方法抛出异常提示用户配置将被还原。
+     * 每 250ms 重试；全程无法确认时 rpcd 自动回滚——本方法抛出异常明确告知用户配置已还原。
      */
-    private suspend fun applyAndReload(config: RouterConfig) {
+    private suspend fun applyAndReload(config: RouterConfig, onPhase: (String) -> Unit) {
+        val deadline = System.currentTimeMillis() + APPLY_CONFIRM_TIMEOUT_SEC * 1000L
+        onPhase("正在应用并重载无线…")
         try {
             call(
                 config, "uci", "apply",
                 buildJsonObject {
-                    put("timeout", kotlinx.serialization.json.JsonPrimitive(15))
+                    put("timeout", kotlinx.serialization.json.JsonPrimitive(APPLY_CONFIRM_TIMEOUT_SEC))
                     put("rollback", kotlinx.serialization.json.JsonPrimitive(true))
-                }
+                },
+                fast = true
             )
         } catch (e: RouterException) {
             if (e.ubusCode != 5) throw e // 5 = 无变更可应用，同样视为成功
         }
         delay(1000)
-        val deadline = System.currentTimeMillis() + 15_000
+        onPhase("等待确认应用（最长 ${APPLY_CONFIRM_TIMEOUT_SEC} 秒，手机重连 Wi-Fi 后自动完成）…")
         while (true) {
             try {
-                call(config, "uci", "confirm", buildJsonObject { })
+                call(config, "uci", "confirm", buildJsonObject { }, fast = true)
                 return
             } catch (e: RouterException) {
                 if (System.currentTimeMillis() >= deadline) {
                     throw RouterException(
-                        "无法确认应用（路由器不可达），配置将在超时后自动回滚。",
-                        "若 Wi-Fi 被本次修改断开，请等待约 15 秒让路由器自动还原配置后重试。"
+                        "未能确认应用，配置已被路由器自动还原。",
+                        "本次修改会导致 Wi-Fi 重启、手机短暂断开，重连后本可自动确认。请等手机连回 Wi-Fi 后重试；若多次失败，请先修改不影响当前连接的部分（如另一频段的网卡）。",
+                        e.ubusCode
                     )
                 }
                 delay(250)
@@ -515,7 +535,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                         }
                     }
                 })
-            }
+            },
+            fast = true
         )
     }
 
@@ -526,7 +547,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             buildJsonObject {
                 put("config", kotlinx.serialization.json.JsonPrimitive("wireless"))
                 put("section", kotlinx.serialization.json.JsonPrimitive(section))
-            }
+            },
+            fast = true
         )
     }
 
@@ -535,7 +557,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         runCatching {
             val payload = call(
                 config, "uci", "get",
-                buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("network")) }
+                buildJsonObject { put("config", kotlinx.serialization.json.JsonPrimitive("network")) },
+                fast = true
             )
             val values = payload.jsonObject["values"] as? JsonObject ?: return@runCatching emptyList()
             values.mapNotNull { (name, el) ->
