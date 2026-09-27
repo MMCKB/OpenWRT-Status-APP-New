@@ -253,7 +253,9 @@ fun RoutesScreen(
             }
         }
 
-        // 悬浮提示栈：浮在内容上方（不推挤布局），位于标题区正下方
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于标题区正下方；
+        // 首帧布局测量完成前不显示，避免提示盖住标题
+        if (alertTopPadding > 0.dp) {
         StackedAlertHost(
             state = alertStack,
             modifier = Modifier
@@ -262,6 +264,7 @@ fun RoutesScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = alertTopPadding)
         )
+        }
     }
 }
 

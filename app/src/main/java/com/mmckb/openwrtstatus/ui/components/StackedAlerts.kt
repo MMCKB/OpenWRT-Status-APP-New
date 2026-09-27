@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -9,6 +10,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,15 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-/** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
-private val LAYER_PEEK = 12.dp
 
 /** 提示类型：成功（绿）/ 警告与进行中（黄）/ 错误（红）。 */
 enum class AppAlertType { Info, Success, Warning, Error }
@@ -65,7 +66,8 @@ data class AlertItem(
 /**
  * 提示栈状态：反复触发时堆叠，最多保留 3 层（丢最旧的）；
  * 消失链从第 3 层（最新）开始逐层推进到第 1 层，每层间隔逐渐加快；
- * 再次触发会重置消失链（新提示获得完整的首段停留时间）。
+ * 再次触发会重置消失链（新提示获得完整的首段停留时间）；
+ * 用户上滑某条提示可让它立即消失（[dismiss]）。
  */
 class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
 
@@ -82,18 +84,25 @@ class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
         startDismissChain()
     }
 
+    /** 用户上滑某条提示后调用：播放退出动画并从栈中移除该条。 */
+    fun dismiss(id: Long) {
+        items = items.map { if (it.id == id) it.copy(exiting = true) else it }
+        scope.launch {
+            delay(EXIT_ANIM_MS)
+            items = items.filterNot { it.id == id }
+        }
+    }
+
     private fun startDismissChain() {
         chainJob?.cancel()
         chainJob = scope.launch {
             var step = 0
             while (items.isNotEmpty()) {
                 delay(DISMISS_STEPS[step.coerceAtMost(DISMISS_STEPS.lastIndex)])
-                if (items.isEmpty()) break
-                items = items.mapIndexed { index, item ->
-                    if (index == 0) item.copy(exiting = true) else item
-                }
+                val top = items.firstOrNull() ?: break
+                items = items.map { if (it.id == top.id) it.copy(exiting = true) else it }
                 delay(EXIT_ANIM_MS)
-                items = items.drop(1)
+                items = items.filterNot { it.id == top.id }
                 step++
             }
         }
@@ -102,6 +111,9 @@ class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
     companion object {
         /** 栈内最多 3 层。 */
         const val MAX_LAYERS = 3
+
+        /** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
+        val LAYER_PEEK: Dp = 12.dp
 
         /** 消失链各步停留：第 3 层 → 第 2 层 → 第 1 层，逐层加快。 */
         val DISMISS_STEPS = longArrayOf(2500L, 1600L, 1000L)
@@ -121,13 +133,19 @@ fun rememberAlertStackState(): AlertStackState {
  * 悬浮提示栈：三条提示像一叠卡片堆在同一位置——最新（第 3 层）完整盖在最上面，
  * 旧卡片向下错开露出一条边缘；消失从第 3 层到第 1 层连续加速，
  * 上层收起时下层平滑上移补位。进入/堆叠/退出均有动画。
- * 宿主不拦截触摸（卡片本身无点击处理，触摸穿透到下层内容）。
+ * 每条提示支持**向上滑动消失**（松手超过阈值即移除，不足则弹回原位）。
+ * 宿主不拦截触摸（仅卡片本体响应拖动，触摸穿透到下层内容）。
  */
 @Composable
 fun StackedAlertHost(
     state: AlertStackState,
     modifier: Modifier = Modifier
 ) {
+    val hostScope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val swipeThresholdPx = with(density) { 110.dp.toPx() }
+    val maxUpPx = with(density) { 280.dp.toPx() }
+
     Box(modifier = modifier) {
         // 从最旧到最新绘制，最新的一张盖在最上层（第 3 层）
         state.items.asReversed().forEachIndexed { revIndex, item ->
@@ -141,6 +159,7 @@ fun StackedAlertHost(
                     animationSpec = tween(260),
                     label = "alertLayerOffset"
                 )
+                val dragAnim = remember(item.id) { Animatable(0f) }
                 AnimatedVisibility(
                     visible = entered && !item.exiting,
                     enter = fadeIn(tween(200)) +
@@ -156,7 +175,35 @@ fun StackedAlertHost(
                             transformOrigin = TransformOrigin(0.5f, 0f)
                         )
                 ) {
-                    Box(Modifier.padding(top = topOffset)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(top = topOffset)
+                            .graphicsLayer { translationY = dragAnim.value }
+                            .pointerInput(item.id) {
+                                detectVerticalDragGestures(
+                                    onVerticalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        hostScope.launch {
+                                            dragAnim.snapTo(
+                                                (dragAnim.value + dragAmount).coerceIn(-maxUpPx, 0f)
+                                            )
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        hostScope.launch {
+                                            if (dragAnim.value <= -swipeThresholdPx) {
+                                                state.dismiss(item.id)
+                                            } else {
+                                                dragAnim.animateTo(0f, tween(180))
+                                            }
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        hostScope.launch { dragAnim.animateTo(0f, tween(180)) }
+                                    }
+                                )
+                            }
+                    ) {
                         StackedAlertCard(item)
                     }
                 }
