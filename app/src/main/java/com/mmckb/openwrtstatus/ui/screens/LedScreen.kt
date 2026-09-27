@@ -94,6 +94,33 @@ private data class LedMultiSelectState(
     val onToggle: (String) -> Unit
 )
 
+/** 待保存更改统计（相对最近一次加载的基线）。 */
+private data class LedPendingDiff(val added: Int, val modified: Int, val deleted: Int) {
+    val total: Int get() = added + modified + deleted
+}
+
+/**
+ * 对比当前状态与基线：新增（无段名）/ 修改（与基线内容不同）/ 删除（在删除列表中）
+ * 各计一项；改回原样的项自动不再计入。
+ */
+private fun ledPendingDiff(
+    baseline: List<LedAction>,
+    current: List<LedAction>,
+    deletedSections: List<String>
+): LedPendingDiff {
+    val baseById = baseline.associateBy { it.section }
+    var added = 0
+    var modified = 0
+    current.forEach { act ->
+        when {
+            act.section.isBlank() -> added++
+            baseById.containsKey(act.section) -> if (baseById.getValue(act.section) != act) modified++
+            else -> added++
+        }
+    }
+    return LedPendingDiff(added, modified, deletedSections.size)
+}
+
 /** 编辑/添加弹窗的表单状态（独立于卡片列表，确定后写回）。 */
 private data class LedEditForm(
     val name: String,
@@ -162,6 +189,7 @@ fun LedScreen(
     }
 
     var actions by remember { mutableStateOf<List<LedAction>>(emptyList()) }
+    var baselineActions by remember { mutableStateOf<List<LedAction>>(emptyList()) }
     var deletedSections by remember { mutableStateOf<List<String>>(emptyList()) }
     var ledDevices by remember { mutableStateOf<List<LedDevice>>(emptyList()) }
     var netdevDevices by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -185,6 +213,7 @@ fun LedScreen(
                     }
                 }
                 actions = acts
+                baselineActions = acts
                 deletedSections = emptyList()
                 ledDevices = devices
                 netdevDevices = withTimeout(LED_LOAD_TIMEOUT_MS) {
@@ -291,12 +320,29 @@ fun LedScreen(
                 AppBackButton(onBack = onBack)
                 Spacer(Modifier.weight(1f))
             }
-            Text(
-                "LED 配置",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "LED 配置",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                val pending = ledPendingDiff(baselineActions, actions, deletedSections)
+                if (pending.total > 0) {
+                    Text(
+                        "待保存 ${pending.total}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF8A6A10),
+                        modifier = Modifier
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
+                            .background(Color(0xFFFCF1CC))
+                            .border(1.dp, Color(0xFFE0C46E), androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
             Text(
                 "自定义设备 LED 的触发行为",
                 style = MaterialTheme.typography.bodySmall,
