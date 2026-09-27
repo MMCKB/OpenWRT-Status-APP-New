@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -160,8 +161,8 @@ fun StackedAlertHost(
 }
 
 /**
- * 单条提示卡片（横幅版加高：12dp 垂直内边距、18dp 图标）：
- * 绿 = 成功、黄 = 警告/进行中、红 = 错误；浅底同色描边，深色模式自动加深。
+ * 单条提示卡片（横幅版加高：16dp 垂直内边距、20dp 图标）：
+ * 纯色粉红背景，类型通过图标与标题颜色表达——绿 = 成功、黄 = 警告/进行中、红 = 错误。
  */
 @Composable
 private fun StackedAlertCard(item: AlertItem) {
@@ -173,8 +174,8 @@ private fun StackedAlertCard(item: AlertItem) {
             if (dark) Color(0xFFFBBF24) else Color(0xFFA16207)
         AppAlertType.Error -> colors.error
     }
-    val background = accent.copy(alpha = if (dark) 0.16f else 0.10f)
-    val borderColor = accent.copy(alpha = if (dark) 0.45f else 0.35f)
+    val background = Color(0xFFFFC9D5)
+    val borderColor = Color(0xFFF7A8BE)
 
     Row(
         modifier = Modifier
@@ -182,7 +183,7 @@ private fun StackedAlertCard(item: AlertItem) {
             .clip(RoundedCornerShape(10.dp))
             .background(background)
             .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 16.dp),
         verticalAlignment = Alignment.Top
     ) {
         Icon(
@@ -194,7 +195,7 @@ private fun StackedAlertCard(item: AlertItem) {
             },
             contentDescription = null,
             tint = accent,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(20.dp)
         )
         Spacer(Modifier.width(10.dp))
         Column {
@@ -205,6 +206,7 @@ private fun StackedAlertCard(item: AlertItem) {
                 color = accent
             )
             if (!item.description.isNullOrBlank()) {
+                Spacer(Modifier.height(2.dp))
                 Text(
                     item.description,
                     style = MaterialTheme.typography.bodySmall,
