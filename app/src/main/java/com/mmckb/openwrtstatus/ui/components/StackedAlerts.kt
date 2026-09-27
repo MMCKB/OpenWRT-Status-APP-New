@@ -5,12 +5,10 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,10 +39,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -145,11 +143,18 @@ fun StackedAlertHost(
                 )
                 AnimatedVisibility(
                     visible = entered && !item.exiting,
-                    enter = fadeIn(tween(220)) +
-                        slideInVertically(tween(280)) { -it },
+                    enter = fadeIn(tween(200)) +
+                        scaleIn(
+                            initialScale = 0.94f,
+                            animationSpec = tween(260),
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        ),
                     exit = fadeOut(tween(240)) +
-                        slideOutVertically(tween(240)) { -it } +
-                        shrinkVertically(tween(240))
+                        scaleOut(
+                            targetScale = 0.96f,
+                            animationSpec = tween(240),
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        )
                 ) {
                     Box(Modifier.padding(top = topOffset)) {
                         StackedAlertCard(item)
@@ -162,20 +167,17 @@ fun StackedAlertHost(
 
 /**
  * 单条提示卡片（横幅版加高：16dp 垂直内边距、20dp 图标）：
- * 纯色粉红背景，类型通过图标与标题颜色表达——绿 = 成功、黄 = 警告/进行中、红 = 错误。
+ * 纯色实底三色——绿 = 成功、黄 = 警告/进行中、红 = 错误；边缘为同色系更深的描边，
+ * 图标与标题用对应的深色调，深浅色模式一致。
  */
 @Composable
 private fun StackedAlertCard(item: AlertItem) {
-    val colors = LocalAppColors.current
-    val dark = isSystemInDarkTheme()
-    val accent = when (item.type) {
-        AppAlertType.Success -> colors.success
+    val (background, borderColor, accent) = when (item.type) {
+        AppAlertType.Success -> Triple(Color(0xFFD9F2DC), Color(0xFF8CC98F), Color(0xFF1E7A34))
         AppAlertType.Warning, AppAlertType.Info ->
-            if (dark) Color(0xFFFBBF24) else Color(0xFFA16207)
-        AppAlertType.Error -> colors.error
+            Triple(Color(0xFFFCF1CC), Color(0xFFE0C46E), Color(0xFF8A6A10))
+        AppAlertType.Error -> Triple(Color(0xFFFBD9DC), Color(0xFFE28B94), Color(0xFFB02E37))
     }
-    val background = Color(0xFFFFC9D5)
-    val borderColor = Color(0xFFF7A8BE)
 
     Row(
         modifier = Modifier

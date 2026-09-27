@@ -380,6 +380,9 @@ object SshFiles {
             val err = StringBuilder()
             val chunk = ByteArray(65536)
             var lastProgressAt = 0L
+            // 无数据（无响应）超时：按「最近一次有数据进出的时间」计，长传输只要仍在
+            // 出数据就不会误杀；半死连接上循环不退出的问题由此兜底。
+            var lastDataAt = System.currentTimeMillis()
             while (true) {
                 if (cancelled()) throw SshCancelledException()
                 var progressed = false
@@ -392,15 +395,20 @@ object SshFiles {
                         lastProgressAt = now
                         runCatching { onProgress(out.size().toLong()) }
                     }
+                    lastDataAt = now
                     progressed = true
                 }
                 while (stderr.available() > 0) {
                     val count = stderr.read(chunk, 0, minOf(chunk.size, stderr.available()))
                     if (count < 0) break
                     err.append(String(chunk, 0, count, Charsets.UTF_8))
+                    lastDataAt = System.currentTimeMillis()
                     progressed = true
                 }
                 if (channel.isClosed && stdout.available() == 0 && stderr.available() == 0) break
+                if (System.currentTimeMillis() - lastDataAt > timeoutMs) {
+                    throw SshFileException("SSH ${timeoutMs / 1000} 秒无数据传输，连接可能已中断。")
+                }
                 if (!progressed) Thread.sleep(30)
             }
             stdinDone.await()
