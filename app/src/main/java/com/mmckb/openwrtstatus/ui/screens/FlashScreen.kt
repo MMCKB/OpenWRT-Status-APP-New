@@ -225,7 +225,7 @@ fun FlashScreen(
             scope.launch {
                 busy = true
                 try {
-                    val bytes = withContext(FLASH_TRANSFER_TIMEOUT_MS) {
+                    val bytes = withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
                         withContext(Dispatchers.IO) {
                             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         } ?: ByteArray(0)
@@ -263,7 +263,7 @@ fun FlashScreen(
             scope.launch {
                 busy = true
                 try {
-                    val bytes = withContext(FLASH_TRANSFER_TIMEOUT_MS) {
+                    val bytes = withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
                         withContext(Dispatchers.IO) {
                             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         } ?: ByteArray(0)

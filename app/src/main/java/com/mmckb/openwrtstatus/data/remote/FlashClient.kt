@@ -36,7 +36,15 @@ data class FirmwareCheck(
  */
 class FlashClient {
 
-    suspend fun loadInfo(config: RouterConfig, ssh: SshConfig): FlashInfo = withContext(Dispatchers.IO) {
+    /** 确认设备信息读取需要 SSH。 */
+    private fun requireSsh(ssh: SshConfig?): SshConfig =
+        ssh ?: throw RouterException(
+            "备份与更新需要 SSH 访问。",
+            "请在设备编辑页开启 SSH 后重试。"
+        )
+
+    suspend fun loadInfo(config: RouterConfig, ssh: SshConfig?): FlashInfo = withContext(Dispatchers.IO) {
+        val s = requireSsh(ssh)
         val script = listOf(
             "echo __PLAT__", "test -e /lib/upgrade/platform.sh && echo yes || echo no",
             "echo __MTD__", "cat /proc/mtd 2>/dev/null",
@@ -50,7 +58,7 @@ class FlashClient {
         val mtdBlocks = mtdRaw.lineSequence().mapNotNull { line ->
             val m = Regex("^(mtd\\d+):\\s+\\S+\\s+\"([^\"]+)\"$").find(line.trim()) ?: return@mapNotNull null
             m.groupValues[1] to m.groupValues[2]
-        }.filter { it.second != "u-boot" } ?: emptyList()
+        }.filter { it.second != "u-boot" }
         FlashInfo(
             hasPlatformScript = plat == "yes",
             hasRootfsData = mtdRaw.contains("\"rootfs_data\"") ||
@@ -60,13 +68,13 @@ class FlashClient {
     }
 
     /** 生成配置备份 tar.gz（sysupgrade -b），返回字节流供下载。 */
-    suspend fun generateBackup(config: RouterConfig, ssh: SshConfig): ByteArray =
+    suspend fun generateBackup(config: RouterConfig, ssh: SshConfig?): ByteArray =
         withContext(Dispatchers.IO) {
             val tmp = "/tmp/backup-${System.currentTimeMillis()}.tar.gz"
             SshExec.run(
                 ssh, "sysupgrade -b $tmp >/dev/null 2>&1; echo __RC__:$?", 60_000
             )
-            val data = SshFiles.download(config, tmp)
+            val data = SshFiles.download(requireSsh(ssh), tmp)
             runCatching { SshExec.run(ssh, "rm -f $tmp", 10_000) }
             if (data.size < 2 || data[0] != 0x1f.toByte() || data[1] != 0x8b.toByte()) {
                 throw RouterException("生成备份失败。", "请确认设备支持 sysupgrade 并重试。")
@@ -75,13 +83,13 @@ class FlashClient {
         }
 
     /** 出厂重置（擦除配置分区并自动重启）。 */
-    suspend fun performReset(config: RouterConfig, ssh: SshConfig) = withContext(Dispatchers.IO) {
+    suspend fun performReset(config: RouterConfig, ssh: SshConfig?) = withContext(Dispatchers.IO) {
         runCatching { SshExec.run(ssh, "firstboot -r -y", 30_000) }
         Unit
     }
 
     /** 校验已上传的备份存档可读（tar -tzf）。 */
-    suspend fun verifyRestoreArchive(config: RouterConfig, ssh: SshConfig): Boolean =
+    suspend fun verifyRestoreArchive(config: RouterConfig, ssh: SshConfig?): Boolean =
         withContext(Dispatchers.IO) {
             SshExec.run(
                 ssh,
@@ -91,7 +99,7 @@ class FlashClient {
         }
 
     /** 恢复配置并重启（sysupgrade --restore-backup + reboot）。 */
-    suspend fun restoreBackup(config: RouterConfig, ssh: SshConfig) = withContext(Dispatchers.IO) {
+    suspend fun restoreBackup(config: RouterConfig, ssh: SshConfig?) = withContext(Dispatchers.IO) {
         runCatching {
             SshExec.run(
                 ssh,
@@ -104,7 +112,7 @@ class FlashClient {
     }
 
     /** 固件校验（sysupgrade --test + md5/sha256/大小）。 */
-    suspend fun testFirmware(config: RouterConfig, ssh: SshConfig): FirmwareCheck =
+    suspend fun testFirmware(config: RouterConfig, ssh: SshConfig?): FirmwareCheck =
         withContext(Dispatchers.IO) {
             val script = listOf(
                 "echo __V__",
@@ -153,13 +161,13 @@ class FlashClient {
     }
 
     /** 读取 /etc/sysupgrade.conf（自定义备份 glob 列表）。 */
-    suspend fun readSysupgradeConf(config: RouterConfig, ssh: SshConfig): String =
+    suspend fun readSysupgradeConf(config: RouterConfig, ssh: SshConfig?): String =
         withContext(Dispatchers.IO) {
             runCatching { SshFiles.readText(ssh, "/etc/sysupgrade.conf") }.getOrDefault("")
         }
 
     /** 写回 /etc/sysupgrade.conf。 */
-    suspend fun writeSysupgradeConf(config: RouterConfig, ssh: SshConfig, content: String) =
+    suspend fun writeSysupgradeConf(config: RouterConfig, ssh: SshConfig?, content: String) =
         withContext(Dispatchers.IO) {
             SshFiles.upload(ssh, "/etc/sysupgrade.conf", content.toByteArray(Charsets.UTF_8))
             SshExec.run(ssh, "chmod 644 /etc/sysupgrade.conf; echo __OK__", 10_000)
