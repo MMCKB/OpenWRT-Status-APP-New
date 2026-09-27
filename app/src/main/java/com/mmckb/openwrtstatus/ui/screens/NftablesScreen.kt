@@ -528,7 +528,7 @@ private fun IptablesOverview(
             )
         } else {
             LazyColumn(
-                state = iptListState,
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
