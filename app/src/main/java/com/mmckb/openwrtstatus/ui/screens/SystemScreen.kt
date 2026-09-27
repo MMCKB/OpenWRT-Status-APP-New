@@ -21,8 +21,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -377,21 +377,21 @@ fun SystemScreen(
                                     modifier = Modifier.weight(1f)
                                 ) { Text("与 NTP 同步") }
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = hostname,
                                 onValueChange = { hostname = it },
                                 singleLine = true,
                                 label = { Text("主机名") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = description,
                                 onValueChange = { description = it },
                                 singleLine = true,
                                 label = { Text("描述（可选）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = notes,
                                 onValueChange = { notes = it },
                                 label = { Text("备注（可选）") },
@@ -430,21 +430,21 @@ fun SystemScreen(
                             }
                         }
                         "logging" -> {
-                            OutlinedTextField(
+                            AppTextField(
                                 value = logSize,
                                 onValueChange = { logSize = it },
                                 singleLine = true,
                                 label = { Text("系统日志缓冲区大小（kiB，默认 128）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = logIp,
                                 onValueChange = { logIp = it },
                                 singleLine = true,
                                 label = { Text("外部系统日志服务器") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = logPort,
                                 onValueChange = { logPort = it },
                                 singleLine = true,
@@ -461,7 +461,7 @@ fun SystemScreen(
                                     logProto
                                 ) { v -> logProto = v }
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = logFile,
                                 onValueChange = { logFile = it },
                                 singleLine = true,
@@ -505,14 +505,14 @@ fun SystemScreen(
                             if (ntpEnabled) {
                                 SysSettingRow("提供 NTP 服务器", ntpProvide) { ntpProvide = it }
                                 SysSettingRow("使用 DHCP 通告的服务器", ntpUseDhcp) { ntpUseDhcp = it }
-                                OutlinedTextField(
+                                AppTextField(
                                     value = ntpInterface,
                                     onValueChange = { ntpInterface = it },
                                     singleLine = true,
                                     label = { Text("绑定 NTP 服务器到接口（可选）") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = ntpServers,
                                     onValueChange = { ntpServers = it },
                                     label = { Text("NTP 服务器候选（每行一个）") },
@@ -521,7 +521,7 @@ fun SystemScreen(
                             }
                         }
                         "zram" -> {
-                            OutlinedTextField(
+                            AppTextField(
                                 value = zramSize,
                                 onValueChange = { zramSize = it },
                                 singleLine = true,
@@ -598,7 +598,7 @@ fun SystemScreen(
                 ) {
                     Column(modifier = Modifier.heightIn(max = 430.dp)) {
                         if (sel.searchable) {
-                            OutlinedTextField(
+                            AppTextField(
                                 value = query,
                                 onValueChange = { query = it },
                                 singleLine = true,

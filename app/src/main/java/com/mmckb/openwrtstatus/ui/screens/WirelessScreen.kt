@@ -49,7 +49,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -91,6 +90,7 @@ import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.OptionSwitcherEasing
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
@@ -1426,35 +1426,35 @@ fun WirelessScreen(
                                     radioCellDensity
                                 ) { v -> radioCellDensity = v }
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = radioDistance,
                                 onValueChange = { radioDistance = it },
                                 singleLine = true,
                                 label = { Text("距离优化（米，留空=auto）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = radioFrag,
                                 onValueChange = { radioFrag = it },
                                 singleLine = true,
                                 label = { Text("分片阈值（留空=关闭）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = radioRts,
                                 onValueChange = { radioRts = it },
                                 singleLine = true,
                                 label = { Text("RTS/CTS 阈值（留空=关闭）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = radioBeaconInt,
                                 onValueChange = { radioBeaconInt = it },
                                 singleLine = true,
                                 label = { Text("信标间隔（默认 100）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = radioDtimPeriod,
                                 onValueChange = { radioDtimPeriod = it },
                                 singleLine = true,
@@ -1489,7 +1489,7 @@ fun WirelessScreen(
                                 }
                             }
                             if (ifaceEncryption in PSK_ENCRYPTIONS) {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = ifaceKey,
                                     onValueChange = {
                                         ifaceKey = it
@@ -1523,14 +1523,14 @@ fun WirelessScreen(
                                 ) { v -> dlgPmf = v }
                             }
                             if (dlgPmf == "1" || dlgPmf == "2") {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgPmfMaxTimeout,
                                     onValueChange = { dlgPmfMaxTimeout = it },
                                     singleLine = true,
                                     label = { Text("802.11w 最大超时（默认 1000）") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgPmfRetryTimeout,
                                     onValueChange = { dlgPmfRetryTimeout = it },
                                     singleLine = true,
@@ -1541,21 +1541,21 @@ fun WirelessScreen(
                             SettingRow("KRACK 对策（禁用 EAPOL 密钥重传）", dlgKrack) { dlgKrack = it }
                             SettingRow("WPS 按钮模式", dlgWps) { dlgWps = it }
                             if (ifaceEncryption in EAP_ENCRYPTIONS) {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgAuthServer,
                                     onValueChange = { dlgAuthServer = it },
                                     singleLine = true,
                                     label = { Text("RADIUS 认证服务器") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgAuthPort,
                                     onValueChange = { dlgAuthPort = it },
                                     singleLine = true,
                                     label = { Text("RADIUS 认证端口") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgAuthSecret,
                                     onValueChange = { dlgAuthSecret = it },
                                     singleLine = true,
@@ -1589,7 +1589,7 @@ fun WirelessScreen(
                                 ) { v -> ifaceMacfilter = v }
                             }
                             if (ifaceMacfilter == "allow" || ifaceMacfilter == "deny") {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = ifaceMaclist,
                                     onValueChange = { ifaceMaclist = it },
                                     label = { Text("MAC 列表（每行一个）") },
@@ -1600,21 +1600,21 @@ fun WirelessScreen(
                         ifaceTab == "roaming" -> {
                             SettingRow("802.11r 快速切换", dlgIeee80211r) { dlgIeee80211r = it }
                             if (dlgIeee80211r) {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgNasid,
                                     onValueChange = { dlgNasid = it },
                                     singleLine = true,
                                     label = { Text("NAS ID") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgMobilityDomain,
                                     onValueChange = { dlgMobilityDomain = it },
                                     singleLine = true,
                                     label = { Text("移动域（4 位十六进制）") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgReassocDeadline,
                                     onValueChange = { dlgReassocDeadline = it },
                                     singleLine = true,
@@ -1636,14 +1636,14 @@ fun WirelessScreen(
                                     ) { v -> dlgFtOverDs = v }
                                 }
                                 SettingRow("本地生成 PMK", dlgFtPskLocal) { dlgFtPskLocal = it }
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgR0Lifetime,
                                     onValueChange = { dlgR0Lifetime = it },
                                     singleLine = true,
                                     label = { Text("R0 密钥生命周期（分钟，默认 10000）") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgR1KeyHolder,
                                     onValueChange = { dlgR1KeyHolder = it },
                                     singleLine = true,
@@ -1651,13 +1651,13 @@ fun WirelessScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 SettingRow("PMK R1 推送", dlgPmkR1Push) { dlgPmkR1Push = it }
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgR0kh,
                                     onValueChange = { dlgR0kh = it },
                                     label = { Text("外部 R0KH 列表（每行：MAC,NAS-ID,密钥）") },
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgR1kh,
                                     onValueChange = { dlgR1kh = it },
                                     label = { Text("外部 R1KH 列表（每行：MAC,R1KH-ID,密钥）") },
@@ -1679,7 +1679,7 @@ fun WirelessScreen(
                                     dlgTimeAdv
                                 ) { v -> dlgTimeAdv = v }
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = dlgTimeZone,
                                 onValueChange = { dlgTimeZone = it },
                                 singleLine = true,
@@ -1695,14 +1695,14 @@ fun WirelessScreen(
                             SettingRow("隔离客户端", ifaceIsolate) { ifaceIsolate = it }
                             SettingRow("多播转单播", dlgMulticastToUnicast) { dlgMulticastToUnicast = it }
                             SettingRow("隔离网桥端口", dlgBridgeIsolate) { dlgBridgeIsolate = it }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = dlgIfname,
                                 onValueChange = { dlgIfname = it },
                                 singleLine = true,
                                 label = { Text("接口名（覆盖默认名）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = dlgMacaddr,
                                 onValueChange = { dlgMacaddr = it },
                                 singleLine = true,
@@ -1710,7 +1710,7 @@ fun WirelessScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             SettingRow("短前导码", ifaceShortPreamble) { ifaceShortPreamble = it }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = dlgGroupRekey,
                                 onValueChange = { dlgGroupRekey = it },
                                 singleLine = true,
@@ -1718,14 +1718,14 @@ fun WirelessScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             SettingRow("禁用不活动轮询", dlgSkipInactivity) { dlgSkipInactivity = it }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = dlgMaxInactivity,
                                 onValueChange = { dlgMaxInactivity = it },
                                 singleLine = true,
                                 label = { Text("站点不活动限制（秒，默认 300）") },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
+                            AppTextField(
                                 value = dlgMaxListenInterval,
                                 onValueChange = { dlgMaxListenInterval = it },
                                 singleLine = true,
@@ -1741,7 +1741,7 @@ fun WirelessScreen(
                                 ) { v -> ifaceMode = v }
                             }
                             if (dlgRealMode() == "mesh") {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgMeshId,
                                     onValueChange = { dlgMeshId = it },
                                     singleLine = true,
@@ -1749,7 +1749,7 @@ fun WirelessScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 SettingRow("转发 Mesh 对端流量", dlgMeshFwding) { dlgMeshFwding = it }
-                                OutlinedTextField(
+                                AppTextField(
                                     value = dlgMeshRssi,
                                     onValueChange = { dlgMeshRssi = it },
                                     singleLine = true,
@@ -1757,7 +1757,7 @@ fun WirelessScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             } else {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = ifaceSsid,
                                     onValueChange = { ifaceSsid = it },
                                     singleLine = true,
@@ -1767,7 +1767,7 @@ fun WirelessScreen(
                             }
                             // LuCI 中 BSSID 仅在 Client/Ad-Hoc 模式下出现。
                             if (dlgRealMode() == "sta" || dlgRealMode() == "adhoc") {
-                                OutlinedTextField(
+                                AppTextField(
                                     value = ifaceBssid,
                                     onValueChange = { ifaceBssid = it },
                                     singleLine = true,

@@ -103,6 +103,7 @@ import com.mmckb.openwrtstatus.data.ssh.SshCancelledException
 import com.mmckb.openwrtstatus.data.ssh.SshFileException
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
@@ -1527,7 +1528,7 @@ fun FileManagerScreen(
             },
             onDismiss = { newFolderDialog = false }
         ) {
-            OutlinedTextField(
+            AppTextField(
                 value = folderText,
                 onValueChange = { folderText = it },
                 singleLine = true,

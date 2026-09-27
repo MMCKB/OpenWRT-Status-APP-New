@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
@@ -110,15 +110,14 @@ fun TerminalScreen(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // 输入框与发送按钮同高同圆角。
-            OutlinedTextField(
+            // 输入框与发送按钮同高；圆角统一为卡片圆角。
+            AppTextField(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier
                     .weight(1f)
                     .height(52.dp),
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
                 placeholder = {
                     Text("输入命令后回车", style = MaterialTheme.typography.bodySmall)
                 },

@@ -30,7 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,6 +61,7 @@ import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
@@ -436,7 +436,7 @@ fun AdminScreen(
                     when (tab) {
                         "password" -> {
                             AdmDescText("更改访问设备的管理员密码")
-                            OutlinedTextField(
+                            AppTextField(
                                 value = pw1,
                                 onValueChange = { pw1 = it },
                                 singleLine = true,
@@ -471,7 +471,7 @@ fun AdminScreen(
                                     color = strengthColor
                                 )
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = pw2,
                                 onValueChange = { pw2 = it },
                                 singleLine = true,
@@ -586,7 +586,7 @@ fun AdminScreen(
                                     )
                                 }
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = sshKeyInput,
                                 onValueChange = { sshKeyInput = it },
                                 label = { Text("粘贴或拖动 SSH 密钥文件…") },
@@ -627,7 +627,7 @@ fun AdminScreen(
                                     onDelete = { confirmRepoKey = key }
                                 )
                             }
-                            OutlinedTextField(
+                            AppTextField(
                                 value = repoInput,
                                 onValueChange = { repoInput = it },
                                 label = { Text("粘贴或拖动软件包仓库公钥") },
@@ -843,7 +843,7 @@ private fun DropbearInstanceCard(
                 }
             }
         }
-        OutlinedTextField(
+        AppTextField(
             value = inst.port,
             onValueChange = { v -> onChange { it.copy(port = v.filter { c -> c.isDigit() }.take(5)) } },
             singleLine = true,

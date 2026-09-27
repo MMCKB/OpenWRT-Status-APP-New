@@ -21,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
@@ -99,7 +99,7 @@ fun DeviceEditScreen(
         AppCard {
             CardSectionTitle("路由器配置")
             Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = name,
                 onValueChange = {
                     name = it
@@ -115,7 +115,7 @@ fun DeviceEditScreen(
                 Text(nameError!!, style = MaterialTheme.typography.bodySmall, color = colors.error)
             }
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = ip,
                 onValueChange = { ip = it },
                 label = { Text("路由器地址（IP 或域名）") },
@@ -123,7 +123,7 @@ fun DeviceEditScreen(
                 singleLine = true
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = port,
                 onValueChange = { port = it.filter { c -> c.isDigit() } },
                 label = { Text("端口（LuCI 管理页面端口）") },
@@ -132,7 +132,7 @@ fun DeviceEditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = username,
                 onValueChange = { username = it },
                 label = { Text("用户名") },
@@ -140,7 +140,7 @@ fun DeviceEditScreen(
                 singleLine = true
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("密码") },
@@ -165,7 +165,7 @@ fun DeviceEditScreen(
             SwitchRow("使用 HTTPS", useHttps) { useHttps = it }
             SwitchRow("忽略证书校验（自签名证书）", allowInsecureTls) { allowInsecureTls = it }
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = sshPort,
                 onValueChange = { sshPort = it.filter { c -> c.isDigit() } },
                 label = { Text("SSH 端口") },
@@ -174,7 +174,7 @@ fun DeviceEditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = sshPassword,
                 onValueChange = { sshPassword = it },
                 label = { Text("SSH 密码（留空则使用路由器密码）") },
