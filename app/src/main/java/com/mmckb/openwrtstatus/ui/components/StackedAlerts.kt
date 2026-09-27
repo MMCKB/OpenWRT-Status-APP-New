@@ -48,6 +48,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
+private val LAYER_PEEK = 12.dp
+
 /** 提示类型：成功（绿）/ 警告与进行中（黄）/ 错误（红）。 */
 enum class AppAlertType { Info, Success, Warning, Error }
 
@@ -100,9 +103,6 @@ class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
     companion object {
         /** 栈内最多 3 层。 */
         const val MAX_LAYERS = 3
-
-        /** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
-        val LAYER_PEEK: Dp = 12.dp
 
         /** 消失链各步停留：第 3 层 → 第 2 层 → 第 1 层，逐层加快。 */
         val DISMISS_STEPS = longArrayOf(2500L, 1600L, 1000L)
