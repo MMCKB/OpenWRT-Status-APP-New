@@ -51,6 +51,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
+private val LAYER_PEEK = 12.dp
+
 /** 提示类型：成功（绿）/ 警告与进行中（黄）/ 错误（红）。 */
 enum class AppAlertType { Info, Success, Warning, Error }
 
