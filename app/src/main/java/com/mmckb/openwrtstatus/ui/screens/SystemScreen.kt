@@ -52,8 +52,20 @@ import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+
+/** 应用类操作（uci apply + 确认窗口）的总时长上限。 */
+private const val SYS_APPLY_TIMEOUT_MS = 100_000L
+/** 读取/同步类操作的总时长上限。 */
+private const val SYS_OP_TIMEOUT_MS = 30_000L
+
+/** 统一的失败文案：超时（连接中断/无响应）给出可操作的提示，其余透出原始信息。 */
+private fun sysErrText(e: Exception): String =
+    if (e is TimeoutCancellationException) "路由器连接中断或长时间无响应，请检查网络后重试。"
+    else e.message ?: "请稍后重试。"
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -167,17 +179,23 @@ fun SystemScreen(
         scope.launch {
             loading = true
             try {
-                val d = withContext(Dispatchers.IO) { client.load(config) }
+                val d = withTimeout(SYS_OP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.load(config) }
+                }
                 if (d == null) {
                     setMsg("读取系统配置失败。", true)
                 } else {
                     data = d
                     fill(d)
-                    zones = withContext(Dispatchers.IO) { client.timezones(config) }
-                    routerTime = withContext(Dispatchers.IO) { client.unixtime(config) }
+                    zones = withTimeout(SYS_OP_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) { client.timezones(config) }
+                    }
+                    routerTime = withTimeout(SYS_OP_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) { client.unixtime(config) }
+                    }
                 }
             } catch (e: Exception) {
-                setMsg(e.message ?: "读取失败。", true)
+                setMsg(sysErrText(e), true)
             } finally {
                 loading = false
             }
@@ -260,15 +278,17 @@ fun SystemScreen(
         scope.launch {
             busy = true
             try {
-                withContext(Dispatchers.IO) {
-                    client.apply(config, changes, if (sshEnabled) ssh else null) { phase ->
-                        setAlert(AppAlertType.Info, phase)
+                withTimeout(SYS_APPLY_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) {
+                        client.apply(config, changes, if (sshEnabled) ssh else null) { phase ->
+                            setAlert(AppAlertType.Info, phase)
+                        }
                     }
                 }
                 setMsg("已保存并应用。", false)
                 load()
             } catch (e: Exception) {
-                setMsg(e.message ?: "保存失败。", true)
+                setMsg(sysErrText(e), true)
             } finally {
                 busy = false
             }
@@ -356,13 +376,15 @@ fun SystemScreen(
                                         scope.launch {
                                             busy = true
                                             try {
-                                                withContext(Dispatchers.IO) {
-                                                    client.setLocaltime(config, System.currentTimeMillis() / 1000)
+                                                withTimeout(SYS_OP_TIMEOUT_MS) {
+                                                    withContext(Dispatchers.IO) {
+                                                        client.setLocaltime(config, System.currentTimeMillis() / 1000)
+                                                    }
+                                                    routerTime = withContext(Dispatchers.IO) { client.unixtime(config) }
                                                 }
-                                                routerTime = withContext(Dispatchers.IO) { client.unixtime(config) }
                                                 setMsg("已将路由器时钟同步为手机时间。", false)
                                             } catch (e: Exception) {
-                                                setMsg(e.message ?: "同步失败。", true)
+                                                setMsg(sysErrText(e), true)
                                             } finally {
                                                 busy = false
                                             }
@@ -376,14 +398,16 @@ fun SystemScreen(
                                         scope.launch {
                                             busy = true
                                             try {
-                                                withContext(Dispatchers.IO) {
-                                                    com.mmckb.openwrtstatus.data.ssh.SshExec.run(
-                                                        ssh, "/etc/init.d/sysntpd restart >/dev/null 2>&1; echo __OK__", 20_000
-                                                    )
+                                                withTimeout(SYS_OP_TIMEOUT_MS) {
+                                                    withContext(Dispatchers.IO) {
+                                                        com.mmckb.openwrtstatus.data.ssh.SshExec.run(
+                                                            ssh, "/etc/init.d/sysntpd restart >/dev/null 2>&1; echo __OK__", 20_000
+                                                        )
+                                                    }
                                                 }
                                                 setMsg("已通过 NTP 重新校时。", false)
                                             } catch (e: Exception) {
-                                                setMsg(e.message ?: "NTP 校时失败（需要 SSH）。", true)
+                                                setMsg(sysErrText(e), true)
                                             } finally {
                                                 busy = false
                                             }

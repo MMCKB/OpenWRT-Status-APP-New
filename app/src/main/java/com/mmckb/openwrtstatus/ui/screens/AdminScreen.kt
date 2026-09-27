@@ -67,8 +67,22 @@ import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+
+/** 应用类操作（uci apply + 确认窗口）的总时长上限。 */
+private const val ADMIN_APPLY_TIMEOUT_MS = 100_000L
+/** 普通操作（读写密钥、公钥文件等）的总时长上限。 */
+private const val ADMIN_OP_TIMEOUT_MS = 45_000L
+/** 读取类操作的总时长上限。 */
+private const val ADMIN_LOAD_TIMEOUT_MS = 30_000L
+
+/** 统一的失败文案：超时（连接中断/无响应）给出可操作的提示，其余透出原始信息。 */
+private fun adminErrText(e: Exception): String =
+    if (e is TimeoutCancellationException) "路由器连接中断或长时间无响应，请检查网络后重试。"
+    else e.message ?: "请稍后重试。"
 
 /** 接口选择弹窗状态（Dropbear 绑定接口用）。 */
 private data class AdmSelectState(
@@ -150,25 +164,35 @@ fun AdminScreen(
             loading = true
             var hadError: String? = null
             try {
-                val d = withContext(Dispatchers.IO) { client.loadDropbear(config) }
+                val d = withTimeout(ADMIN_LOAD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.loadDropbear(config) }
+                }
                 instances = d
                 deletedSections = emptyList()
-                networks = withContext(Dispatchers.IO) { client.listNetworks(config) }
+                networks = withTimeout(ADMIN_LOAD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.listNetworks(config) }
+                }
             } catch (e: Exception) {
-                hadError = e.message ?: "读取 SSH 配置失败。"
+                hadError = adminErrText(e)
             }
             try {
-                sshKeyLines = withContext(Dispatchers.IO) { client.loadAuthorizedKeys(config, sshOrNull) }
+                sshKeyLines = withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.loadAuthorizedKeys(config, sshOrNull) }
+                }
             } catch (e: Exception) {
-                hadError = hadError ?: (e.message ?: "读取 SSH 公钥失败。")
+                hadError = hadError ?: adminErrText(e)
             }
             try {
-                httpRedirect = withContext(Dispatchers.IO) { client.loadHttpRedirect(config) }
+                httpRedirect = withTimeout(ADMIN_LOAD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.loadHttpRedirect(config) }
+                }
             } catch (e: Exception) {
-                hadError = hadError ?: (e.message ?: "读取 HTTP 配置失败。")
+                hadError = hadError ?: adminErrText(e)
             }
             try {
-                val loaded = withContext(Dispatchers.IO) { client.loadRepoKeys(config, sshOrNull) }
+                val loaded = withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.loadRepoKeys(config, sshOrNull) }
+                }
                 if (loaded != null) {
                     repoDir = loaded.first
                     repoKeys = loaded.second
@@ -176,7 +200,7 @@ fun AdminScreen(
                     hadError = hadError ?: "无法读取仓库公钥（需要开启 SSH）。"
                 }
             } catch (e: Exception) {
-                hadError = hadError ?: (e.message ?: "读取仓库公钥失败。")
+                hadError = hadError ?: adminErrText(e)
             }
             if (hadError != null) setAlert(AppAlertType.Error, "部分内容读取失败", hadError)
             loading = false
@@ -193,10 +217,12 @@ fun AdminScreen(
         scope.launch {
             busy = true
             try {
-                withContext(Dispatchers.IO) {
-                    client.applyDropbear(
-                        config, instances, deletedSections.toList(), sshOrNull
-                    ) { phase -> setAlert(AppAlertType.Info, phase) }
+                withTimeout(ADMIN_APPLY_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) {
+                        client.applyDropbear(
+                            config, instances, deletedSections.toList(), sshOrNull
+                        ) { phase -> setAlert(AppAlertType.Info, phase) }
+                    }
                 }
                 setAlert(AppAlertType.Success, "已保存并应用")
                 load()
@@ -204,10 +230,10 @@ fun AdminScreen(
                 setAlert(
                     AppAlertType.Error, "保存失败",
                     if (e.ubusCode == 6) "本固件限制了无 SSH 的配置修改，请先在设备编辑页开启 SSH。"
-                    else e.message ?: "请稍后重试。"
+                    else adminErrText(e)
                 )
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "保存失败", e.message ?: "请稍后重试。")
+                setAlert(AppAlertType.Error, "保存失败", adminErrText(e))
             } finally {
                 busy = false
             }
@@ -221,7 +247,9 @@ fun AdminScreen(
             else -> scope.launch {
                 busy = true
                 try {
-                    val ok = withContext(Dispatchers.IO) { client.changePassword(config, "root", pw1) }
+                    val ok = withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) { client.changePassword(config, "root", pw1) }
+                    }
                     if (ok) {
                         setAlert(AppAlertType.Success, "系统密码已成功修改")
                         pw1 = ""
@@ -233,7 +261,7 @@ fun AdminScreen(
                         )
                     }
                 } catch (e: Exception) {
-                    setAlert(AppAlertType.Error, "修改系统密码失败", e.message)
+                    setAlert(AppAlertType.Error, "修改系统密码失败", adminErrText(e))
                 } finally {
                     busy = false
                 }
@@ -245,9 +273,11 @@ fun AdminScreen(
         scope.launch {
             busy = true
             try {
-                withContext(Dispatchers.IO) {
-                    client.applyHttpRedirect(config, httpRedirect, sshOrNull) { phase ->
-                        setAlert(AppAlertType.Info, phase)
+                withTimeout(ADMIN_APPLY_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) {
+                        client.applyHttpRedirect(config, httpRedirect, sshOrNull) { phase ->
+                            setAlert(AppAlertType.Info, phase)
+                        }
                     }
                 }
                 setAlert(AppAlertType.Success, "已保存并应用")
@@ -255,10 +285,10 @@ fun AdminScreen(
                 setAlert(
                     AppAlertType.Error, "保存失败",
                     if (e.ubusCode == 6) "本固件限制了无 SSH 的配置修改，请先在设备编辑页开启 SSH。"
-                    else e.message ?: "请稍后重试。"
+                    else adminErrText(e)
                 )
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "保存失败", e.message ?: "请稍后重试。")
+                setAlert(AppAlertType.Error, "保存失败", adminErrText(e))
             } finally {
                 busy = false
             }
@@ -276,12 +306,14 @@ fun AdminScreen(
                 busy = true
                 try {
                     val newKeys = sshKeyLines + key
-                    withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
+                    withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
+                    }
                     sshKeyLines = newKeys
                     sshKeyInput = ""
                     setAlert(AppAlertType.Success, "密钥已添加")
                 } catch (e: Exception) {
-                    setAlert(AppAlertType.Error, "添加密钥失败", e.message)
+                    setAlert(AppAlertType.Error, "添加密钥失败", adminErrText(e))
                 } finally {
                     busy = false
                 }
@@ -294,11 +326,13 @@ fun AdminScreen(
             busy = true
             try {
                 val newKeys = sshKeyLines.filter { it != key.source }
-                withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
+                withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
+                }
                 sshKeyLines = newKeys
                 setAlert(AppAlertType.Success, "密钥已删除")
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "删除密钥失败", e.message)
+                setAlert(AppAlertType.Error, "删除密钥失败", adminErrText(e))
             } finally {
                 busy = false
             }
@@ -326,14 +360,16 @@ fun AdminScreen(
                     setAlert(AppAlertType.Warning, "该仓库公钥已存在。")
                     return@launch
                 }
-                val filename = withContext(Dispatchers.IO) {
-                    client.addRepoKey(config, repoDir, content, baseName, sshOrNull)
+                val filename = withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) {
+                        client.addRepoKey(config, repoDir, content, baseName, sshOrNull)
+                    }
                 }
                 repoKeys = repoKeys + RepoPublicKey(filename, content, AdminClient.isProtectedRepoKey(filename))
                 repoInput = ""
                 setAlert(AppAlertType.Success, "公钥已添加", filename)
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "添加公钥失败", e.message)
+                setAlert(AppAlertType.Error, "添加公钥失败", adminErrText(e))
             } finally {
                 busy = false
             }
@@ -347,10 +383,12 @@ fun AdminScreen(
             scope.launch {
                 busy = true
                 try {
-                    val (content, name) = withContext(Dispatchers.IO) { client.fetchKeyFromUrl(raw) }
+                    val (content, name) = withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) { client.fetchKeyFromUrl(raw) }
+                    }
                     addRepoKeyContent(content, name)
                 } catch (e: Exception) {
-                    setAlert(AppAlertType.Error, "拉取公钥失败", e.message)
+                    setAlert(AppAlertType.Error, "拉取公钥失败", adminErrText(e))
                     busy = false
                 }
             }
@@ -363,11 +401,13 @@ fun AdminScreen(
         scope.launch {
             busy = true
             try {
-                withContext(Dispatchers.IO) { client.deleteRepoKey(config, repoDir, key.filename, sshOrNull) }
+                withTimeout(ADMIN_OP_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.deleteRepoKey(config, repoDir, key.filename, sshOrNull) }
+                }
                 repoKeys = repoKeys.filterNot { it.filename == key.filename }
                 setAlert(AppAlertType.Success, "公钥已删除")
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "删除公钥失败", e.message)
+                setAlert(AppAlertType.Error, "删除公钥失败", adminErrText(e))
             } finally {
                 busy = false
             }
