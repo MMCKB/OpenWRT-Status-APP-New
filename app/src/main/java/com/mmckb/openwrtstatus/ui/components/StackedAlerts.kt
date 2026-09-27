@@ -1,8 +1,8 @@
 package com.mmckb.openwrtstatus.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
@@ -11,7 +11,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Job
@@ -100,6 +101,9 @@ class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
         /** 栈内最多 3 层。 */
         const val MAX_LAYERS = 3
 
+        /** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
+        val LAYER_PEEK: Dp = 12.dp
+
         /** 消失链各步停留：第 3 层 → 第 2 层 → 第 1 层，逐层加快。 */
         val DISMISS_STEPS = longArrayOf(2500L, 1600L, 1000L)
 
@@ -115,7 +119,9 @@ fun rememberAlertStackState(): AlertStackState {
 }
 
 /**
- * 悬浮提示栈：从第 3 层（最新）到第 1 层连续消失，进入/堆叠/退出均有动画。
+ * 悬浮提示栈：三条提示像一叠卡片堆在同一位置——最新（第 3 层）完整盖在最上面，
+ * 旧卡片向下错开露出一条边缘；消失从第 3 层到第 1 层连续加速，
+ * 上层收起时下层平滑上移补位。进入/堆叠/退出均有动画。
  * 宿主不拦截触摸（卡片本身无点击处理，触摸穿透到下层内容）。
  */
 @Composable
@@ -123,24 +129,30 @@ fun StackedAlertHost(
     state: AlertStackState,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        state.items.forEach { item ->
+    Box(modifier = modifier) {
+        // 从最旧到最新绘制，最新的一张盖在最上层（第 3 层）
+        state.items.asReversed().forEachIndexed { revIndex, item ->
+            val layer = state.items.lastIndex - revIndex // 最新 = 0（最上层）
             key(item.id) {
                 var entered by remember(item.id) { mutableStateOf(false) }
                 LaunchedEffect(item.id) { entered = true }
+                // 每层向下错开 [LAYER_PEEK] 露边；层级变化（上层消失）时平滑上移补位
+                val topOffset by animateDpAsState(
+                    targetValue = LAYER_PEEK * layer,
+                    animationSpec = tween(260),
+                    label = "alertLayerOffset"
+                )
                 AnimatedVisibility(
                     visible = entered && !item.exiting,
                     enter = fadeIn(tween(220)) +
-                        slideInVertically(tween(280)) { -it } +
-                        expandVertically(tween(280)),
+                        slideInVertically(tween(280)) { -it },
                     exit = fadeOut(tween(240)) +
                         slideOutVertically(tween(240)) { -it } +
                         shrinkVertically(tween(240))
                 ) {
-                    StackedAlertCard(item)
+                    Box(Modifier.padding(top = topOffset)) {
+                        StackedAlertCard(item)
+                    }
                 }
             }
         }
