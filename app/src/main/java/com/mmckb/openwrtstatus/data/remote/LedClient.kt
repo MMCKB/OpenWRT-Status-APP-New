@@ -205,7 +205,8 @@ class LedClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                     append(ledSetScript(act))
                 }
                 append("uci commit system; ")
-                append("/etc/init.d/system reload >/dev/null 2>&1; ")
+                // LED 配置由 /etc/init.d/led 应用（load_led 写 sysfs），system reload 不管 LED
+                append("/etc/init.d/led start >/dev/null 2>&1; ")
                 append("echo __LED_APPLY_OK__")
             }
             val ok = runCatching {
