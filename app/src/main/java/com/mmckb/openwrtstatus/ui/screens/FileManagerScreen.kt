@@ -1496,7 +1496,7 @@ fun FileManagerScreen(
             },
             onDismiss = { renameTarget = null }
         ) {
-            OutlinedTextField(
+            AppTextField(
                 value = renameText,
                 onValueChange = { renameText = it },
                 singleLine = true,
@@ -1594,7 +1594,7 @@ fun FileManagerScreen(
                     color = colors.onSurfaceVariant
                 )
             }
-            OutlinedTextField(
+            AppTextField(
                 value = permsText,
                 onValueChange = { permsText = it.filter { c -> c.isDigit() }.take(4) },
                 singleLine = true,
@@ -1603,7 +1603,7 @@ fun FileManagerScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = ownerText,
                 onValueChange = { ownerText = it },
                 singleLine = true,
@@ -1645,7 +1645,7 @@ fun FileManagerScreen(
             },
             onDismiss = { mtimeTarget = null }
         ) {
-            OutlinedTextField(
+            AppTextField(
                 value = mtimeText,
                 onValueChange = {
                     mtimeText = it
