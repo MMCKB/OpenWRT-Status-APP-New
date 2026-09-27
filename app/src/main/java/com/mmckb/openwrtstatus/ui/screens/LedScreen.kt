@@ -434,6 +434,46 @@ private fun AdmDescText(text: String) {
     )
 }
 
+@Composable
+private fun LedSettingRow(
+    label: String,
+    description: String? = null,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onChanged: (Boolean) -> Unit
+) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            AppSwitch(
+                checked = checked,
+                onCheckedChange = if (enabled) onChanged else null,
+                modifier = Modifier.scale(0.75f)
+            )
+        }
+        if (!description.isNullOrBlank()) {
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant
+            )
+        }
+    }
+}
+
 /** 单个 LED 动作卡片：选项与 LuCI leds.js + led-trigger 插件一一对应。 */
 @Composable
 private fun LedActionCard(
