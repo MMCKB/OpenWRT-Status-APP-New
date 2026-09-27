@@ -6,11 +6,13 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.Properties
 import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
+import kotlin.coroutines.coroutineContext
 
 /** Raised when the user cancels a transfer; the UI shows it as info, not an error. */
 class SshCancelledException(message: String = "传输已取消") : Exception(message)
@@ -406,6 +408,10 @@ object SshFiles {
                     progressed = true
                 }
                 if (channel.isClosed && stdout.available() == 0 && stderr.available() == 0) break
+                // 连接断开/操作被取消时立即终止轮询，让按钮立刻恢复
+                if (!coroutineContext.isActive) {
+                    throw SshCancelledException("连接已断开，操作已终止。")
+                }
                 if (System.currentTimeMillis() - lastDataAt > timeoutMs) {
                     throw SshFileException("SSH ${timeoutMs / 1000} 秒无数据传输，连接可能已中断。")
                 }

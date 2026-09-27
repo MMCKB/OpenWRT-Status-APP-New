@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,7 +68,9 @@ import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,9 +84,11 @@ private const val ADMIN_OP_TIMEOUT_MS = 45_000L
 private const val ADMIN_LOAD_TIMEOUT_MS = 30_000L
 
 /** 统一的失败文案：超时（连接中断/无响应）给出可操作的提示，其余透出原始信息。 */
-private fun adminErrText(e: Exception): String =
-    if (e is TimeoutCancellationException) "路由器连接中断或长时间无响应，请检查网络后重试。"
-    else e.message ?: "请稍后重试。"
+private fun adminErrText(e: Exception): String = when {
+    e is TimeoutCancellationException -> "路由器连接中断或长时间无响应，请检查网络后重试。"
+    e is CancellationException -> "连接已断开，操作已终止。"
+    else -> e.message ?: "请稍后重试。"
+}
 
 /** 接口选择弹窗状态（Dropbear 绑定接口用）。 */
 private data class AdmSelectState(
@@ -140,6 +145,14 @@ fun AdminScreen(
         return true
     }
 
+    // 跟踪进行中的操作；路由器断开连接时立即取消，按钮即刻恢复并弹红色提示
+    var opJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(Unit) {
+        ConnectionMonitor.status.collect { status ->
+            if (status == ConnectionMonitor.Status.Offline) opJob?.cancel()
+        }
+    }
+
     // --- 路由器密码 ---
     var pw1 by remember { mutableStateOf("") }
     var pw2 by remember { mutableStateOf("") }
@@ -170,7 +183,7 @@ fun AdminScreen(
     var confirmInstanceIndex by remember { mutableStateOf<Int?>(null) }
 
     fun load() {
-        scope.launch {
+        opJob = scope.launch {
             loading = true
             var hadError: String? = null
             try {
@@ -225,7 +238,7 @@ fun AdminScreen(
 
     fun saveDropbear() {
         if (!ensureConnected()) return
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 withTimeout(ADMIN_APPLY_TIMEOUT_MS) {
@@ -256,7 +269,7 @@ fun AdminScreen(
         when {
             pw1.isEmpty() -> setAlert(AppAlertType.Error, "请输入新密码。")
             pw1 != pw2 -> setAlert(AppAlertType.Error, "两次输入的密码不一致", "密码未修改！")
-            else -> scope.launch {
+            else -> opJob = scope.launch {
                 busy = true
                 try {
                     val ok = withTimeout(ADMIN_OP_TIMEOUT_MS) {
@@ -283,7 +296,7 @@ fun AdminScreen(
 
     fun saveHttp() {
         if (!ensureConnected()) return
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 withTimeout(ADMIN_APPLY_TIMEOUT_MS) {
@@ -316,7 +329,7 @@ fun AdminScreen(
             sshKeyLines.any { it == key } -> setAlert(AppAlertType.Warning, "该 SSH 公钥已存在。")
             SshPublicKeyDecoder.decode(key) == null ->
                 setAlert(AppAlertType.Error, "SSH 公钥无效", "请提供有效的 RSA、ED25519 或 ECDSA 公钥。")
-            else -> scope.launch {
+            else -> opJob = scope.launch {
                 busy = true
                 try {
                     val newKeys = sshKeyLines + key
@@ -337,7 +350,7 @@ fun AdminScreen(
 
     fun removeSshKey(key: SshPublicKey) {
         if (!ensureConnected()) return
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 val newKeys = sshKeyLines.filter { it != key.source }
@@ -356,7 +369,7 @@ fun AdminScreen(
 
     fun addRepoKeyContent(content: String, baseName: String?) {
         if (!ensureConnected()) return
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 val isApk = repoDir == "/etc/apk/keys"
@@ -397,7 +410,7 @@ fun AdminScreen(
         val raw = repoInput.trim()
         if (raw.isEmpty()) return
         if (Regex("^https?://\\S+$", RegexOption.IGNORE_CASE).matches(raw)) {
-            scope.launch {
+            opJob = scope.launch {
                 busy = true
                 try {
                     val (content, name) = withTimeout(ADMIN_OP_TIMEOUT_MS) {
@@ -416,7 +429,7 @@ fun AdminScreen(
 
     fun removeRepoKey(key: RepoPublicKey) {
         if (!ensureConnected()) return
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 withTimeout(ADMIN_OP_TIMEOUT_MS) {
