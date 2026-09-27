@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,6 +71,7 @@ fun ToolScreen(
     onOpenAdmin: () -> Unit,
     onOpenLed: () -> Unit,
     onOpenRoutes: () -> Unit,
+    onOpenFirewall: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -130,7 +132,10 @@ fun ToolScreen(
                     Icons.Filled.AltRoute, "路由表", "邻居 · 路由 · 规则",
                     Modifier.weight(1f).fillMaxHeight(), onOpenRoutes
                 )
-                Spacer(Modifier.weight(1f))
+                ToolTile(
+                    Icons.Filled.Security, "防火墙", "nftables · iptables",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFirewall
+                )
             }
         } else {
             ToolEntryCard(
@@ -160,6 +165,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.AltRoute, "路由表",
                 "当前生效的邻居表、活动路由与路由策略规则", onOpenRoutes
+            )
+            ToolEntryCard(
+                Icons.Filled.Security, "防火墙",
+                "nftables 规则集与旧版 iptables 规则概况", onOpenFirewall
             )
         }
     }
