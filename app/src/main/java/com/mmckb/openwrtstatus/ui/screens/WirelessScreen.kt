@@ -1227,6 +1227,11 @@ fun WirelessScreen(
                 // 密码校验：PSK/SAE 家族必须 ≥8 位（WPA 规范），不通过则红字提示且不关闭弹窗。
                 if (ifaceEncryption in PSK_ENCRYPTIONS && ifaceKey.length < 8) {
                     dlgKeyError = "WiFi 密码至少 8 位（当前 ${ifaceKey.length} 位）"
+                    // 提示显示在「接口 → 无线安全」子页签里；用户若停在其它页签上点保存
+                    // 会毫无反应，这里自动跳转过去并把错误同时发到全局提示条。
+                    dlgGroup = "iface"
+                    ifaceSectionTab = "security"
+                    setMsg("请先在「无线安全」中选择加密方式并填写不少于 8 位的密码。", true)
                     return@AppDialog
                 }
                 dlgKeyError = null

@@ -209,15 +209,24 @@ object SshExec {
 
                 val result = StringBuilder()
                 val chunk = ByteArray(4096)
+                // 无数据（无响应）超时：半死连接上 available() 永远返回 0 且 channel 不关闭，
+                // 若无此上限循环会永不退出，界面一直停留在「正在应用」。
+                var lastDataAt = System.currentTimeMillis()
                 while (true) {
                     while (stdout.available() > 0) {
                         val count = stdout.read(chunk, 0, minOf(chunk.size, stdout.available()))
                         if (count < 0) break
                         result.append(String(chunk, 0, count, Charsets.UTF_8))
+                        lastDataAt = System.currentTimeMillis()
                     }
                     if (channel.isClosed) {
                         if (stdout.available() > 0) continue
                         break
+                    }
+                    if (System.currentTimeMillis() - lastDataAt > timeoutMs) {
+                        throw java.net.SocketTimeoutException(
+                            "SSH ${timeoutMs / 1000} 秒无响应，连接可能已中断。"
+                        )
                     }
                     Thread.sleep(40)
                 }

@@ -34,6 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -41,9 +44,12 @@ import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.SystemClient
 import com.mmckb.openwrtstatus.data.remote.SystemData
 import com.mmckb.openwrtstatus.data.remote.ZoneEntry
+import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
+import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
+import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -86,8 +92,9 @@ fun SystemScreen(
 
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var messageIsError by remember { mutableStateOf(false) }
+    val alertStack = rememberAlertStackState()
+    val density = LocalDensity.current
+    var alertTopPadding by remember { mutableStateOf(0.dp) }
     var tab by remember { mutableStateOf("general") }
 
     var data by remember { mutableStateOf<SystemData?>(null) }
@@ -120,9 +127,13 @@ fun SystemScreen(
     var tablefilters by remember { mutableStateOf(false) }
     var selectState by remember { mutableStateOf<SysSelectState?>(null) }
 
+    fun setAlert(type: AppAlertType, title: String, description: String? = null) {
+        alertStack.push(type, title, description)
+    }
+
     fun setMsg(text: String?, isError: Boolean) {
-        message = text
-        messageIsError = isError
+        if (text == null) return
+        alertStack.push(if (isError) AppAlertType.Error else AppAlertType.Success, text)
     }
 
     fun fill(d: SystemData) {
@@ -248,11 +259,10 @@ fun SystemScreen(
         }
         scope.launch {
             busy = true
-            message = null
             try {
                 withContext(Dispatchers.IO) {
                     client.apply(config, changes, if (sshEnabled) ssh else null) { phase ->
-                        setMsg(phase, false)
+                        setAlert(AppAlertType.Info, phase)
                     }
                 }
                 setMsg("已保存并应用。", false)
@@ -294,7 +304,13 @@ fun SystemScreen(
                 ),
                 selected = tab,
                 onSelect = { tab = it },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coords ->
+                        alertTopPadding = with(density) {
+                            (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                        }
+                    }
             )
             Spacer(Modifier.height(10.dp))
 
@@ -307,7 +323,7 @@ fun SystemScreen(
                 }
             } else if (data == null) {
                 Text(
-                    message ?: "读取系统配置失败。",
+                    "读取系统配置失败。",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.error
                 )
@@ -576,14 +592,6 @@ fun SystemScreen(
                 ) {
                     Text(if (busy) "正在应用…" else "保存并应用")
                 }
-                message?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (messageIsError) colors.error else colors.success,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
             }
 
             // 通用选择对话框（时区/协议/级别/算法/语言/主题等）
@@ -642,9 +650,19 @@ fun SystemScreen(
                     }
                 }
             }
+            }
         }
+
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于方案选择器正下方
+        StackedAlertHost(
+            state = alertStack,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = alertTopPadding)
+        )
     }
-}
 }
 
 private fun conloglevelLabel(value: String?): String = when (value) {
