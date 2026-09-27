@@ -100,6 +100,17 @@ private data class LedPendingDiff(val added: Int, val modified: Int, val deleted
     val total: Int get() = added + modified + deleted
 }
 
+/** 归一化用于对比：未设置的默认状态与 "0" 等同、文本去空白、模式列表排序——
+ *  避免编辑弹窗的规范化改写被误判为「已修改」。 */
+private fun LedAction.normalizedForDiff(): LedAction = copy(
+    name = name.trim(),
+    defaultState = defaultState ?: "0",
+    interval = interval.trim(),
+    delayon = delayon.trim(),
+    delayoff = delayoff.trim(),
+    mode = mode.sorted()
+)
+
 /**
  * 对比当前状态与基线：新增（无段名）/ 修改（与基线内容不同）/ 删除（在删除列表中）
  * 各计一项；改回原样的项自动不再计入。
@@ -115,7 +126,8 @@ private fun ledPendingDiff(
     current.forEach { act ->
         when {
             act.section.isBlank() -> added++
-            baseById.containsKey(act.section) -> if (baseById.getValue(act.section) != act) modified++
+            baseById.containsKey(act.section) ->
+                if (baseById.getValue(act.section).normalizedForDiff() != act.normalizedForDiff()) modified++
             else -> added++
         }
     }
