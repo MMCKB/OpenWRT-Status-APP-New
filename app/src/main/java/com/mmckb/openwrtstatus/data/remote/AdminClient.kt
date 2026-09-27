@@ -199,7 +199,7 @@ class AdminClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 }
                 named.forEach { inst ->
                     if (inst.section in newSections) {
-                        append("S=$(uci add dropbear dropbear) && uci rename dropbear.$S=")
+                        append("S=\$(uci add dropbear dropbear) && uci rename dropbear.\$S=")
                             .append(shq(inst.section)).append(" && ")
                     }
                     append(dropbearSetScript(inst))
@@ -678,7 +678,7 @@ object SshPublicKeyDecoder {
             b64.substring(0, 33) + "…" + b64.substring(b64.length - 34)
         } else b64
 
-        SshPublicKey(
+        return SshPublicKey(
             source = trimmed,
             kind = kind,
             bits = bits,
