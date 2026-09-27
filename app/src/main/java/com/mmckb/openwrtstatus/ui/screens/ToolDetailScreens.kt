@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
@@ -72,6 +73,7 @@ fun ToolScreen(
     onOpenLed: () -> Unit,
     onOpenRoutes: () -> Unit,
     onOpenFirewall: () -> Unit,
+    onOpenLogs: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -137,6 +139,16 @@ fun ToolScreen(
                     Modifier.weight(1f).fillMaxHeight(), onOpenFirewall
                 )
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Description, "日志", "系统日志 · 内核日志",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenLogs
+                )
+                Spacer(Modifier.weight(1f))
+            }
         } else {
             ToolEntryCard(
                 Icons.Filled.Folder, "文件管理",
@@ -169,6 +181,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Security, "防火墙",
                 "nftables 规则集与旧版 iptables 规则概况", onOpenFirewall
+            )
+            ToolEntryCard(
+                Icons.Filled.Description, "日志",
+                "系统日志（logread）与内核日志（dmesg），支持复制", onOpenLogs
             )
         }
     }

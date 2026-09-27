@@ -62,6 +62,7 @@ import com.mmckb.openwrtstatus.AdminActivity
 import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.LedActivity
+import com.mmckb.openwrtstatus.LogsActivity
 import com.mmckb.openwrtstatus.NftablesActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
 import com.mmckb.openwrtstatus.RoutesActivity
@@ -83,6 +84,7 @@ import com.mmckb.openwrtstatus.ui.screens.DetailScreen
 import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.LedScreen
+import com.mmckb.openwrtstatus.ui.screens.LogsScreen
 import com.mmckb.openwrtstatus.ui.screens.NftablesScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
@@ -112,6 +114,7 @@ private sealed interface SecondaryPage {
     data object Led : SecondaryPage
     data object Routes : SecondaryPage
     data object Nftables : SecondaryPage
+    data object Logs : SecondaryPage
     data object About : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
@@ -222,6 +225,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Nftables
         }
     }
+    val logsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(LogsActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Logs
+        }
+    }
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -276,6 +286,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.Nftables -> NftablesScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Logs -> LogsScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -345,6 +360,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, NftablesActivity::class.java)
                             .putExtra(NftablesActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.Logs -> logsLauncher.launch(
+                        Intent(context, LogsActivity::class.java)
+                            .putExtra(LogsActivity.EXTRA_CONFIG, config)
+                    )
                     SecondaryPage.System -> systemLauncher.launch(
                         Intent(context, SystemActivity::class.java)
                             .putExtra(SystemActivity.EXTRA_CONFIG, config)
@@ -400,6 +419,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenLed = { openSecondary(SecondaryPage.Led) },
                         onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
                         onOpenFirewall = { openSecondary(SecondaryPage.Nftables) },
+                        onOpenLogs = { openSecondary(SecondaryPage.Logs) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
