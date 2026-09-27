@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Settings
@@ -64,6 +65,7 @@ fun ToolScreen(
     onOpenPackageManager: () -> Unit,
     onOpenWireless: () -> Unit,
     onOpenSystem: () -> Unit,
+    onOpenAdmin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -103,6 +105,15 @@ fun ToolScreen(
                     Modifier.weight(1f).fillMaxHeight(), onOpenSystem
                 )
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.AdminPanelSettings, "管理权", "密码 · SSH · 密钥",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenAdmin
+                )
+            }
         } else {
             ToolEntryCard(
                 Icons.Filled.Folder, "文件管理",
@@ -119,6 +130,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Settings, "系统管理",
                 "主机名、时区、日志、NTP 与 ZRam，保存后自动应用", onOpenSystem
+            )
+            ToolEntryCard(
+                Icons.Filled.AdminPanelSettings, "管理权",
+                "路由器密码、SSH 访问、SSH 密钥、HTTP(S) 访问与仓库公钥", onOpenAdmin
             )
         }
     }

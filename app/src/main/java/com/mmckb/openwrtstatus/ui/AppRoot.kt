@@ -58,6 +58,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
+import com.mmckb.openwrtstatus.AdminActivity
 import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
@@ -72,6 +73,7 @@ import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
+import com.mmckb.openwrtstatus.ui.screens.AdminScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
 import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
 import com.mmckb.openwrtstatus.ui.screens.DetailScreen
@@ -100,6 +102,7 @@ private sealed interface SecondaryPage {
     data object PackageManager : SecondaryPage
     data object System : SecondaryPage
     data object Wireless : SecondaryPage
+    data object Admin : SecondaryPage
     data object About : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
@@ -182,6 +185,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Wireless
         }
     }
+    val adminLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(AdminActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Admin
+        }
+    }
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -216,6 +226,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.System -> SystemScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Admin -> AdminScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -269,6 +284,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, WirelessActivity::class.java)
                             .putExtra(WirelessActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.Admin -> adminLauncher.launch(
+                        Intent(context, AdminActivity::class.java)
+                            .putExtra(AdminActivity.EXTRA_CONFIG, config)
+                    )
                     SecondaryPage.System -> systemLauncher.launch(
                         Intent(context, SystemActivity::class.java)
                             .putExtra(SystemActivity.EXTRA_CONFIG, config)
@@ -320,6 +339,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
                         onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
                         onOpenSystem = { openSecondary(SecondaryPage.System) },
+                        onOpenAdmin = { openSecondary(SecondaryPage.Admin) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
