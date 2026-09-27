@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -55,10 +57,13 @@ import com.mmckb.openwrtstatus.data.remote.RepoPublicKey
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.data.remote.SshPublicKey
 import com.mmckb.openwrtstatus.data.remote.SshPublicKeyDecoder
+import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
+import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
+import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -101,13 +106,13 @@ fun AdminScreen(
 
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var messageIsError by remember { mutableStateOf(false) }
+    val alertStack = rememberAlertStackState()
+    val density = LocalDensity.current
+    var alertTopPadding by remember { mutableStateOf(0.dp) }
     var tab by remember { mutableStateOf("password") }
 
-    fun setMsg(text: String?, isError: Boolean) {
-        message = text
-        messageIsError = isError
+    fun setAlert(type: AppAlertType, title: String, description: String? = null) {
+        alertStack.push(type, title, description)
     }
 
     // --- 路由器密码 ---
@@ -142,7 +147,6 @@ fun AdminScreen(
     fun load() {
         scope.launch {
             loading = true
-            message = null
             var hadError: String? = null
             try {
                 val d = withContext(Dispatchers.IO) { client.loadDropbear(config) }
@@ -173,7 +177,7 @@ fun AdminScreen(
             } catch (e: Exception) {
                 hadError = hadError ?: (e.message ?: "读取仓库公钥失败。")
             }
-            if (hadError != null) setMsg(hadError, true)
+            if (hadError != null) setAlert(AppAlertType.Error, "部分内容读取失败", hadError)
             loading = false
         }
     }
@@ -187,23 +191,22 @@ fun AdminScreen(
     fun saveDropbear() {
         scope.launch {
             busy = true
-            message = null
             try {
                 withContext(Dispatchers.IO) {
                     client.applyDropbear(
                         config, instances, deletedSections.toList(), sshOrNull
-                    ) { phase -> setMsg(phase, false) }
+                    ) { phase -> setAlert(AppAlertType.Info, phase) }
                 }
-                setMsg("已保存并应用。", false)
+                setAlert(AppAlertType.Success, "已保存并应用")
                 load()
             } catch (e: RouterException) {
-                setMsg(
+                setAlert(
+                    AppAlertType.Error, "保存失败",
                     if (e.ubusCode == 6) "本固件限制了无 SSH 的配置修改，请先在设备编辑页开启 SSH。"
-                    else e.message ?: "保存失败。",
-                    true
+                    else e.message ?: "请稍后重试。"
                 )
             } catch (e: Exception) {
-                setMsg(e.message ?: "保存失败。", true)
+                setAlert(AppAlertType.Error, "保存失败", e.message ?: "请稍后重试。")
             } finally {
                 busy = false
             }
@@ -212,22 +215,24 @@ fun AdminScreen(
 
     fun savePassword() {
         when {
-            pw1.isEmpty() -> setMsg("请输入新密码。", true)
-            pw1 != pw2 -> setMsg("两次输入的密码不一致，密码未修改！", true)
+            pw1.isEmpty() -> setAlert(AppAlertType.Error, "请输入新密码。")
+            pw1 != pw2 -> setAlert(AppAlertType.Error, "两次输入的密码不一致", "密码未修改！")
             else -> scope.launch {
                 busy = true
-                message = null
                 try {
                     val ok = withContext(Dispatchers.IO) { client.changePassword(config, "root", pw1) }
                     if (ok) {
-                        setMsg("系统密码已成功修改。", false)
+                        setAlert(AppAlertType.Success, "系统密码已成功修改")
                         pw1 = ""
                         pw2 = ""
                     } else {
-                        setMsg("修改系统密码失败。", true)
+                        setAlert(
+                            AppAlertType.Error, "修改系统密码失败",
+                            "密码未通过系统校验，请换一个更复杂的密码。"
+                        )
                     }
                 } catch (e: Exception) {
-                    setMsg(e.message ?: "修改系统密码失败。", true)
+                    setAlert(AppAlertType.Error, "修改系统密码失败", e.message)
                 } finally {
                     busy = false
                 }
@@ -238,20 +243,21 @@ fun AdminScreen(
     fun saveHttp() {
         scope.launch {
             busy = true
-            message = null
             try {
                 withContext(Dispatchers.IO) {
-                    client.applyHttpRedirect(config, httpRedirect, sshOrNull) { phase -> setMsg(phase, false) }
+                    client.applyHttpRedirect(config, httpRedirect, sshOrNull) { phase ->
+                        setAlert(AppAlertType.Info, phase)
+                    }
                 }
-                setMsg("已保存并应用。", false)
+                setAlert(AppAlertType.Success, "已保存并应用")
             } catch (e: RouterException) {
-                setMsg(
+                setAlert(
+                    AppAlertType.Error, "保存失败",
                     if (e.ubusCode == 6) "本固件限制了无 SSH 的配置修改，请先在设备编辑页开启 SSH。"
-                    else e.message ?: "保存失败。",
-                    true
+                    else e.message ?: "请稍后重试。"
                 )
             } catch (e: Exception) {
-                setMsg(e.message ?: "保存失败。", true)
+                setAlert(AppAlertType.Error, "保存失败", e.message ?: "请稍后重试。")
             } finally {
                 busy = false
             }
@@ -262,20 +268,19 @@ fun AdminScreen(
         val key = sshKeyInput.trim()
         if (key.isEmpty()) return
         when {
-            sshKeyLines.any { it == key } -> setMsg("该 SSH 公钥已存在。", true)
+            sshKeyLines.any { it == key } -> setAlert(AppAlertType.Warning, "该 SSH 公钥已存在。")
             SshPublicKeyDecoder.decode(key) == null ->
-                setMsg("SSH 公钥无效，请提供有效的 RSA、ED25519 或 ECDSA 公钥。", true)
+                setAlert(AppAlertType.Error, "SSH 公钥无效", "请提供有效的 RSA、ED25519 或 ECDSA 公钥。")
             else -> scope.launch {
                 busy = true
-                message = null
                 try {
                     val newKeys = sshKeyLines + key
                     withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
                     sshKeyLines = newKeys
                     sshKeyInput = ""
-                    setMsg("密钥已添加。", false)
+                    setAlert(AppAlertType.Success, "密钥已添加")
                 } catch (e: Exception) {
-                    setMsg(e.message ?: "添加密钥失败。", true)
+                    setAlert(AppAlertType.Error, "添加密钥失败", e.message)
                 } finally {
                     busy = false
                 }
@@ -286,14 +291,13 @@ fun AdminScreen(
     fun removeSshKey(key: SshPublicKey) {
         scope.launch {
             busy = true
-            message = null
             try {
                 val newKeys = sshKeyLines.filter { it != key.source }
                 withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
                 sshKeyLines = newKeys
-                setMsg("密钥已删除。", false)
+                setAlert(AppAlertType.Success, "密钥已删除")
             } catch (e: Exception) {
-                setMsg(e.message ?: "删除密钥失败。", true)
+                setAlert(AppAlertType.Error, "删除密钥失败", e.message)
             } finally {
                 busy = false
             }
@@ -303,15 +307,14 @@ fun AdminScreen(
     fun addRepoKeyContent(content: String, baseName: String?) {
         scope.launch {
             busy = true
-            message = null
             try {
                 val isApk = repoDir == "/etc/apk/keys"
                 if (isApk && !AdminClient.isValidPem(content)) {
-                    setMsg("该密钥不是有效的 PEM 格式（apk 环境要求 PEM 公钥）。", true)
+                    setAlert(AppAlertType.Error, "密钥格式无效", "该密钥不是 PEM 格式（apk 环境要求 PEM 公钥）。")
                     return@launch
                 }
                 if (!isApk && AdminClient.isValidPem(content)) {
-                    setMsg("该密钥是 PEM 格式，opkg 环境不支持 PEM 公钥。", true)
+                    setAlert(AppAlertType.Error, "密钥格式无效", "该密钥是 PEM 格式，opkg 环境不支持 PEM 公钥。")
                     return@launch
                 }
                 val normalized = content.replace(Regex("\\s+"), " ").trim()
@@ -319,7 +322,7 @@ fun AdminScreen(
                         it.content.replace(Regex("\\s+"), " ").trim() == normalized
                     }
                 ) {
-                    setMsg("该仓库公钥已存在。", true)
+                    setAlert(AppAlertType.Warning, "该仓库公钥已存在。")
                     return@launch
                 }
                 val filename = withContext(Dispatchers.IO) {
@@ -327,9 +330,9 @@ fun AdminScreen(
                 }
                 repoKeys = repoKeys + RepoPublicKey(filename, content, AdminClient.isProtectedRepoKey(filename))
                 repoInput = ""
-                setMsg("公钥已添加：$filename", false)
+                setAlert(AppAlertType.Success, "公钥已添加", filename)
             } catch (e: Exception) {
-                setMsg(e.message ?: "添加公钥失败。", true)
+                setAlert(AppAlertType.Error, "添加公钥失败", e.message)
             } finally {
                 busy = false
             }
@@ -342,12 +345,11 @@ fun AdminScreen(
         if (Regex("^https?://\\S+$", RegexOption.IGNORE_CASE).matches(raw)) {
             scope.launch {
                 busy = true
-                message = null
                 try {
                     val (content, name) = withContext(Dispatchers.IO) { client.fetchKeyFromUrl(raw) }
                     addRepoKeyContent(content, name)
                 } catch (e: Exception) {
-                    setMsg(e.message ?: "拉取公钥失败。", true)
+                    setAlert(AppAlertType.Error, "拉取公钥失败", e.message)
                     busy = false
                 }
             }
@@ -359,13 +361,12 @@ fun AdminScreen(
     fun removeRepoKey(key: RepoPublicKey) {
         scope.launch {
             busy = true
-            message = null
             try {
                 withContext(Dispatchers.IO) { client.deleteRepoKey(config, repoDir, key.filename, sshOrNull) }
                 repoKeys = repoKeys.filterNot { it.filename == key.filename }
-                setMsg("公钥已删除。", false)
+                setAlert(AppAlertType.Success, "公钥已删除")
             } catch (e: Exception) {
-                setMsg(e.message ?: "删除公钥失败。", true)
+                setAlert(AppAlertType.Error, "删除公钥失败", e.message)
             } finally {
                 busy = false
             }
@@ -405,7 +406,14 @@ fun AdminScreen(
                 ),
                 selected = tab,
                 onSelect = { tab = it },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coords ->
+                        // 记录选择器底边在页面中的位置：提示栈浮层的顶部锚点
+                        alertTopPadding = with(density) {
+                            (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                        }
+                    }
             )
             Spacer(Modifier.height(10.dp))
 
@@ -636,17 +644,19 @@ fun AdminScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                 }
-
-                message?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (messageIsError) colors.error else colors.success,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
             }
         }
+
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于方案选择器正下方；
+        // 反复触发堆叠（最多 3 层），从第 3 层到第 1 层连续加速消失
+        StackedAlertHost(
+            state = alertStack,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = alertTopPadding)
+        )
 
         // 接口选择对话框
         selectState?.let { sel ->
