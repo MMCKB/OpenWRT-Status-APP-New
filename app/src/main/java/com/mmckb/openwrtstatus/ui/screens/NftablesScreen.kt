@@ -1,5 +1,12 @@
 package com.mmckb.openwrtstatus.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,11 +24,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -144,6 +153,16 @@ fun NftablesScreen(
     var alertTopPadding by remember { mutableStateOf(0.dp) }
     var iptFamily by remember { mutableStateOf("iptables") }
     var showIptables by remember { mutableStateOf(false) }
+    // iptables 概况子页打开时，系统返回先回到防火墙主视图
+    BackHandler(enabled = showIptables) { showIptables = false }
+
+    // 浏览超过一屏后，标题右侧出现「回到顶部」按钮（两份列表各自跟踪）
+    val nftListState = rememberLazyListState()
+    val iptListState = rememberLazyListState()
+    val showBackToTopNft = nftListState.firstVisibleItemIndex > 0 ||
+        nftListState.firstVisibleItemScrollOffset > 300
+    val showBackToTopIpt = iptListState.firstVisibleItemIndex > 0 ||
+        iptListState.firstVisibleItemScrollOffset > 300
 
     fun setAlert(type: AppAlertType, title: String, description: String? = null) {
         alertStack.push(type, title, description)
@@ -202,46 +221,79 @@ fun NftablesScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showIptables) {
-                    IconButton(onClick = { showIptables = false }) {
+            // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
+            Column(
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (showIptables) {
+                        IconButton(onClick = { showIptables = false }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回 nftables 规则集",
+                                tint = colors.onSurface
+                            )
+                        }
+                    } else {
+                        AppBackButton(onBack = onBack)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回 nftables 规则集",
-                            tint = colors.onSurface
+                            Icons.Filled.Refresh,
+                            contentDescription = "刷新",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
-                } else {
-                    AppBackButton(onBack = onBack)
                 }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { load() }, enabled = !loading) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = "刷新",
-                        tint = colors.onSurface,
-                        modifier = Modifier.size(22.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (showIptables) "iptables 规则概况" else "防火墙",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f)
                     )
-                }
-            }
-            Text(
-                if (showIptables) "iptables 规则概况" else "防火墙",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Text(
-                if (showIptables) "旧版 iptables 的 Filter/NAT/Mangle/Raw 表"
-                else "当前生效的防火墙规则集",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.onGloballyPositioned { coords ->
-                    // 提示栈锚定在标题区正下方
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    AnimatedVisibility(
+                        visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
+                        enter = fadeIn(tween(200)) + scaleIn(
+                            initialScale = 0.8f, animationSpec = tween(200)
+                        ),
+                        exit = fadeOut(tween(200)) + scaleOut(
+                            targetScale = 0.8f, animationSpec = tween(200)
+                        )
+                    ) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    if (showIptables) iptListState.animateScrollToItem(0)
+                                    else nftListState.animateScrollToItem(0)
+                                }
+                            },
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(colors.surfaceVariant)
+                                .size(34.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "回到顶部",
+                                tint = colors.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
-            )
+                Text(
+                    if (showIptables) "旧版 iptables 的 Filter/NAT/Mangle/Raw 表"
+                    else "当前生效的防火墙规则集",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(10.dp))
 
             if (loading) {
@@ -263,6 +315,7 @@ fun NftablesScreen(
                     IptablesOverview(data = d, family = iptFamily, onFamilyChange = { iptFamily = it })
                 } else {
                     LazyColumn(
+                        state = nftListState,
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -471,6 +524,7 @@ private fun IptablesOverview(
             )
         } else {
             LazyColumn(
+                state = iptListState,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
