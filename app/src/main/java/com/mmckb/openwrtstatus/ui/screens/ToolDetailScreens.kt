@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,6 +67,7 @@ fun ToolScreen(
     onOpenWireless: () -> Unit,
     onOpenSystem: () -> Unit,
     onOpenAdmin: () -> Unit,
+    onOpenLed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -113,7 +115,10 @@ fun ToolScreen(
                     Icons.Filled.AdminPanelSettings, "管理权", "密码 · SSH · 密钥",
                     Modifier.weight(1f).fillMaxHeight(), onOpenAdmin
                 )
-                Spacer(Modifier.weight(1f))
+                ToolTile(
+                    Icons.Filled.Lightbulb, "LED 配置", "触发器 · 闪烁",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenLed
+                )
             }
         } else {
             ToolEntryCard(
@@ -135,6 +140,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.AdminPanelSettings, "管理权",
                 "路由器密码、SSH 访问、SSH 密钥、HTTP(S) 访问与仓库公钥", onOpenAdmin
+            )
+            ToolEntryCard(
+                Icons.Filled.Lightbulb, "LED 配置",
+                "自定义设备 LED 的触发行为，支持常亮、闪烁、心跳与网络活动", onOpenLed
             )
         }
     }
