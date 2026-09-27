@@ -25,7 +25,7 @@ data class FirmwareCheck(
 
 /**
  * 备份与更新数据层（LuCI admin/system/flash 的完整复刻）：
- *  - 生成备份：`sysupgrade -b /tmp/backup.tar.gz` 后经 SFTP-less cat 下载；
+ *  - 生成备份：`sysupgrade -b` 生成 tar.gz 后经 SFTP-less cat 下载；
  *  - 恢复配置：上传 /tmp/backup.tar.gz → `tar -tzf` 校验 →
  *    `sysupgrade --restore-backup` → 重启；
  *  - 出厂重置：`firstboot -r -y`（仅 squashfs 固件，hasRootfsData 判定）；
@@ -36,7 +36,7 @@ data class FirmwareCheck(
  */
 class FlashClient {
 
-    /** 确认设备信息读取需要 SSH。 */
+    /** 所有操作均需要 SSH；未开启时抛出带引导提示的异常。 */
     private fun requireSsh(ssh: SshConfig?): SshConfig =
         ssh ?: throw RouterException(
             "备份与更新需要 SSH 访问。",
@@ -50,7 +50,7 @@ class FlashClient {
             "echo __MTD__", "cat /proc/mtd 2>/dev/null",
             "echo __MNT__", "cat /proc/mounts 2>/dev/null"
         ).joinToString("; ")
-        val out = SshExec.run(ssh, script, 20_000)
+        val out = SshExec.run(s, script, 20_000)
         val parts = out.split(Regex("__(?:PLAT|MTD|MNT)__"))
         val plat = parts.getOrNull(1)?.trim() ?: "no"
         val mtdRaw = parts.getOrNull(2)?.trim().orEmpty()
@@ -58,7 +58,7 @@ class FlashClient {
         val mtdBlocks = mtdRaw.lineSequence().mapNotNull { line ->
             val m = Regex("^(mtd\\d+):\\s+\\S+\\s+\"([^\"]+)\"$").find(line.trim()) ?: return@mapNotNull null
             m.groupValues[1] to m.groupValues[2]
-        }.filter { it.second != "u-boot" }
+        }.filter { it.second != "u-boot" }.toList()
         FlashInfo(
             hasPlatformScript = plat == "yes",
             hasRootfsData = mtdRaw.contains("\"rootfs_data\"") ||
@@ -70,12 +70,11 @@ class FlashClient {
     /** 生成配置备份 tar.gz（sysupgrade -b），返回字节流供下载。 */
     suspend fun generateBackup(config: RouterConfig, ssh: SshConfig?): ByteArray =
         withContext(Dispatchers.IO) {
+            val s = requireSsh(ssh)
             val tmp = "/tmp/backup-${System.currentTimeMillis()}.tar.gz"
-            SshExec.run(
-                ssh, "sysupgrade -b $tmp >/dev/null 2>&1; echo __RC__:$?", 60_000
-            )
-            val data = SshFiles.download(requireSsh(ssh), tmp)
-            runCatching { SshExec.run(ssh, "rm -f $tmp", 10_000) }
+            SshExec.run(s, "sysupgrade -b $tmp >/dev/null 2>&1; echo __RC__:$?", 60_000)
+            val data = SshFiles.download(s, tmp)
+            runCatching { SshExec.run(s, "rm -f $tmp", 10_000) }
             if (data.size < 2 || data[0] != 0x1f.toByte() || data[1] != 0x8b.toByte()) {
                 throw RouterException("生成备份失败。", "请确认设备支持 sysupgrade 并重试。")
             }
@@ -84,15 +83,17 @@ class FlashClient {
 
     /** 出厂重置（擦除配置分区并自动重启）。 */
     suspend fun performReset(config: RouterConfig, ssh: SshConfig?) = withContext(Dispatchers.IO) {
-        runCatching { SshExec.run(ssh, "firstboot -r -y", 30_000) }
+        val s = requireSsh(ssh)
+        runCatching { SshExec.run(s, "firstboot -r -y", 30_000) }
         Unit
     }
 
     /** 校验已上传的备份存档可读（tar -tzf）。 */
     suspend fun verifyRestoreArchive(config: RouterConfig, ssh: SshConfig?): Boolean =
         withContext(Dispatchers.IO) {
+            val s = requireSsh(ssh)
             SshExec.run(
-                ssh,
+                s,
                 "tar -tzf /tmp/backup.tar.gz >/dev/null 2>&1 && echo __OK__ || echo __FAIL__",
                 20_000
             ).contains("__OK__")
@@ -100,9 +101,10 @@ class FlashClient {
 
     /** 恢复配置并重启（sysupgrade --restore-backup + reboot）。 */
     suspend fun restoreBackup(config: RouterConfig, ssh: SshConfig?) = withContext(Dispatchers.IO) {
+        val s = requireSsh(ssh)
         runCatching {
             SshExec.run(
-                ssh,
+                s,
                 "sysupgrade --restore-backup /tmp/backup.tar.gz >/dev/null 2>&1; " +
                     "echo __RESTORED__; sleep 1; reboot",
                 60_000
@@ -114,6 +116,7 @@ class FlashClient {
     /** 固件校验（sysupgrade --test + md5/sha256/大小）。 */
     suspend fun testFirmware(config: RouterConfig, ssh: SshConfig?): FirmwareCheck =
         withContext(Dispatchers.IO) {
+            val s = requireSsh(ssh)
             val script = listOf(
                 "echo __V__",
                 "sysupgrade --test /tmp/firmware.bin >/dev/null 2>&1 && echo yes || echo no",
@@ -122,7 +125,7 @@ class FlashClient {
                 "echo __SHA__", "sha256sum /tmp/firmware.bin 2>/dev/null | awk '{print \$1}'",
                 "echo __OUT__", "sysupgrade --test /tmp/firmware.bin 2>&1"
             ).joinToString("; ")
-            val out = SshExec.run(ssh, script, 60_000)
+            val out = SshExec.run(s, script, 60_000)
             val parts = out.split(Regex("__(?:V|SZ|MD5|SHA|OUT)__"))
             fun sec(i: Int): String = parts.getOrNull(i + 1)?.trim().orEmpty()
             FirmwareCheck(
@@ -140,10 +143,11 @@ class FlashClient {
      */
     suspend fun flashFirmware(
         config: RouterConfig,
-        ssh: SshConfig,
+        ssh: SshConfig?,
         keepSettings: Boolean,
         force: Boolean
     ) = withContext(Dispatchers.IO) {
+        val s = requireSsh(ssh)
         val args = buildString {
             append("sysupgrade -v")
             if (!keepSettings) append(" -n")
@@ -152,7 +156,7 @@ class FlashClient {
         }
         runCatching {
             SshExec.run(
-                ssh,
+                s,
                 "($args >/dev/null 2>&1) >/dev/null 2>&1 & echo __FLASHING__",
                 15_000
             )
@@ -163,13 +167,15 @@ class FlashClient {
     /** 读取 /etc/sysupgrade.conf（自定义备份 glob 列表）。 */
     suspend fun readSysupgradeConf(config: RouterConfig, ssh: SshConfig?): String =
         withContext(Dispatchers.IO) {
-            runCatching { SshFiles.readText(ssh, "/etc/sysupgrade.conf") }.getOrDefault("")
+            val s = requireSsh(ssh)
+            runCatching { SshFiles.readText(s, "/etc/sysupgrade.conf") }.getOrDefault("")
         }
 
     /** 写回 /etc/sysupgrade.conf。 */
     suspend fun writeSysupgradeConf(config: RouterConfig, ssh: SshConfig?, content: String) =
         withContext(Dispatchers.IO) {
-            SshFiles.upload(ssh, "/etc/sysupgrade.conf", content.toByteArray(Charsets.UTF_8))
-            SshExec.run(ssh, "chmod 644 /etc/sysupgrade.conf; echo __OK__", 10_000)
+            val s = requireSsh(ssh)
+            SshFiles.upload(s, "/etc/sysupgrade.conf", content.toByteArray(Charsets.UTF_8))
+            SshExec.run(s, "chmod 644 /etc/sysupgrade.conf; echo __OK__", 10_000)
         }
 }
