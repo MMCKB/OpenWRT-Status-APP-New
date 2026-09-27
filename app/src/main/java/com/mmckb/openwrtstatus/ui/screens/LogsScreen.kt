@@ -54,6 +54,7 @@ import com.mmckb.openwrtstatus.data.remote.LogsData
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor

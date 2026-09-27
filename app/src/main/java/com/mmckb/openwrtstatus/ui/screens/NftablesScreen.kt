@@ -312,7 +312,10 @@ fun NftablesScreen(
                         color = colors.onSurfaceVariant
                     )
                 } else if (showIptables) {
-                    IptablesOverview(data = d, family = iptFamily, onFamilyChange = { iptFamily = it })
+                    IptablesOverview(
+                        data = d, family = iptFamily, listState = iptListState,
+                        onFamilyChange = { iptFamily = it }
+                    )
                 } else {
                     LazyColumn(
                         state = nftListState,
@@ -503,6 +506,7 @@ private fun NftBadge(text: String) {
 private fun IptablesOverview(
     data: FirewallData,
     family: String,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     onFamilyChange: (String) -> Unit
 ) {
     val colors = LocalAppColors.current
