@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -134,7 +140,7 @@ fun RoutesScreen(
                     withContext(Dispatchers.IO) { client.load(config, sshOrNull) }
                 }
             } catch (e: RouterException) {
-                setAlert(AppAlertType.Error, "路由表读取失败", ledStyleHint(e))
+                setAlert(AppAlertType.Error, "路由表读取失败", routesErrText(e))
             } catch (e: Exception) {
                 setAlert(AppAlertType.Error, "路由表读取失败", routesErrText(e))
             } finally {
