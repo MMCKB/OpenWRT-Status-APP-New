@@ -25,6 +25,7 @@ import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.components.AppTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,7 +53,9 @@ import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,9 +70,11 @@ private const val SYS_APPLY_TIMEOUT_MS = 100_000L
 private const val SYS_OP_TIMEOUT_MS = 30_000L
 
 /** 统一的失败文案：超时（连接中断/无响应）给出可操作的提示，其余透出原始信息。 */
-private fun sysErrText(e: Exception): String =
-    if (e is TimeoutCancellationException) "路由器连接中断或长时间无响应，请检查网络后重试。"
-    else e.message ?: "请稍后重试。"
+private fun sysErrText(e: Exception): String = when {
+    e is TimeoutCancellationException -> "路由器连接中断或长时间无响应，请检查网络后重试。"
+    e is CancellationException -> "连接已断开，操作已终止。"
+    else -> e.message ?: "请稍后重试。"
+}
 
 private data class SysSelectState(
     val title: String,
@@ -158,6 +163,14 @@ fun SystemScreen(
         return true
     }
 
+    // 跟踪进行中的操作；路由器断开连接时立即取消，按钮即刻恢复并弹红色提示
+    var opJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(Unit) {
+        ConnectionMonitor.status.collect { status ->
+            if (status == ConnectionMonitor.Status.Offline) opJob?.cancel()
+        }
+    }
+
     fun fill(d: SystemData) {
         hostname = d.hostname
         description = d.description ?: ""
@@ -186,7 +199,7 @@ fun SystemScreen(
     }
 
     fun load() {
-        scope.launch {
+        opJob = scope.launch {
             loading = true
             try {
                 val d = withTimeout(SYS_OP_TIMEOUT_MS) {
@@ -286,7 +299,7 @@ fun SystemScreen(
             setMsg("没有需要保存的更改。", false)
             return
         }
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 withTimeout(SYS_APPLY_TIMEOUT_MS) {
@@ -385,7 +398,7 @@ fun SystemScreen(
                                 Button(
                                     onClick = {
                                         if (!ensureConnected()) return@Button
-                                        scope.launch {
+                                        opJob = scope.launch {
                                             busy = true
                                             try {
                                                 withTimeout(SYS_OP_TIMEOUT_MS) {
@@ -408,7 +421,7 @@ fun SystemScreen(
                                 Button(
                                     onClick = {
                                         if (!ensureConnected()) return@Button
-                                        scope.launch {
+                                        opJob = scope.launch {
                                             busy = true
                                             try {
                                                 withTimeout(SYS_OP_TIMEOUT_MS) {

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Properties
+import kotlin.coroutines.coroutineContext
 
 private const val CONNECT_TIMEOUT_MS = 10_000
 private const val MAX_OUTPUT_CHARS = 24_000
@@ -222,6 +223,10 @@ object SshExec {
                     if (channel.isClosed) {
                         if (stdout.available() > 0) continue
                         break
+                    }
+                    // 连接断开/操作被取消时立即终止轮询，让按钮立刻恢复
+                    if (!coroutineContext.isActive) {
+                        throw java.io.InterruptedIOException("连接已断开，操作已终止。")
                     }
                     if (System.currentTimeMillis() - lastDataAt > timeoutMs) {
                         throw java.net.SocketTimeoutException(
