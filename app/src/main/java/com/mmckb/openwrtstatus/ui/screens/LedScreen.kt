@@ -329,44 +329,45 @@ fun LedScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppBackButton(onBack = onBack)
-                Spacer(Modifier.weight(1f))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "LED 配置",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                val pending = ledPendingDiff(baselineActions, actions, deletedSections)
-                if (pending.total > 0) {
-                    Text(
-                        "待保存 ${pending.total}",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF8A6A10),
-                        modifier = Modifier
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
-                            .background(Color(0xFFFCF1CC))
-                            .border(1.dp, Color(0xFFE0C46E), androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-            }
-            Text(
-                "自定义设备 LED 的触发行为",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
+            // 标题区（提示栈锚定其底部）
+            Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    // 提示栈锚定在标题区正下方
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppBackButton(onBack = onBack)
+                    Spacer(Modifier.weight(1f))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "LED 配置",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    val pending = ledPendingDiff(baselineActions, actions, deletedSections)
+                    if (pending.total > 0) {
+                        Text(
+                            "待保存 ${pending.total}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF8A6A10),
+                            modifier = Modifier
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
+                                .background(Color(0xFFFCF1CC))
+                                .border(1.dp, Color(0xFFE0C46E), androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
                     }
                 }
-            )
+                Text(
+                    "自定义设备 LED 的触发行为",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(10.dp))
 
             if (loading) {

@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -127,6 +129,11 @@ fun RoutesScreen(
         }
     }
 
+    // 浏览超过一屏后，标题右侧出现「回到顶部」按钮
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val showBackToTop = listState.firstVisibleItemIndex > 0 ||
+        listState.firstVisibleItemScrollOffset > 300
+
     fun load() {
         if (opJob?.isActive == true) return
         if (!ensureConnected()) {
@@ -163,35 +170,65 @@ fun RoutesScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppBackButton(onBack = onBack)
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { load() }, enabled = !loading) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = "刷新",
-                        tint = colors.onSurface,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Text(
-                "路由表",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Text(
-                "当前生效的邻居、路由与策略规则",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
+            // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
+            Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    // 提示栈锚定在标题区正下方
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppBackButton(onBack = onBack)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { load() }, enabled = !loading) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "刷新",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
-            )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "路由表",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showBackToTop,
+                        enter = androidx.compose.animation.fadeIn(tween(200)) +
+                            androidx.compose.animation.scaleIn(
+                                initialScale = 0.8f, animationSpec = tween(200)
+                            ),
+                        exit = androidx.compose.animation.fadeOut(tween(200)) +
+                            androidx.compose.animation.scaleOut(
+                                targetScale = 0.8f, animationSpec = tween(200)
+                            )
+                    ) {
+                        IconButton(
+                            onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(colors.surfaceVariant)
+                                .size(34.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "回到顶部",
+                                tint = colors.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "当前生效的邻居、路由与策略规则",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(10.dp))
             SmoothOptionSwitcher(
                 options = listOf("ipv4" to "IPv4 路由", "ipv6" to "IPv6 路由"),
@@ -218,6 +255,7 @@ fun RoutesScreen(
                     )
                 } else {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {

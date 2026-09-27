@@ -1,8 +1,8 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,14 +11,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -34,8 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -50,6 +54,8 @@ import com.mmckb.openwrtstatus.data.remote.LogsData
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
@@ -73,10 +79,29 @@ private fun logsErrText(e: Exception): String = when {
     else -> e.message ?: "请稍后重试。"
 }
 
+private data class LogsSelectState(
+    val title: String,
+    val options: List<Pair<String, String>>,
+    val selected: String,
+    val onPick: (String) -> Unit
+)
+
+/** syslog 的 facility 名称（与 logread 输出一致）。 */
+private val SYSLOG_FACILITIES = listOf(
+    "kern", "user", "mail", "daemon", "auth", "syslog", "lpr", "news", "uucp",
+    "cron", "authpriv", "ftp", "ntp", "logaudit", "logalert",
+    "local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7"
+)
+
+private val SYSLOG_SEVERITIES = listOf(
+    "emerg", "alert", "crit", "err", "warn", "notice", "info", "debug"
+)
+
 /**
- * 日志页（LuCI admin/status/logs 的完整复刻，只读）：
- * 系统日志（logread）/ 内核日志（dmesg）两个页签，等宽字体展示，
- * 支持一键复制与刷新；需要设备开启 SSH。
+ * 日志页（LuCI admin/status/logs = status/syslog + status/dmesg 的完整复刻，只读）：
+ * 系统日志（logread）/ 内核日志（dmesg -r）两个页签；按 LuCI 提供设施/级别/标签/文本
+ * 过滤（各带「非」反转）与「最新在前」排序、等宽字体展示、一键复制与下载；
+ * 需要设备开启 SSH。
  */
 @Composable
 fun LogsScreen(
@@ -157,11 +182,78 @@ fun LogsScreen(
         load()
     }
 
-    val currentText = when (tab) {
-        "syslog" -> logs?.syslog.orEmpty()
-        else -> logs?.kernel.orEmpty()
+    // ---- 过滤状态（语义与 LuCI LogreadBox / dmesg 视图一致） ----
+    var sysFacility by remember { mutableStateOf("any") }
+    var sysFacilityNot by remember { mutableStateOf(false) }
+    var sysSeverity by remember { mutableStateOf("any") }
+    var sysSeverityNot by remember { mutableStateOf(false) }
+    var sysTag by remember { mutableStateOf("") }
+    var sysText by remember { mutableStateOf("") }
+    var sysTextNot by remember { mutableStateOf(false) }
+    var sysNewestFirst by remember { mutableStateOf(false) }
+
+    var kernSeverity by remember { mutableStateOf("") }
+    var kernSeverityNot by remember { mutableStateOf(false) }
+    var kernText by remember { mutableStateOf("") }
+    var kernTextNot by remember { mutableStateOf(false) }
+    var kernNewestFirst by remember { mutableStateOf(false) }
+
+    val syslogFiltered = remember(
+        logs, sysFacility, sysFacilityNot, sysSeverity, sysSeverityNot,
+        sysTag, sysText, sysTextNot, sysNewestFirst
+    ) {
+        val list = logs?.syslog.orEmpty().filter { e ->
+            val line = "${e.time} ${e.facility}.${e.severity} ${e.tag}: ${e.msg}"
+            val facOk = sysFacility == "any" || e.facility == sysFacility
+            val sevOk = sysSeverity == "any" || e.severity == sysSeverity
+            val txtOk = sysText.isBlank() || line.contains(sysText, ignoreCase = true)
+            val fac = if (sysFacilityNot) !facOk else facOk
+            val sev = if (sysSeverityNot) !sevOk else sevOk
+            val txt = if (sysTextNot) !txtOk else txtOk
+            fac && sev && txt
+        }
+        if (sysNewestFirst) list.asReversed() else list
     }
-    val lines = currentText.lineSequence().toList()
+
+    val kernelFiltered = remember(
+        logs, kernSeverity, kernSeverityNot, kernText, kernTextNot, kernNewestFirst
+    ) {
+        val list = logs?.kernel.orEmpty().filter { line ->
+            val sevOk = when {
+                kernSeverity.isBlank() -> true
+                line.severity == null -> true // 续行始终保留（LuCI 同款）
+                else -> line.severity >= (kernSeverity.toIntOrNull() ?: 0)
+            }
+            val sev = if (kernSeverityNot) !sevOk else sevOk
+            val txtOk = kernText.isBlank() || line.text.contains(kernText, ignoreCase = true)
+            val txt = if (kernTextNot) !txtOk else txtOk
+            sev && txt
+        }
+        if (kernNewestFirst) list.asReversed() else list
+    }
+
+    val syslogText = syslogFiltered.joinToString("\n") {
+        "${it.time} ${it.facility}.${it.severity} ${it.tag}: ${it.msg}"
+    }
+    val kernelText = kernelFiltered.joinToString("\n") { it.text }
+    val currentText = if (tab == "syslog") syslogText else kernelText
+
+    val downloadLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentText.isNotBlank()) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { os ->
+                    os.write(currentText.toByteArray(Charsets.UTF_8))
+                }
+                android.widget.Toast.makeText(context, "已下载", android.widget.Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                android.widget.Toast.makeText(context, "下载失败：${it.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    var selectState by remember { mutableStateOf<LogsSelectState?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -171,51 +263,66 @@ fun LogsScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppBackButton(onBack = onBack)
-                Spacer(Modifier.weight(1f))
-                IconButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(currentText))
-                        android.widget.Toast.makeText(
-                            context, "已复制到剪贴板", android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    },
-                    enabled = currentText.isNotBlank()
-                ) {
-                    Icon(
-                        Icons.Filled.ContentCopy,
-                        contentDescription = "复制",
-                        tint = colors.onSurface,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = { load() }, enabled = !loading) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = "刷新",
-                        tint = colors.onSurface,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Text(
-                "日志",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Text(
-                "系统日志与内核日志",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant,
+            // 标题区（提示栈锚定其底部）
+            Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    // 提示栈锚定在标题区正下方
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppBackButton(onBack = onBack)
+                    Spacer(Modifier.weight(1f))
+                    IconButton(
+                        onClick = {
+                            val name = if (tab == "syslog") "syslog.txt" else "kernel.txt"
+                            downloadLauncher.launch(name)
+                        },
+                        enabled = !loading
+                    ) {
+                        Icon(
+                            Icons.Filled.FileDownload,
+                            contentDescription = "下载",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(currentText))
+                            android.widget.Toast.makeText(
+                                context, "已复制到剪贴板", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        enabled = currentText.isNotBlank()
+                    ) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = "复制",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = { load() }, enabled = !loading) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "刷新",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
-            )
+                Text(
+                    "日志",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
+                Text(
+                    "系统日志与内核日志",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(10.dp))
             SmoothOptionSwitcher(
                 options = listOf("syslog" to "系统日志", "kernel" to "内核日志"),
@@ -233,36 +340,121 @@ fun LogsScreen(
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
             } else {
-                val text = currentText
-                if (text.isBlank()) {
-                    Text(
-                        "暂无日志" + if (sshOrNull == null) "（需要开启 SSH）" else "。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                } else {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (tab == "syslog") {
+                        LogsFilterCard {
+                            LogFilterSelectRow(
+                                label = "设施",
+                                notChecked = sysFacilityNot,
+                                onNotChange = { sysFacilityNot = it },
+                                value = if (sysFacility == "any") "任意" else sysFacility
+                            ) {
+                                selectState = LogsSelectState(
+                                    "选择设施",
+                                    listOf("any" to "任意") + SYSLOG_FACILITIES.map { it to it },
+                                    sysFacility
+                                ) { v -> sysFacility = v }
+                            }
+                            LogFilterSelectRow(
+                                label = "级别",
+                                notChecked = sysSeverityNot,
+                                onNotChange = { sysSeverityNot = it },
+                                value = if (sysSeverity == "any") "任意" else sysSeverity
+                            ) {
+                                selectState = LogsSelectState(
+                                    "选择级别",
+                                    listOf("any" to "任意") + SYSLOG_SEVERITIES.map { it to it },
+                                    sysSeverity
+                                ) { v -> sysSeverity = v }
+                            }
+                        }
+                        LogsFilterCard {
+                            LogTextRow(
+                                value = sysTag,
+                                onValueChange = { sysTag = it },
+                                label = "标签包含"
+                            )
+                            LogTextRow(
+                                value = sysText,
+                                onValueChange = { sysText = it },
+                                label = "文本包含",
+                                notChecked = sysTextNot,
+                                onNotChange = { sysTextNot = it }
+                            )
+                            LogSwitchRow("最新在前", sysNewestFirst) { sysNewestFirst = it }
+                        }
+                    } else {
+                        LogsFilterCard {
+                            LogFilterSelectRow(
+                                label = "级别",
+                                notChecked = kernSeverityNot,
+                                onNotChange = { kernSeverityNot = it },
+                                value = if (kernSeverity.isBlank()) "默认" else kernSeverity
+                            ) {
+                                selectState = LogsSelectState(
+                                    "选择级别",
+                                    listOf(
+                                        "" to "默认",
+                                        "1" to "1 告警",
+                                        "2" to "2 严重",
+                                        "3" to "3 错误",
+                                        "4" to "4 警告",
+                                        "5" to "5 通知",
+                                        "6" to "6 信息",
+                                        "7" to "7 调试"
+                                    ),
+                                    kernSeverity
+                                ) { v -> kernSeverity = v }
+                            }
+                        }
+                        LogsFilterCard {
+                            LogTextRow(
+                                value = kernText,
+                                onValueChange = { kernText = it },
+                                label = "文本包含",
+                                notChecked = kernTextNot,
+                                onNotChange = { kernTextNot = it }
+                            )
+                            LogSwitchRow("最新在前", kernNewestFirst) { kernNewestFirst = it }
+                        }
+                    }
+
+                    val text = if (tab == "syslog") syslogText else kernelText
+                    val lines = text.lineSequence().toList()
+
                     Text(
                         "共 ${lines.size} 行",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant
                     )
                     Spacer(Modifier.height(6.dp))
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(colors.surface)
-                            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-                        items(lines.size) { i ->
-                            Text(
-                                lines[i],
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                color = colors.onSurface
-                            )
+                    if (lines.isEmpty()) {
+                        Text(
+                            "无匹配的日志条目。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(colors.surface)
+                                .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            lines.forEach { line ->
+                                Text(
+                                    line,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = colors.onSurface
+                                )
+                            }
                         }
                     }
                 }
@@ -272,14 +464,142 @@ fun LogsScreen(
         // 悬浮提示栈：浮在内容上方（不推挤布局），位于标题区正下方；
         // 首帧布局测量完成前不显示，避免提示盖住标题
         if (alertTopPadding > 0.dp) {
-        StackedAlertHost(
-            state = alertStack,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = alertTopPadding)
-        )
+            StackedAlertHost(
+                state = alertStack,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = alertTopPadding)
+            )
         }
+
+        selectState?.let { sel ->
+            AppDialog(
+                title = sel.title,
+                confirmLabel = "关闭",
+                dismissLabel = "",
+                onConfirm = { selectState = null },
+                onDismiss = { selectState = null }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    sel.options.forEach { (value, label) ->
+                        val isSelected = value == sel.selected
+                        Text(
+                            text = if (isSelected) "● $label" else label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) colors.primary else colors.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    sel.onPick(value)
+                                    selectState = null
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogsFilterCard(content: @Composable () -> Unit) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun LogFilterSelectRow(
+    label: String,
+    notChecked: Boolean,
+    onNotChange: (Boolean) -> Unit,
+    value: String,
+    onClick: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surfaceVariant)
+            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(44.dp)) {
+            Text("非", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            AppSwitch(
+                checked = notChecked,
+                onCheckedChange = onNotChange,
+                modifier = Modifier.scale(0.55f)
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun LogTextRow(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    notChecked: Boolean? = null,
+    onNotChange: ((Boolean) -> Unit)? = null
+) {
+    val colors = LocalAppColors.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (notChecked != null && onNotChange != null) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(44.dp)) {
+                Text("非", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                AppSwitch(
+                    checked = notChecked,
+                    onCheckedChange = onNotChange,
+                    modifier = Modifier.scale(0.55f)
+                )
+            }
+        }
+        AppTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            label = { Text(label) },
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun LogSwitchRow(label: String, checked: Boolean, onChanged: (Boolean) -> Unit) {
+    val colors = LocalAppColors.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        AppSwitch(checked = checked, onCheckedChange = onChanged, modifier = Modifier.scale(0.75f))
     }
 }
