@@ -47,6 +47,7 @@ import com.mmckb.openwrtstatus.data.remote.ZoneEntry
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
@@ -146,6 +147,15 @@ fun SystemScreen(
     fun setMsg(text: String?, isError: Boolean) {
         if (text == null) return
         alertStack.push(if (isError) AppAlertType.Error else AppAlertType.Success, text)
+    }
+
+    /** 点击保存/应用前的快速检查：已断开则直接红色提示，不再发起操作。 */
+    fun ensureConnected(): Boolean {
+        if (ConnectionMonitor.status.value == ConnectionMonitor.Status.Offline) {
+            setAlert(AppAlertType.Error, "与路由器已断开连接", "请检查手机与路由器的网络后重试。")
+            return false
+        }
+        return true
     }
 
     fun fill(d: SystemData) {
@@ -270,6 +280,7 @@ fun SystemScreen(
     }
 
     fun save() {
+        if (!ensureConnected()) return
         val changes = buildChanges()
         if (changes.isEmpty()) {
             setMsg("没有需要保存的更改。", false)
@@ -373,6 +384,7 @@ fun SystemScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Button(
                                     onClick = {
+                                        if (!ensureConnected()) return@Button
                                         scope.launch {
                                             busy = true
                                             try {
@@ -395,6 +407,7 @@ fun SystemScreen(
                                 ) { Text("与手机同步") }
                                 Button(
                                     onClick = {
+                                        if (!ensureConnected()) return@Button
                                         scope.launch {
                                             busy = true
                                             try {

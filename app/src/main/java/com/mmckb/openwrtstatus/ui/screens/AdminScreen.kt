@@ -62,6 +62,7 @@ import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.components.AppTextField
+import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
@@ -128,6 +129,15 @@ fun AdminScreen(
 
     fun setAlert(type: AppAlertType, title: String, description: String? = null) {
         alertStack.push(type, title, description)
+    }
+
+    /** 点击保存/应用前的快速检查：已断开则直接红色提示，不再发起操作。 */
+    fun ensureConnected(): Boolean {
+        if (ConnectionMonitor.status.value == ConnectionMonitor.Status.Offline) {
+            setAlert(AppAlertType.Error, "与路由器已断开连接", "请检查手机与路由器的网络后重试。")
+            return false
+        }
+        return true
     }
 
     // --- 路由器密码 ---
@@ -214,6 +224,7 @@ fun AdminScreen(
     }
 
     fun saveDropbear() {
+        if (!ensureConnected()) return
         scope.launch {
             busy = true
             try {
@@ -241,6 +252,7 @@ fun AdminScreen(
     }
 
     fun savePassword() {
+        if (!ensureConnected()) return
         when {
             pw1.isEmpty() -> setAlert(AppAlertType.Error, "请输入新密码。")
             pw1 != pw2 -> setAlert(AppAlertType.Error, "两次输入的密码不一致", "密码未修改！")
@@ -270,6 +282,7 @@ fun AdminScreen(
     }
 
     fun saveHttp() {
+        if (!ensureConnected()) return
         scope.launch {
             busy = true
             try {
@@ -296,6 +309,7 @@ fun AdminScreen(
     }
 
     fun addSshKey() {
+        if (!ensureConnected()) return
         val key = sshKeyInput.trim()
         if (key.isEmpty()) return
         when {
@@ -322,6 +336,7 @@ fun AdminScreen(
     }
 
     fun removeSshKey(key: SshPublicKey) {
+        if (!ensureConnected()) return
         scope.launch {
             busy = true
             try {
@@ -340,6 +355,7 @@ fun AdminScreen(
     }
 
     fun addRepoKeyContent(content: String, baseName: String?) {
+        if (!ensureConnected()) return
         scope.launch {
             busy = true
             try {
@@ -377,6 +393,7 @@ fun AdminScreen(
     }
 
     fun addRepoKey() {
+        if (!ensureConnected()) return
         val raw = repoInput.trim()
         if (raw.isEmpty()) return
         if (Regex("^https?://\\S+$", RegexOption.IGNORE_CASE).matches(raw)) {
@@ -398,6 +415,7 @@ fun AdminScreen(
     }
 
     fun removeRepoKey(key: RepoPublicKey) {
+        if (!ensureConnected()) return
         scope.launch {
             busy = true
             try {
