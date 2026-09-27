@@ -1,0 +1,57 @@
+package com.mmckb.openwrtstatus
+
+import android.content.Intent
+import android.content.res.Configuration
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
+import com.mmckb.openwrtstatus.ui.screens.AdminScreen
+import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
+
+/**
+ * 管理权页（二级页，独立 Activity）：系统返回手势自带预测性返回动画。
+ * 活动设备的连接配置由主界面通过 [EXTRA_CONFIG] 传入。
+ */
+class AdminActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val config = intent.getSerializableExtra(EXTRA_CONFIG) as? RouterConfig ?: RouterConfig()
+
+        if (savedInstanceState != null &&
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        ) {
+            handOffToInline()
+            return
+        }
+        setupEdgeToEdge()
+        setContent {
+            OpenWrtStatusTheme {
+                Box(Modifier.fillMaxSize()) {
+                    AdminScreen(
+                        config = config,
+                        sshEnabled = config.sshEnabled,
+                        onBack = { finish() }
+                    )
+                    ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
+                }
+            }
+        }
+    }
+
+    private fun handOffToInline() {
+        setResult(RESULT_OK, Intent().putExtra(EXTRA_OPEN_INLINE, true))
+        finish()
+    }
+
+    companion object {
+        const val EXTRA_CONFIG = "config"
+        const val EXTRA_OPEN_INLINE = "openInline"
+    }
+}
