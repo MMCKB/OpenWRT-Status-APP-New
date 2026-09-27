@@ -199,7 +199,7 @@ class LedClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 }
                 named.forEach { act ->
                     if (act.section in newSections) {
-                        append("S=$(uci add system led) && uci rename system.$S=")
+                        append("S=\$(uci add system led) && uci rename system.\$S=")
                             .append(shq(act.section)).append(" && ")
                     }
                     append(ledSetScript(act))
