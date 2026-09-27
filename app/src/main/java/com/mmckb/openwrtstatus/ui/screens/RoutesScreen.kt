@@ -222,28 +222,28 @@ fun RoutesScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (tab == "ipv4") {
-                            item { RoutesGroupCard("邻居表（ARP）", d.v4Neigh.size) {
+                            item { RoutesGroupCard("IPv4 邻居", d.v4Neigh.size) {
                                 if (d.v4Neigh.isEmpty()) RoutesEmpty()
                                 d.v4Neigh.forEach { NeighRow(it) }
                             } }
-                            item { RoutesGroupCard("活动路由", d.v4Routes.size) {
+                            item { RoutesGroupCard("活跃的 IPv4 路由", d.v4Routes.size) {
                                 if (d.v4Routes.isEmpty()) RoutesEmpty()
                                 d.v4Routes.forEach { RouteRow(it) }
                             } }
-                            item { RoutesGroupCard("路由规则", d.v4Rules.size) {
+                            item { RoutesGroupCard("活跃的 IPv4 规则", d.v4Rules.size) {
                                 if (d.v4Rules.isEmpty()) RoutesEmpty()
                                 d.v4Rules.forEach { RuleRow(it) }
                             } }
                         } else {
-                            item { RoutesGroupCard("邻居表（NDP）", d.v6Neigh.size) {
+                            item { RoutesGroupCard("IPv6 邻居", d.v6Neigh.size) {
                                 if (d.v6Neigh.isEmpty()) RoutesEmpty()
                                 d.v6Neigh.forEach { NeighRow(it) }
                             } }
-                            item { RoutesGroupCard("活动路由", d.v6Routes.size) {
+                            item { RoutesGroupCard("活跃的 IPv6 路由", d.v6Routes.size) {
                                 if (d.v6Routes.isEmpty()) RoutesEmpty()
                                 d.v6Routes.forEach { RouteRow(it) }
                             } }
-                            item { RoutesGroupCard("路由规则", d.v6Rules.size) {
+                            item { RoutesGroupCard("活跃的 IPv6 规则", d.v6Rules.size) {
                                 if (d.v6Rules.isEmpty()) RoutesEmpty()
                                 d.v6Rules.forEach { RuleRow(it) }
                             } }
