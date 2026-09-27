@@ -66,6 +66,7 @@ import com.mmckb.openwrtstatus.LogsActivity
 import com.mmckb.openwrtstatus.NftablesActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
 import com.mmckb.openwrtstatus.RoutesActivity
+import com.mmckb.openwrtstatus.FlashActivity
 import com.mmckb.openwrtstatus.SystemActivity
 import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -88,6 +89,7 @@ import com.mmckb.openwrtstatus.ui.screens.LogsScreen
 import com.mmckb.openwrtstatus.ui.screens.NftablesScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
+import com.mmckb.openwrtstatus.ui.screens.FlashScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.SystemScreen
 import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
@@ -115,6 +117,7 @@ private sealed interface SecondaryPage {
     data object Routes : SecondaryPage
     data object Nftables : SecondaryPage
     data object Logs : SecondaryPage
+    data object Flash : SecondaryPage
     data object About : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
@@ -232,6 +235,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Logs
         }
     }
+    val flashLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(FlashActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Flash
+        }
+    }
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -291,6 +301,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.Logs -> LogsScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Flash -> FlashScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -364,6 +379,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, LogsActivity::class.java)
                             .putExtra(LogsActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.Flash -> flashLauncher.launch(
+                        Intent(context, FlashActivity::class.java)
+                            .putExtra(FlashActivity.EXTRA_CONFIG, config)
+                    )
                     SecondaryPage.System -> systemLauncher.launch(
                         Intent(context, SystemActivity::class.java)
                             .putExtra(SystemActivity.EXTRA_CONFIG, config)
@@ -420,6 +439,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
                         onOpenFirewall = { openSecondary(SecondaryPage.Nftables) },
                         onOpenLogs = { openSecondary(SecondaryPage.Logs) },
+                        onOpenFlash = { openSecondary(SecondaryPage.Flash) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
