@@ -1,10 +1,5 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,8 +55,6 @@ import com.mmckb.openwrtstatus.data.remote.RepoPublicKey
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.data.remote.SshPublicKey
 import com.mmckb.openwrtstatus.data.remote.SshPublicKeyDecoder
-import com.mmckb.openwrtstatus.ui.components.AppAlert
-import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
@@ -77,13 +70,6 @@ private data class AdmSelectState(
     val options: List<Pair<String, String>>,
     val selected: String,
     val onPick: (String) -> Unit
-)
-
-/** 保存/应用等操作的反馈提示条状态（AppAlert 组件数据）。 */
-private data class AdminAlertState(
-    val type: AppAlertType,
-    val title: String,
-    val description: String? = null
 )
 
 /**
@@ -115,20 +101,13 @@ fun AdminScreen(
 
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
-    var alert by remember { mutableStateOf<AdminAlertState?>(null) }
-    val lastAlert = remember { mutableStateOf<AdminAlertState?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var messageIsError by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf("password") }
 
-    fun setAlert(type: AppAlertType, title: String, description: String? = null) {
-        alert = AdminAlertState(type, title, description)
-    }
-
     fun setMsg(text: String?, isError: Boolean) {
-        alert = when {
-            text == null -> null
-            isError -> AdminAlertState(AppAlertType.Error, "操作失败", text)
-            else -> AdminAlertState(AppAlertType.Success, text)
-        }
+        message = text
+        messageIsError = isError
     }
 
     // --- 路由器密码 ---
@@ -163,7 +142,7 @@ fun AdminScreen(
     fun load() {
         scope.launch {
             loading = true
-            alert = null
+            message = null
             var hadError: String? = null
             try {
                 val d = withContext(Dispatchers.IO) { client.loadDropbear(config) }
@@ -194,7 +173,7 @@ fun AdminScreen(
             } catch (e: Exception) {
                 hadError = hadError ?: (e.message ?: "读取仓库公钥失败。")
             }
-            if (hadError != null) setAlert(AppAlertType.Error, "部分内容读取失败", hadError)
+            if (hadError != null) setMsg(hadError, true)
             loading = false
         }
     }
@@ -208,23 +187,23 @@ fun AdminScreen(
     fun saveDropbear() {
         scope.launch {
             busy = true
-            alert = null
+            message = null
             try {
                 withContext(Dispatchers.IO) {
                     client.applyDropbear(
                         config, instances, deletedSections.toList(), sshOrNull
-                    ) { phase -> setAlert(AppAlertType.Info, phase) }
+                    ) { phase -> setMsg(phase, false) }
                 }
-                setAlert(AppAlertType.Success, "已保存并应用")
+                setMsg("已保存并应用。", false)
                 load()
             } catch (e: RouterException) {
-                setAlert(
-                    AppAlertType.Error, "保存失败",
+                setMsg(
                     if (e.ubusCode == 6) "本固件限制了无 SSH 的配置修改，请先在设备编辑页开启 SSH。"
-                    else e.message ?: "请稍后重试。"
+                    else e.message ?: "保存失败。",
+                    true
                 )
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "保存失败", e.message ?: "请稍后重试。")
+                setMsg(e.message ?: "保存失败。", true)
             } finally {
                 busy = false
             }
@@ -233,25 +212,22 @@ fun AdminScreen(
 
     fun savePassword() {
         when {
-            pw1.isEmpty() -> setAlert(AppAlertType.Error, "请输入新密码。")
-            pw1 != pw2 -> setAlert(AppAlertType.Error, "两次输入的密码不一致", "密码未修改！")
+            pw1.isEmpty() -> setMsg("请输入新密码。", true)
+            pw1 != pw2 -> setMsg("两次输入的密码不一致，密码未修改！", true)
             else -> scope.launch {
                 busy = true
-                alert = null
+                message = null
                 try {
                     val ok = withContext(Dispatchers.IO) { client.changePassword(config, "root", pw1) }
                     if (ok) {
-                        setAlert(AppAlertType.Success, "系统密码已成功修改")
+                        setMsg("系统密码已成功修改。", false)
                         pw1 = ""
                         pw2 = ""
                     } else {
-                        setAlert(
-                            AppAlertType.Error, "修改系统密码失败",
-                            "密码未通过系统校验，请换一个更复杂的密码。"
-                        )
+                        setMsg("修改系统密码失败。", true)
                     }
                 } catch (e: Exception) {
-                    setAlert(AppAlertType.Error, "修改系统密码失败", e.message)
+                    setMsg(e.message ?: "修改系统密码失败。", true)
                 } finally {
                     busy = false
                 }
@@ -262,22 +238,20 @@ fun AdminScreen(
     fun saveHttp() {
         scope.launch {
             busy = true
-            alert = null
+            message = null
             try {
                 withContext(Dispatchers.IO) {
-                    client.applyHttpRedirect(config, httpRedirect, sshOrNull) { phase ->
-                        setAlert(AppAlertType.Info, phase)
-                    }
+                    client.applyHttpRedirect(config, httpRedirect, sshOrNull) { phase -> setMsg(phase, false) }
                 }
-                setAlert(AppAlertType.Success, "已保存并应用")
+                setMsg("已保存并应用。", false)
             } catch (e: RouterException) {
-                setAlert(
-                    AppAlertType.Error, "保存失败",
+                setMsg(
                     if (e.ubusCode == 6) "本固件限制了无 SSH 的配置修改，请先在设备编辑页开启 SSH。"
-                    else e.message ?: "请稍后重试。"
+                    else e.message ?: "保存失败。",
+                    true
                 )
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "保存失败", e.message ?: "请稍后重试。")
+                setMsg(e.message ?: "保存失败。", true)
             } finally {
                 busy = false
             }
@@ -288,20 +262,20 @@ fun AdminScreen(
         val key = sshKeyInput.trim()
         if (key.isEmpty()) return
         when {
-            sshKeyLines.any { it == key } -> setAlert(AppAlertType.Warning, "该 SSH 公钥已存在。")
+            sshKeyLines.any { it == key } -> setMsg("该 SSH 公钥已存在。", true)
             SshPublicKeyDecoder.decode(key) == null ->
-                setAlert(AppAlertType.Error, "SSH 公钥无效", "请提供有效的 RSA、ED25519 或 ECDSA 公钥。")
+                setMsg("SSH 公钥无效，请提供有效的 RSA、ED25519 或 ECDSA 公钥。", true)
             else -> scope.launch {
                 busy = true
-                alert = null
+                message = null
                 try {
                     val newKeys = sshKeyLines + key
                     withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
                     sshKeyLines = newKeys
                     sshKeyInput = ""
-                    setAlert(AppAlertType.Success, "密钥已添加")
+                    setMsg("密钥已添加。", false)
                 } catch (e: Exception) {
-                    setAlert(AppAlertType.Error, "添加密钥失败", e.message)
+                    setMsg(e.message ?: "添加密钥失败。", true)
                 } finally {
                     busy = false
                 }
@@ -312,14 +286,14 @@ fun AdminScreen(
     fun removeSshKey(key: SshPublicKey) {
         scope.launch {
             busy = true
-            alert = null
+            message = null
             try {
                 val newKeys = sshKeyLines.filter { it != key.source }
                 withContext(Dispatchers.IO) { client.saveAuthorizedKeys(config, newKeys, sshOrNull) }
                 sshKeyLines = newKeys
-                setAlert(AppAlertType.Success, "密钥已删除")
+                setMsg("密钥已删除。", false)
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "删除密钥失败", e.message)
+                setMsg(e.message ?: "删除密钥失败。", true)
             } finally {
                 busy = false
             }
@@ -329,15 +303,15 @@ fun AdminScreen(
     fun addRepoKeyContent(content: String, baseName: String?) {
         scope.launch {
             busy = true
-            alert = null
+            message = null
             try {
                 val isApk = repoDir == "/etc/apk/keys"
                 if (isApk && !AdminClient.isValidPem(content)) {
-                    setAlert(AppAlertType.Error, "密钥格式无效", "该密钥不是 PEM 格式（apk 环境要求 PEM 公钥）。")
+                    setMsg("该密钥不是有效的 PEM 格式（apk 环境要求 PEM 公钥）。", true)
                     return@launch
                 }
                 if (!isApk && AdminClient.isValidPem(content)) {
-                    setAlert(AppAlertType.Error, "密钥格式无效", "该密钥是 PEM 格式，opkg 环境不支持 PEM 公钥。")
+                    setMsg("该密钥是 PEM 格式，opkg 环境不支持 PEM 公钥。", true)
                     return@launch
                 }
                 val normalized = content.replace(Regex("\\s+"), " ").trim()
@@ -345,7 +319,7 @@ fun AdminScreen(
                         it.content.replace(Regex("\\s+"), " ").trim() == normalized
                     }
                 ) {
-                    setAlert(AppAlertType.Warning, "该仓库公钥已存在。")
+                    setMsg("该仓库公钥已存在。", true)
                     return@launch
                 }
                 val filename = withContext(Dispatchers.IO) {
@@ -353,9 +327,9 @@ fun AdminScreen(
                 }
                 repoKeys = repoKeys + RepoPublicKey(filename, content, AdminClient.isProtectedRepoKey(filename))
                 repoInput = ""
-                setAlert(AppAlertType.Success, "公钥已添加", filename)
+                setMsg("公钥已添加：$filename", false)
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "添加公钥失败", e.message)
+                setMsg(e.message ?: "添加公钥失败。", true)
             } finally {
                 busy = false
             }
@@ -368,12 +342,12 @@ fun AdminScreen(
         if (Regex("^https?://\\S+$", RegexOption.IGNORE_CASE).matches(raw)) {
             scope.launch {
                 busy = true
-                alert = null
+                message = null
                 try {
                     val (content, name) = withContext(Dispatchers.IO) { client.fetchKeyFromUrl(raw) }
                     addRepoKeyContent(content, name)
                 } catch (e: Exception) {
-                    setAlert(AppAlertType.Error, "拉取公钥失败", e.message)
+                    setMsg(e.message ?: "拉取公钥失败。", true)
                     busy = false
                 }
             }
@@ -385,13 +359,13 @@ fun AdminScreen(
     fun removeRepoKey(key: RepoPublicKey) {
         scope.launch {
             busy = true
-            alert = null
+            message = null
             try {
                 withContext(Dispatchers.IO) { client.deleteRepoKey(config, repoDir, key.filename, sshOrNull) }
                 repoKeys = repoKeys.filterNot { it.filename == key.filename }
-                setAlert(AppAlertType.Success, "公钥已删除")
+                setMsg("公钥已删除。", false)
             } catch (e: Exception) {
-                setAlert(AppAlertType.Error, "删除公钥失败", e.message)
+                setMsg(e.message ?: "删除公钥失败。", true)
             } finally {
                 busy = false
             }
@@ -663,21 +637,13 @@ fun AdminScreen(
                     Spacer(Modifier.height(4.dp))
                 }
 
-                if (alert != null) lastAlert.value = alert
-                AnimatedVisibility(
-                    visible = alert != null,
-                    enter = fadeIn() + slideInVertically { it / 2 },
-                    exit = fadeOut() + slideOutVertically { it / 2 },
-                    modifier = Modifier.padding(top = 10.dp)
-                ) {
-                    lastAlert.value?.let { a ->
-                        AppAlert(
-                            type = a.type,
-                            title = a.title,
-                            description = a.description,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                message?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (messageIsError) colors.error else colors.success,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
         }
