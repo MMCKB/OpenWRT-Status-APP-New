@@ -780,7 +780,10 @@ private fun DropbearInstanceCard(
     onChange: ((DropbearInstance) -> DropbearInstance) -> Unit
 ) {
     val colors = LocalAppColors.current
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (inst.section.isBlank()) "新实例" else "实例 ${inst.section}",
