@@ -56,6 +56,9 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** 应用类操作（uci apply + 确认窗口）的总时长上限。 */
 private const val SYS_APPLY_TIMEOUT_MS = 100_000L
@@ -66,9 +69,6 @@ private const val SYS_OP_TIMEOUT_MS = 30_000L
 private fun sysErrText(e: Exception): String =
     if (e is TimeoutCancellationException) "路由器连接中断或长时间无响应，请检查网络后重试。"
     else e.message ?: "请稍后重试。"
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 private data class SysSelectState(
     val title: String,
