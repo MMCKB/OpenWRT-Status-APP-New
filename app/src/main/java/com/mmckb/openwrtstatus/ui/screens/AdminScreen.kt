@@ -394,11 +394,6 @@ fun AdminScreen(
                 fontWeight = FontWeight.SemiBold,
                 color = colors.onSurface
             )
-            Text(
-                "管理设备的密码、SSH 访问、SSH 密钥、HTTP(S) 访问与软件包仓库公钥",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
             Spacer(Modifier.height(10.dp))
             SmoothOptionSwitcher(
                 options = listOf(
