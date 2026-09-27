@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
@@ -74,6 +75,7 @@ fun ToolScreen(
     onOpenRoutes: () -> Unit,
     onOpenFirewall: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenFlash: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -147,7 +149,10 @@ fun ToolScreen(
                     Icons.Filled.Description, "日志", "系统日志 · 内核日志",
                     Modifier.weight(1f).fillMaxHeight(), onOpenLogs
                 )
-                Spacer(Modifier.weight(1f))
+                ToolTile(
+                    Icons.Filled.Backup, "备份与更新", "备份 · 恢复 · 刷机",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFlash
+                )
             }
         } else {
             ToolEntryCard(
@@ -185,6 +190,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Description, "日志",
                 "系统日志（logread）与内核日志（dmesg），支持复制", onOpenLogs
+            )
+            ToolEntryCard(
+                Icons.Filled.Backup, "备份与更新",
+                "配置备份、出厂重置、恢复配置与固件刷写", onOpenFlash
             )
         }
     }
