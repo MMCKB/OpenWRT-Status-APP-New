@@ -113,6 +113,7 @@ fun ToolScreen(
                     Icons.Filled.AdminPanelSettings, "管理权", "密码 · SSH · 密钥",
                     Modifier.weight(1f).fillMaxHeight(), onOpenAdmin
                 )
+                Spacer(Modifier.weight(1f))
             }
         } else {
             ToolEntryCard(
