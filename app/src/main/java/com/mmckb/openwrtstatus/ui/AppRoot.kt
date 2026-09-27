@@ -63,6 +63,7 @@ import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
 import com.mmckb.openwrtstatus.LedActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
+import com.mmckb.openwrtstatus.RoutesActivity
 import com.mmckb.openwrtstatus.SystemActivity
 import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -82,6 +83,7 @@ import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.LedScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
+import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.SystemScreen
 import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
@@ -106,6 +108,7 @@ private sealed interface SecondaryPage {
     data object Wireless : SecondaryPage
     data object Admin : SecondaryPage
     data object Led : SecondaryPage
+    data object Routes : SecondaryPage
     data object About : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
@@ -202,6 +205,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Led
         }
     }
+    val routesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(RoutesActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Routes
+        }
+    }
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -246,6 +256,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.Led -> LedScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Routes -> RoutesScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -307,6 +322,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, LedActivity::class.java)
                             .putExtra(LedActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.Routes -> routesLauncher.launch(
+                        Intent(context, RoutesActivity::class.java)
+                            .putExtra(RoutesActivity.EXTRA_CONFIG, config)
+                    )
                     SecondaryPage.System -> systemLauncher.launch(
                         Intent(context, SystemActivity::class.java)
                             .putExtra(SystemActivity.EXTRA_CONFIG, config)
@@ -360,6 +379,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenSystem = { openSecondary(SecondaryPage.System) },
                         onOpenAdmin = { openSecondary(SecondaryPage.Admin) },
                         onOpenLed = { openSecondary(SecondaryPage.Led) },
+                        onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
