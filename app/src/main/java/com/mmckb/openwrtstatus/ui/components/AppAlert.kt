@@ -26,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /** 提示条类型：温和告知 / 成功 / 警告 / 错误（VibeHub Alert 图鉴同款四变体）。 */
 enum class AppAlertType { Info, Success, Warning, Error }
