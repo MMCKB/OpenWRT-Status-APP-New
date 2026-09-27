@@ -185,9 +185,9 @@ class AdminClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         onPhase: (String) -> Unit = {}
     ) = withContext(Dispatchers.IO) {
         val existing = instances.map { it.section }.filter { it.isNotBlank() }.toSet()
-        val named = instances.map { inst ->
+        val named = instances.mapIndexed { idx, inst ->
             if (inst.section.isBlank()) {
-                inst.copy(section = "app" + java.lang.Long.toString(System.currentTimeMillis(), 36))
+                inst.copy(section = "app" + java.lang.Long.toString(System.currentTimeMillis(), 36) + "n" + idx)
             } else inst
         }
         val newSections = named.map { it.section }.filter { it !in existing }.toSet()
@@ -647,9 +647,9 @@ object SshPublicKeyDecoder {
         if (len2 < 0) return null
 
         // LuCI：奇数字长先减一（mpint 前导零位）再换算位数
-        if (len1 and 1 == 1) len1--
+        if ((len1 and 1) == 1) len1--
         var len2adj = len2
-        if (len2adj and 1 == 1) len2adj--
+        if ((len2adj and 1) == 1) len2adj--
 
         val bits: Int? = when (kind) {
             "RSA" -> len2adj * 8
