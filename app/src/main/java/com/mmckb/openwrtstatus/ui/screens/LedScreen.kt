@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -39,6 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -76,6 +78,7 @@ private fun ledErrText(e: Exception): String = when {
     else -> e.message ?: "请稍后重试。"
 }
 
+/** 单选弹窗状态。 */
 private data class LedSelectState(
     val title: String,
     val options: List<Pair<String, String>>,
@@ -83,7 +86,7 @@ private data class LedSelectState(
     val onPick: (String) -> Unit
 )
 
-/** netdev 触发模式的多选弹窗状态（点击即切换勾选）。 */
+/** 触发模式多选弹窗状态（点击即切换勾选）。 */
 private data class LedMultiSelectState(
     val title: String,
     val options: List<Pair<String, String>>,
@@ -91,11 +94,24 @@ private data class LedMultiSelectState(
     val onToggle: (String) -> Unit
 )
 
+/** 编辑/添加弹窗的表单状态（独立于卡片列表，确定后写回）。 */
+private data class LedEditForm(
+    val name: String,
+    val sysfs: String,
+    val trigger: String,
+    val defaultState: String,
+    val inverted: Boolean,
+    val interval: String,
+    val delayon: String,
+    val delayoff: String,
+    val dev: String,
+    val mode: List<String>
+)
+
 /**
  * LED 配置页（工具页入口，LuCI admin/system/leds 的完整复刻）：
- * 以卡片管理 /etc/config/system 的 led 段——名称、LED（sysfs）、触发器
- * （常灭/常亮/自定义闪烁/心跳/网络设备活动）及其专属选项，支持添加/删除，
- * 保存并应用后 system 服务重载生效。
+ * 卡片仅展示名称、触发器与 LED 名称，编辑与添加在弹窗中完成；
+ * 保存并应用后 /etc/init.d/led 重载生效。
  */
 @Composable
 fun LedScreen(
@@ -121,7 +137,7 @@ fun LedScreen(
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val alertStack = rememberAlertStackState()
-    val density = androidx.compose.ui.platform.LocalDensity.current
+    val density = LocalDensity.current
     var alertTopPadding by remember { mutableStateOf(0.dp) }
 
     fun setAlert(type: AppAlertType, title: String, description: String? = null) {
@@ -153,6 +169,10 @@ fun LedScreen(
     var selectState by remember { mutableStateOf<LedSelectState?>(null) }
     var multiSelectState by remember { mutableStateOf<LedMultiSelectState?>(null) }
     var confirmDeleteIndex by remember { mutableStateOf<Int?>(null) }
+
+    // 编辑/添加弹窗：editingIndex = null 表示添加，否则为待编辑的列表下标
+    var editIndex by remember { mutableStateOf<Int?>(null) }
+    var editForm by remember { mutableStateOf<LedEditForm?>(null) }
 
     fun load() {
         scope.launch {
@@ -212,16 +232,51 @@ fun LedScreen(
         }
     }
 
-    fun updateAction(index: Int, transform: (LedAction) -> LedAction) {
-        actions = actions.mapIndexed { i, a -> if (i == index) transform(a) else a }
+    fun openEdit(index: Int?) {
+        val act = index?.let { actions.getOrNull(it) }
+        editIndex = index
+        editForm = LedEditForm(
+            name = act?.name ?: "",
+            sysfs = act?.sysfs ?: (ledDevices.firstOrNull()?.name ?: ""),
+            trigger = act?.trigger ?: "none",
+            defaultState = act?.defaultState ?: "0",
+            inverted = act?.inverted ?: false,
+            interval = act?.interval ?: "",
+            delayon = act?.delayon ?: "",
+            delayoff = act?.delayoff ?: "",
+            dev = act?.dev ?: "",
+            mode = act?.mode ?: emptyList()
+        )
     }
 
-    fun toggleMode(index: Int, mode: String) {
-        updateAction(index) { act ->
-            val modes = act.mode.toMutableList()
-            if (mode in modes) modes.remove(mode) else modes.add(mode)
-            act.copy(mode = modes)
+    fun commitEdit() {
+        val form = editForm ?: return
+        val updated = LedAction(
+            section = editIndex?.let { actions.getOrNull(it)?.section } ?: "",
+            name = form.name.trim(),
+            sysfs = form.sysfs,
+            trigger = form.trigger,
+            defaultState = form.defaultState,
+            inverted = form.inverted,
+            interval = form.interval.trim(),
+            delayon = form.delayon.trim(),
+            delayoff = form.delayoff.trim(),
+            dev = form.dev,
+            mode = form.mode
+        )
+        editIndex?.let { idx ->
+            if (idx >= 0 && idx < actions.size) {
+                actions = actions.mapIndexed { i, a -> if (i == idx) updated else a }
+            }
+        } ?: run {
+            actions = actions + updated
         }
+        editForm = null
+        editIndex = null
+    }
+
+    fun requestDelete(index: Int) {
+        confirmDeleteIndex = index
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -245,7 +300,13 @@ fun LedScreen(
             Text(
                 "自定义设备 LED 的触发行为",
                 style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    // 提示栈锚定在标题区正下方
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
+                }
             )
             Spacer(Modifier.height(10.dp))
 
@@ -262,49 +323,25 @@ fun LedScreen(
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
                         .padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     if (actions.isEmpty()) {
-                        AdmDescText("尚无 LED 动作。点击下方「添加 LED 动作」创建。")
+                        Text(
+                            "尚无 LED 动作。点击下方「添加 LED 动作」创建。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
                     }
                     actions.forEachIndexed { index, act ->
-                        LedActionCard(
+                        LedSummaryCard(
                             act = act,
-                            ledNames = ledDevices.map { it.name },
-                            netdevDevices = netdevDevices,
-                            busy = busy,
-                            onSelect = { title, options, current, onPick ->
-                                selectState = LedSelectState(title, options, current, onPick)
-                            },
-                            onSelectModes = { current, onToggle ->
-                                multiSelectState = LedMultiSelectState(
-                                    "选择触发模式", LedClient.NETDEV_MODES, current, onToggle
-                                )
-                            },
-                            onToggleMode = { m -> toggleMode(index, m) },
-                            onDelete = { confirmDeleteIndex = index },
-                            onChange = { transform -> updateAction(index, transform) }
+                            onEdit = { openEdit(index) },
+                            onDelete = { requestDelete(index) }
                         )
-                        if (index != actions.lastIndex) {
-                            HorizontalDivider(color = colors.outline, modifier = Modifier.padding(vertical = 2.dp))
-                        }
                     }
+
                     OutlinedButton(
-                        onClick = {
-                            actions = actions + LedAction(
-                                section = "",
-                                name = "",
-                                sysfs = ledDevices.firstOrNull()?.name ?: "",
-                                trigger = "none",
-                                defaultState = "0",
-                                inverted = false,
-                                interval = "",
-                                delayon = "",
-                                delayoff = "",
-                                dev = "",
-                                mode = emptyList()
-                            )
-                        },
+                        onClick = { openEdit(null) },
                         enabled = !busy && ledDevices.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -312,17 +349,18 @@ fun LedScreen(
                         Spacer(Modifier.width(6.dp))
                         Text("添加 LED 动作")
                     }
-                    Button(
-                        onClick = { save() },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (busy) "正在应用…" else "保存并应用") }
-                    OutlinedButton(
-                        onClick = { load() },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("重置") }
-                    Spacer(Modifier.height(4.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { save() },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f)
+                        ) { Text(if (busy) "正在应用…" else "保存并应用") }
+                        OutlinedButton(
+                            onClick = { load() },
+                            enabled = !busy
+                        ) { Text("重置") }
+                    }
                 }
             }
         }
@@ -337,7 +375,7 @@ fun LedScreen(
                 .padding(top = alertTopPadding)
         )
 
-        // 单选对话框（LED / 触发器 / 设备）
+        // 单选弹窗（LED / 触发器 / 设备，可从编辑弹窗中叠出）
         selectState?.let { sel ->
             AppDialog(
                 title = sel.title,
@@ -369,7 +407,7 @@ fun LedScreen(
             }
         }
 
-        // 触发模式多选对话框（点击即勾选/取消）
+        // 触发模式多选弹窗（点击即勾选/取消）
         multiSelectState?.let { sel ->
             AppDialog(
                 title = sel.title,
@@ -402,7 +440,149 @@ fun LedScreen(
             }
         }
 
-        // 删除 LED 动作确认
+        // 编辑 / 添加弹窗
+        editForm?.let { form ->
+            AppDialog(
+                title = if (editIndex != null) "编辑 LED 动作" else "添加 LED 动作",
+                confirmLabel = "确定",
+                confirmEnabled = form.sysfs.isNotBlank(),
+                onConfirm = { commitEdit() },
+                onDismiss = { editForm = null; editIndex = null }
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AppTextField(
+                        value = form.name,
+                        onValueChange = { editForm = form.copy(name = it) },
+                        singleLine = true,
+                        label = { Text("名称") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    LedPickRow(
+                        label = "LED 名称",
+                        value = form.sysfs.ifBlank { "请选择" }
+                    ) {
+                        selectState = LedSelectState(
+                            "选择 LED",
+                            ledDevices.map { it.name to it.name },
+                            form.sysfs
+                        ) { v -> editForm = form.copy(sysfs = v) }
+                    }
+                    LedPickRow(
+                        label = "触发器",
+                        value = LedClient.TRIGGERS.firstOrNull { it.first == form.trigger }?.second
+                            ?: form.trigger
+                    ) {
+                        selectState = LedSelectState(
+                            "选择触发器", LedClient.TRIGGERS, form.trigger
+                        ) { v -> editForm = form.copy(trigger = v) }
+                    }
+                    Text(
+                        LedClient.TRIGGER_DESCRIPTIONS[form.trigger] ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                    when (form.trigger) {
+                        "none" -> Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                .background(colors.surface)
+                                .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "默认状态（亮）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            AppSwitch(
+                                checked = form.defaultState == "1",
+                                onCheckedChange = { v -> editForm = form.copy(defaultState = if (v) "1" else "0") },
+                                modifier = Modifier.scale(0.75f)
+                            )
+                        }
+                        "heartbeat" -> {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                    .background(colors.surface)
+                                    .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "反转闪烁",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                AppSwitch(
+                                    checked = form.inverted,
+                                    onCheckedChange = { v -> editForm = form.copy(inverted = v) },
+                                    modifier = Modifier.scale(0.75f)
+                                )
+                            }
+                            AppTextField(
+                                value = form.interval,
+                                onValueChange = { editForm = form.copy(interval = it.filter { c -> c.isDigit() }.take(6)) },
+                                singleLine = true,
+                                label = { Text("间隔（毫秒）") },
+                                placeholder = { Text("50") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        "timer" -> {
+                            AppTextField(
+                                value = form.delayon,
+                                onValueChange = { editForm = form.copy(delayon = it.filter { c -> c.isDigit() }.take(9)) },
+                                singleLine = true,
+                                label = { Text("亮灯延迟（毫秒）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = form.delayoff,
+                                onValueChange = { editForm = form.copy(delayoff = it.filter { c -> c.isDigit() }.take(9)) },
+                                singleLine = true,
+                                label = { Text("灭灯延迟（毫秒）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        "netdev" -> {
+                            LedPickRow(
+                                label = "设备",
+                                value = form.dev.ifBlank { "请选择" }
+                            ) {
+                                selectState = LedSelectState(
+                                    "选择设备",
+                                    netdevDevices.map { it to it },
+                                    form.dev
+                                ) { v -> editForm = form.copy(dev = v) }
+                            }
+                            LedPickRow(
+                                label = "触发模式",
+                                value = if (form.mode.isEmpty()) "未选择"
+                                else form.mode.mapNotNull { m ->
+                                    LedClient.NETDEV_MODES.firstOrNull { it.first == m }?.second ?: m
+                                }.joinToString("、")
+                            ) {
+                                multiSelectState = LedMultiSelectState(
+                                    "选择触发模式", LedClient.NETDEV_MODES, form.mode
+                                ) { m ->
+                                    val modes = form.mode.toMutableList()
+                                    if (m in modes) modes.remove(m) else modes.add(m)
+                                    editForm = form.copy(mode = modes)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 删除确认
         confirmDeleteIndex?.let { index ->
             AppDialog(
                 title = "删除 LED 动作",
@@ -425,22 +605,12 @@ fun LedScreen(
     }
 }
 
+/** 摘要卡片：仅展示名称、触发器与 LED 名称，附编辑/删除。 */
 @Composable
-private fun AdmDescText(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = LocalAppColors.current.onSurfaceVariant
-    )
-}
-
-@Composable
-private fun LedSettingRow(
-    label: String,
-    description: String? = null,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onChanged: (Boolean) -> Unit
+private fun LedSummaryCard(
+    act: LedAction,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val colors = LocalAppColors.current
     Column(
@@ -449,211 +619,76 @@ private fun LedSettingRow(
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             .background(colors.surface)
             .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            AppSwitch(
-                checked = checked,
-                onCheckedChange = if (enabled) onChanged else null,
-                modifier = Modifier.scale(0.75f)
-            )
-        }
-        if (!description.isNullOrBlank()) {
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
+        Text(
+            act.name.ifBlank { act.sysfs },
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+        LedInfoRow("LED 名称", act.sysfs)
+        LedInfoRow(
+            "触发器",
+            LedClient.TRIGGERS.firstOrNull { it.first == act.trigger }?.second ?: act.trigger
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onEdit,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 16.dp, vertical = 4.dp
+                )
+            ) { Text("编辑") }
+            OutlinedButton(
+                onClick = onDelete,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 16.dp, vertical = 4.dp
+                )
+            ) { Text("删除", color = colors.error) }
         }
     }
 }
 
-/** 单个 LED 动作卡片：选项与 LuCI leds.js + led-trigger 插件一一对应。 */
 @Composable
-private fun LedActionCard(
-    act: LedAction,
-    ledNames: List<String>,
-    netdevDevices: List<String>,
-    busy: Boolean,
-    onSelect: (title: String, options: List<Pair<String, String>>, current: String, onPick: (String) -> Unit) -> Unit,
-    onSelectModes: (current: List<String>, onToggle: (String) -> Unit) -> Unit,
-    onToggleMode: (String) -> Unit,
-    onDelete: () -> Unit,
-    onChange: ((LedAction) -> LedAction) -> Unit
-) {
+private fun LedInfoRow(label: String, value: String) {
     val colors = LocalAppColors.current
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (act.section.isBlank()) "新 LED 动作"
-                else act.name.ifBlank { "LED 动作 ${act.section}" },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                "删除",
-                style = MaterialTheme.typography.labelLarge,
-                color = colors.error,
-                modifier = Modifier
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                    .clickable(enabled = !busy, onClick = onDelete)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            )
-        }
-        AppTextField(
-            value = act.name,
-            onValueChange = { v -> onChange { it.copy(name = v) } },
-            singleLine = true,
-            label = { Text("名称") },
-            enabled = !busy,
-            modifier = Modifier.fillMaxWidth()
-        )
-        val sysfsLabel = act.sysfs.ifBlank { "请选择" }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                .background(colors.surface)
-                .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                .clickable(enabled = !busy) {
-                    onSelect(
-                        "选择 LED",
-                        ledNames.map { it to it },
-                        act.sysfs
-                    ) { v -> onChange { it.copy(sysfs = v) } }
-                }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("LED 名称", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-            Text(sysfsLabel, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            Spacer(Modifier.width(6.dp))
-            Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                .background(colors.surface)
-                .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                .clickable(enabled = !busy) {
-                    onSelect(
-                        "选择触发器",
-                        LedClient.TRIGGERS,
-                        act.trigger
-                    ) { v -> onChange { it.copy(trigger = v) } }
-                }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("触发器", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-            Text(
-                LedClient.TRIGGERS.firstOrNull { it.first == act.trigger }?.second ?: act.trigger,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
-            Spacer(Modifier.width(6.dp))
-            Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-        }
+    Row {
         Text(
-            LedClient.TRIGGER_DESCRIPTIONS[act.trigger] ?: "",
+            label,
             style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.width(76.dp)
         )
-        when (act.trigger) {
-            "none" -> LedSettingRow(
-                label = "默认状态",
-                description = "触发器为「常灭」时 LED 的默认亮灭",
-                checked = act.defaultState == "1",
-                enabled = !busy
-            ) { v -> onChange { it.copy(defaultState = if (v) "1" else "0") } }
-            "heartbeat" -> {
-                LedSettingRow(
-                    label = "反转闪烁",
-                    description = "常亮常灭反转，随系统活动闪烁",
-                    checked = act.inverted,
-                    enabled = !busy
-                ) { v -> onChange { it.copy(inverted = v) } }
-                AppTextField(
-                    value = act.interval,
-                    onValueChange = { v -> onChange { it.copy(interval = v.filter { c -> c.isDigit() }.take(6)) } },
-                    singleLine = true,
-                    label = { Text("间隔（毫秒）") },
-                    placeholder = { Text("50") },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            "timer" -> {
-                AppTextField(
-                    value = act.delayon,
-                    onValueChange = { v -> onChange { it.copy(delayon = v.filter { c -> c.isDigit() }.take(9)) } },
-                    singleLine = true,
-                    label = { Text("亮灯延迟（毫秒）") },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                AppTextField(
-                    value = act.delayoff,
-                    onValueChange = { v -> onChange { it.copy(delayoff = v.filter { c -> c.isDigit() }.take(9)) } },
-                    singleLine = true,
-                    label = { Text("灭灯延迟（毫秒）") },
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            "netdev" -> {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                        .background(colors.surface)
-                        .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                        .clickable(enabled = !busy) {
-                            onSelect(
-                                "选择设备",
-                                netdevDevices.map { it to it },
-                                act.dev
-                            ) { v -> onChange { it.copy(dev = v) } }
-                        }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("设备", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-                    Text(act.dev.ifBlank { "请选择" }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                    Spacer(Modifier.width(6.dp))
-                    Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                        .background(colors.surface)
-                        .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
-                        .clickable(enabled = !busy) { onSelectModes(act.mode, onToggleMode) }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("触发模式", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-                    Text(
-                        if (act.mode.isEmpty()) "未选择"
-                        else act.mode.mapNotNull { m -> LedClient.NETDEV_MODES.firstOrNull { it.first == m }?.second ?: m }
-                            .joinToString("、"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-                }
-            }
-        }
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** 弹窗表单内的选择行（LED / 触发器 / 设备 / 触发模式）。 */
+@Composable
+private fun LedPickRow(label: String, value: String, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
     }
 }
