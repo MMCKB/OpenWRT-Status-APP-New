@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
@@ -68,6 +69,7 @@ fun ToolScreen(
     onOpenSystem: () -> Unit,
     onOpenAdmin: () -> Unit,
     onOpenLed: () -> Unit,
+    onOpenRoutes: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -120,6 +122,16 @@ fun ToolScreen(
                     Modifier.weight(1f).fillMaxHeight(), onOpenLed
                 )
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.AltRoute, "路由表", "邻居 · 路由 · 规则",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenRoutes
+                )
+                Spacer(Modifier.weight(1f))
+            }
         } else {
             ToolEntryCard(
                 Icons.Filled.Folder, "文件管理",
@@ -144,6 +156,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Lightbulb, "LED 配置",
                 "自定义设备 LED 的触发行为，支持常亮、闪烁、心跳与网络活动", onOpenLed
+            )
+            ToolEntryCard(
+                Icons.Filled.AltRoute, "路由表",
+                "当前生效的邻居表、活动路由与路由策略规则", onOpenRoutes
             )
         }
     }
