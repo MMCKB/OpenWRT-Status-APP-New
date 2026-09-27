@@ -148,6 +148,9 @@ class NftClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     private val json = Json { isLenient = true; ignoreUnknownKeys = true }
 
+    private fun str(obj: JsonObject, key: String): String? =
+        (obj[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+
     private fun parseNft(text: String): NftRuleset {
         if (text.isBlank()) return NftRuleset(emptyList(), emptyList(), emptyList())
         return runCatching {
