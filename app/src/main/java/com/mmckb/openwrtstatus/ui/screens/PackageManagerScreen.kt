@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -346,7 +347,7 @@ fun PackageManagerScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .padding(horizontal = 16.dp)
-            .padding(top = 2.dp, bottom = 12.dp)
+            .padding(top = 2.dp, bottom = 0.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
@@ -635,6 +636,8 @@ fun PackageManagerScreen(
                         onUpgrade = { runOp("upgrade", listOf(pkg.name), "升级") }
                     )
                 }
+                // 背景延伸到手势条区域，最后一行垫在 inset 之上
+                item { Spacer(Modifier.navigationBarsPadding().height(6.dp)) }
             }
         }
     }

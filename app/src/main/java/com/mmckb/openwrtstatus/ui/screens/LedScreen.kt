@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -327,7 +328,7 @@ fun LedScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
             // 标题区（提示栈锚定其底部）
             Column(
@@ -423,6 +424,9 @@ fun LedScreen(
                             enabled = !busy
                         ) { Text("重置") }
                     }
+
+                    // 背景延伸到手势条区域，底部按钮垫在 inset 之上
+                    Spacer(Modifier.navigationBarsPadding().height(6.dp))
                 }
             }
         }

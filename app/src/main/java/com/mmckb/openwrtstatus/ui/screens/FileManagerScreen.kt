@@ -776,7 +776,7 @@ fun FileManagerScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppBackButton(onBack = onBack)
@@ -1063,6 +1063,8 @@ fun FileManagerScreen(
                             }
                             HorizontalDivider(color = colors.outline)
                         }
+                        // 背景延伸到手势条区域，最后一行垫在 inset 之上
+                        item { Spacer(Modifier.navigationBarsPadding()) }
                     }
                 }
                 else -> {
@@ -1152,6 +1154,8 @@ fun FileManagerScreen(
                                     )
                                     HorizontalDivider(color = colors.outline)
                                 }
+                                // 背景延伸到手势条区域，最后一行垫在 inset 之上
+                                item { Spacer(Modifier.navigationBarsPadding()) }
                             }
                         }
                     }
