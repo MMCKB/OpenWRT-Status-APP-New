@@ -345,9 +345,11 @@ fun NftablesScreen(
                     AnimatedContent(
                         targetState = showIptables,
                         transitionSpec = {
-                            val enter = slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(260))
-                            val exit = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(260))
-                            if (targetState) enter togetherWith exit else exit togetherWith enter
+                            val enterFwd = slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(260))
+                            val exitFwd = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(260))
+                            val enterBack = slideInHorizontally(tween(260)) { -it / 6 } + fadeIn(tween(260))
+                            val exitBack = slideOutHorizontally(tween(260)) { -it / 6 } + fadeOut(tween(260))
+                            if (targetState) enterFwd togetherWith exitFwd else enterBack togetherWith exitBack
                         },
                         label = "fwViewSwitch"
                     ) { isIpt ->
