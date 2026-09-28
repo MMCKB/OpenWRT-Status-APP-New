@@ -6,14 +6,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -64,7 +58,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -77,7 +70,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -102,7 +94,6 @@ import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
@@ -2135,9 +2126,8 @@ private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
  * 分区选择器多行版：一行放不下全部选项时按文字宽度自适应拆成 2~3 行
  * SmoothOptionSwitcher（每行独立实例，选中项所在行高亮、其余行无选中）。
  * 收起时只显示选中项所在行（不留白）；末行右侧的圆形按钮展开/收起其余行。
- * 展开时弹窗整体拉高：窗口高度一次性切换（不在动画期间逐帧缩放窗口，
- * 杜绝 Dialog 缩放掉帧），新行从容器的下边缘上移滑入、收起时下移滑出
- * （容器裁切遮罩，只有纯粹的上移下移，无淡入淡出）；收起先播退场再缩窗。
+ * 展开/收起无动画、一步完成：不逐帧缩放 Dialog 窗口，不掉帧；
+ * 展开时弹窗整体拉高。
  */
 @Composable
 private fun GroupedSectionSwitcher(
@@ -2179,55 +2169,15 @@ private fun GroupedSectionSwitcher(
         val anchorRow = if (selRow >= 0) selRow else 0
         var expanded by rememberSaveable { mutableStateOf(false) }
 
-        // 掉帧根源是 Dialog 窗口逐帧跟随内容缩放（每帧窗口重排+表面重建）。
-        // 因此窗口高度只在展开/收起那一刻一次性切换，绝不在动画期间逐帧变化：
-        // 展开时立刻按全部行预留高度，新行在预留空间内以纯位移+淡入出现
-        // （逐帧零重排，纯 GPU 合成）；收起时先播退场动画，约 190ms 后窗口
-        // 再缩回。收起态只占一行，不留白。
-        var windowTall by remember { mutableStateOf(false) }
-        LaunchedEffect(expanded) {
-            if (expanded) {
-                windowTall = true
-            } else {
-                delay(190)
-                windowTall = false
-            }
-        }
-
+        // 展开/收起无动画：一步完成，不逐帧缩放 Dialog 窗口（不掉帧）。
+        // 收起态只占选中行，不留白；展开时弹窗整体拉高。
         val lastVisible = if (expanded) rows.size - 1 else 0
-        // 行的出现/离开与按钮下移共用同一条无回弹弹簧：可中断——快速连点时
-        // 从当前位置和速度续动而不是跳回起点，观感连贯顺滑。
-        val moveSpec = spring<Dp>(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = 650f
-        )
-        val btnY by animateDpAsState(
-            targetValue = (rowH + rowGap) * lastVisible,
-            animationSpec = moveSpec,
-            label = "groupBtnY"
-        )
 
-        // 容器高度随窗口一次性切换，动画期间保持不变（正文不逐帧重排）；
-        // clipToBounds 把滑出下边缘的行裁掉——行动画只有纯粹的上移下移。
-        Box(
-            modifier = Modifier
-                .height(if (windowTall) (rowH * rows.size + rowGap * (rows.size - 1)) else rowH)
-                .clipToBounds()
-        ) {
+        Box {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
                     rows.forEachIndexed { i, rowOpts ->
-                        AnimatedVisibility(
-                            visible = expanded || i == anchorRow,
-                            enter = slideInVertically(
-                                animationSpec = tween(260, easing = OptionSwitcherEasing),
-                                initialOffsetY = { it }
-                            ),
-                            exit = slideOutVertically(
-                                animationSpec = tween(180, easing = OptionSwitcherEasing),
-                                targetOffsetY = { it }
-                            )
-                        ) {
+                        if (expanded || i == anchorRow) {
                             SmoothOptionSwitcher(
                                 options = rowOpts,
                                 selected = selected.takeIf { rowOpts.any { o -> o.first == selected } },
@@ -2245,7 +2195,7 @@ private fun GroupedSectionSwitcher(
                         color = colors.surfaceVariant,
                         modifier = Modifier
                             .size(btnSize)
-                            .offset(y = btnY)
+                            .offset(y = (rowH + rowGap) * lastVisible)
                     ) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Icon(
