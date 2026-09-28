@@ -2221,11 +2221,11 @@ private fun GroupedSectionSwitcher(
                             visible = expanded || i == anchorRow,
                             enter = slideInVertically(
                                 animationSpec = tween(260, easing = OptionSwitcherEasing),
-                                initialOffsetY = { it.height }
+                                initialOffsetY = { it }
                             ),
                             exit = slideOutVertically(
                                 animationSpec = tween(180, easing = OptionSwitcherEasing),
-                                targetOffsetY = { it.height }
+                                targetOffsetY = { it }
                             )
                         ) {
                             SmoothOptionSwitcher(
