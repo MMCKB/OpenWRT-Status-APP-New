@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -281,33 +282,36 @@ fun NftablesScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface
                     )
-                    androidx.compose.runtime.WithCompositionLocalProvider(
-                        androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement provides false
-                    ) {
-                        AnimatedVisibility(
-                            visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
-                            enter = fadeIn(tween(200)) + scaleIn(
-                                initialScale = 0.8f, animationSpec = tween(200)
-                            ),
-                            exit = fadeOut(tween(200)) + scaleOut(
-                                targetScale = 0.8f, animationSpec = tween(200)
-                            ),
-                            modifier = Modifier.align(Alignment.CenterEnd)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(colors.surfaceVariant)
-                                    .size(30.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.KeyboardArrowUp,
-                                    contentDescription = "回到顶部",
-                                    tint = colors.onSurface,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                    AnimatedVisibility(
+                        visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
+                        enter = fadeIn(tween(200)) + scaleIn(
+                            initialScale = 0.8f, animationSpec = tween(200)
+                        ),
+                        exit = fadeOut(tween(200)) + scaleOut(
+                            targetScale = 0.8f, animationSpec = tween(200)
+                        ),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .clickable {
+                                scope.launch {
+                                    if (showIptables) iptListState.animateScrollToItem(0)
+                                    else nftListState.animateScrollToItem(0)
+                                }
                             }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(colors.surfaceVariant)
+                                .size(30.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "回到顶部",
+                                tint = colors.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }

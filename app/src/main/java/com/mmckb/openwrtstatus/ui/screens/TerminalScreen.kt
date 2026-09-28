@@ -56,6 +56,7 @@ fun TerminalScreen(
     viewModel: RouterViewModel,
     hideOutput: Boolean = false,
     bottomSpacer: androidx.compose.ui.unit.Dp = 76.dp,
+    inlineInput: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.terminal.state.collectAsStateWithLifecycle()
