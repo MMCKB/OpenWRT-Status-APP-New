@@ -8,7 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -76,6 +78,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -2175,9 +2178,20 @@ private fun GroupedSectionSwitcher(
         var expanded by rememberSaveable { mutableStateOf(false) }
 
         val lastVisible = if (expanded) rows.size - 1 else 0
+        // 行展开/收起与按钮下移共用同一条无回弹弹簧：可中断——快速连点时
+        // 从当前位置和速度续动而不是跳回起点，观感连贯顺滑；两条动画同参数
+        // 保证按钮与新增行严格同步。淡入淡出比尺寸动画更快收尾，减少文字闪烁。
+        val moveSpec = spring<Dp>(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = 650f
+        )
+        val sizeSpec = spring<IntSize>(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = 650f
+        )
         val btnY by animateDpAsState(
             targetValue = (rowH + rowGap) * lastVisible,
-            animationSpec = tween(260, easing = OptionSwitcherEasing),
+            animationSpec = moveSpec,
             label = "groupBtnY"
         )
 
@@ -2190,13 +2204,13 @@ private fun GroupedSectionSwitcher(
                         AnimatedVisibility(
                             visible = expanded || i == anchorRow,
                             enter = expandVertically(
-                                animationSpec = tween(260, easing = OptionSwitcherEasing),
+                                animationSpec = sizeSpec,
                                 expandFrom = Alignment.Top
-                            ) + fadeIn(tween(260, easing = OptionSwitcherEasing)),
+                            ) + fadeIn(tween(150)),
                             exit = shrinkVertically(
-                                animationSpec = tween(260, easing = OptionSwitcherEasing),
+                                animationSpec = sizeSpec,
                                 shrinkTowards = Alignment.Top
-                            ) + fadeOut(tween(260, easing = OptionSwitcherEasing))
+                            ) + fadeOut(tween(110))
                         ) {
                             SmoothOptionSwitcher(
                                 options = rowOpts,
