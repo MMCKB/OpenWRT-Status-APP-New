@@ -76,6 +76,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -408,6 +409,8 @@ fun WirelessScreen(
     var dlgIfname by remember { mutableStateOf("") }
     var dlgMacaddr by remember { mutableStateOf("") }
     var dlgGroupRekey by remember { mutableStateOf("") }
+    // 接口分区选择器展开时新增行的高度：正文等量收缩，弹窗总高度不变
+    var ifaceSwitcherExtra by remember { mutableStateOf(0.dp) }
     var dlgSkipInactivity by remember { mutableStateOf(false) }
     var dlgMaxInactivity by remember { mutableStateOf("") }
     var dlgMaxListenInterval by remember { mutableStateOf("") }
@@ -1331,13 +1334,22 @@ fun WirelessScreen(
                         ),
                         selected = ifaceSectionTab,
                         onSelect = { ifaceSectionTab = it },
+                        onExtraHeight = { ifaceSwitcherExtra = it },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                // 分区内容固定高度 + 滚动：切换页签时窗口尺寸恒定。
-                val sectionBodyHeight = minOf(
+                // 切到「网卡」分区时选择器不在组合里，展开量归零
+                LaunchedEffect(dlgGroup) { ifaceSwitcherExtra = 0.dp }
+                // 正文基准高度；分区选择器展开时新增行把正文往下推、正文等量
+                // 收缩（同样的 260ms 缓动），弹窗总高度保持不变
+                val baseBodyHeight = minOf(
                     360.dp,
                     androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.44f
+                )
+                val sectionBodyHeight by animateDpAsState(
+                    targetValue = (baseBodyHeight - ifaceSwitcherExtra).coerceAtLeast(120.dp),
+                    animationSpec = tween(260, easing = OptionSwitcherEasing),
+                    label = "sectionBodyHeight"
                 )
                 // 分区切换过渡（单份组合，比 AnimatedContent 轻）：key 变化时新内容
                 // 从 alpha 0 + 轻微下移淡入；动画值在 graphicsLayer lambda 内读取，
@@ -2131,14 +2143,16 @@ private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
 /**
  * 分区选择器多行版：一行放不下全部选项时按文字宽度自适应拆成 2~3 行
  * SmoothOptionSwitcher（每行独立实例，选中项所在行高亮、其余行无选中）。
- * 收起时只显示选中项所在行；末行右侧的圆形按钮展开/收起其余行，
- * 行展开（expandVertically）与按钮下移（animateDpAsState）均带动画。
+ * 收起时只显示选中项所在行（不留白）；末行右侧的圆形按钮展开/收起其余行。
+ * 展开时通过 [onExtraHeight] 回报新增高度，调用方把正文等量收缩——
+ * 文字内容被往下推而弹窗总高度不变。
  */
 @Composable
 private fun GroupedSectionSwitcher(
     options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
+    onExtraHeight: (Dp) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -2181,11 +2195,12 @@ private fun GroupedSectionSwitcher(
             label = "groupBtnY"
         )
 
-        // 固定高度：无论展开与否，外层始终预留「全部行」的空间，
-        // 弹窗高度恒定（不拉高拉低），行在预留空间内动画。
-        BoxWithConstraints(
-            modifier = Modifier.height((rowH * rows.size + rowGap * (rows.size - 1)).coerceAtLeast(rowH))
-        ) {
+        // 展开时回报新增高度（新增行数 × 行距），收起时回报 0——
+        // 调用方据此等量收缩正文：文字被往下推而弹窗总高度恒定。
+        LaunchedEffect(expanded, rows.size) {
+            onExtraHeight(if (expanded) (rowH + rowGap) * (rows.size - 1) else 0.dp)
+        }
+        Box {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
                     rows.forEachIndexed { i, rowOpts ->
