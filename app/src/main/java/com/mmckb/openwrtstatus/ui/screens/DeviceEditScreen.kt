@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -82,7 +83,7 @@ fun DeviceEditScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = 2.dp)
-            .padding(bottom = 16.dp),
+            .padding(bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -241,6 +242,9 @@ fun DeviceEditScreen(
                 Text("删除该设备", color = colors.error)
             }
         }
+
+        // 背景延伸到手势条区域，底部按钮垫在 inset 之上
+        Spacer(Modifier.navigationBarsPadding().height(6.dp))
     }
 }
 

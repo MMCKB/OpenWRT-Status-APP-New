@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -238,7 +239,7 @@ fun NftablesScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
             // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
             Column(
@@ -397,6 +398,8 @@ fun NftablesScreen(
                                         NftTableCard(t, chains, rules)
                                     }
                                 }
+                                // 卡片背景延伸到手势条区域，最后一张表垫在 inset 之上
+                                item { Spacer(Modifier.navigationBarsPadding().height(6.dp)) }
                             }
                         }
                     }
@@ -607,6 +610,8 @@ private fun IptablesOverview(
                         }
                     }
                 }
+                // 卡片背景延伸到手势条区域，最后一张表垫在 inset 之上
+                item { Spacer(Modifier.navigationBarsPadding().height(6.dp)) }
             }
         }
     }

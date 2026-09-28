@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
@@ -61,7 +62,7 @@ fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = 2.dp, bottom = 12.dp),
+            .padding(top = 2.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -154,6 +155,9 @@ fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 }
             }
         }
+
+        // 卡片背景延伸到手势条区域，最后一张卡片垫在 inset 之上
+        Spacer(Modifier.navigationBarsPadding().height(6.dp))
     }
 }
 

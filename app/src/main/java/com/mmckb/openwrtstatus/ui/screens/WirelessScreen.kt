@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -894,7 +895,7 @@ fun WirelessScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
@@ -1194,6 +1195,9 @@ fun WirelessScreen(
             ) {
                 Text(if (changes.isEmpty()) "无更改" else "应用更改（${changes.size} 段）")
             }
+
+            // 背景延伸到手势条区域，底部按钮垫在 inset 之上
+            Spacer(Modifier.navigationBarsPadding().height(6.dp))
         }
 
         // —— 横屏：WiFi 分享二维码从右侧滑出面板（竖屏为底部弹窗） ——

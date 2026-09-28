@@ -56,7 +56,7 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = rememberTopBarPadding())
-            .padding(bottom = 12.dp),
+            .padding(bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         AppCard {
@@ -158,6 +158,7 @@ fun SettingsScreen(
                 )
             }
         }
-        Spacer(Modifier.height(0.dp))
+        // 与其他 tab 页一致：最后一张卡片避开悬浮 tab bar，不再滚到它底下
+        Spacer(Modifier.height(96.dp))
     }
 }
