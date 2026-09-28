@@ -2177,48 +2177,54 @@ private fun GroupedSectionSwitcher(
             label = "groupBtnY"
         )
 
-        Row(verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
-                rows.forEachIndexed { i, rowOpts ->
-                    AnimatedVisibility(
-                        visible = expanded || i == anchorRow,
-                        enter = expandVertically(
-                            animationSpec = tween(260, easing = OptionSwitcherEasing),
-                            expandFrom = Alignment.Top
-                        ) + fadeIn(tween(180)),
-                        exit = shrinkVertically(
-                            animationSpec = tween(260, easing = OptionSwitcherEasing),
-                            shrinkTowards = Alignment.Top
-                        ) + fadeOut(tween(140))
-                    ) {
-                        SmoothOptionSwitcher(
-                            options = rowOpts,
-                            selected = selected.takeIf { rowOpts.any { o -> o.first == selected } },
-                            onSelect = onSelect,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+        // 固定高度：无论展开与否，外层始终预留「全部行」的空间，
+        // 弹窗高度恒定（不拉高拉低），行在预留空间内动画。
+        BoxWithConstraints(
+            modifier = Modifier.height((rowH * rows.size + rowGap * (rows.size - 1)).coerceAtLeast(rowH))
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
+                    rows.forEachIndexed { i, rowOpts ->
+                        AnimatedVisibility(
+                            visible = expanded || i == anchorRow,
+                            enter = expandVertically(
+                                animationSpec = tween(260, easing = OptionSwitcherEasing),
+                                expandFrom = Alignment.Top
+                            ) + fadeIn(tween(260, easing = OptionSwitcherEasing)),
+                            exit = shrinkVertically(
+                                animationSpec = tween(260, easing = OptionSwitcherEasing),
+                                shrinkTowards = Alignment.Top
+                            ) + fadeOut(tween(260, easing = OptionSwitcherEasing))
+                        ) {
+                            SmoothOptionSwitcher(
+                                options = rowOpts,
+                                selected = selected.takeIf { rowOpts.any { o -> o.first == selected } },
+                                onSelect = onSelect,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
-            }
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.width(btnSize)) {
-                Surface(
-                    onClick = { expanded = !expanded },
-                    shape = CircleShape,
-                    color = colors.surfaceVariant,
-                    modifier = Modifier
-                        .size(btnSize)
-                        .offset(y = btnY)
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Filled.ExpandMore,
-                            contentDescription = if (expanded) "收起更多分区" else "展开更多分区",
-                            tint = colors.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .rotate(if (expanded) 180f else 0f)
-                        )
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.width(btnSize)) {
+                    Surface(
+                        onClick = { expanded = !expanded },
+                        shape = CircleShape,
+                        color = colors.surfaceVariant,
+                        modifier = Modifier
+                            .size(btnSize)
+                            .offset(y = btnY)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.ExpandMore,
+                                contentDescription = if (expanded) "收起更多分区" else "展开更多分区",
+                                tint = colors.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(if (expanded) 180f else 0f)
+                            )
+                        }
                     }
                 }
             }
@@ -2248,9 +2254,24 @@ private fun WifiShareContent(shareIface: WirelessIface) {
         )
         Spacer(Modifier.height(16.dp))
         // 白底容器保证深色模式下二维码同样可被相机识别。
+        // 出现动画：缩放 0.8→1 + 淡入（260ms）。
+        val qrEnter = remember { androidx.compose.animation.core.Animatable(0f) }
+        LaunchedEffect(qrContent) {
+            qrEnter.snapTo(0f)
+            qrEnter.animateTo(
+                1f,
+                androidx.compose.animation.core.tween(260, easing = OptionSwitcherEasing)
+            )
+        }
         Surface(
             shape = AppShapes.block,
-            color = Color.White
+            color = Color.White,
+            modifier = Modifier.graphicsLayer {
+                val e = qrEnter.value
+                alpha = e
+                scaleX = 0.8f + 0.2f * e
+                scaleY = 0.8f + 0.2f * e
+            }
         ) {
             if (qrBitmap != null) {
                 Image(
@@ -2304,6 +2325,14 @@ private fun WifiShareSidePanel(iface: WirelessIface, onDismiss: () -> Unit) {
         }
     }
     val p = PredictiveBackEasing.transform(backProgress).coerceIn(0f, 1f)
+    // 入场动画：面板从右侧滑入 + 淡入（出现一次，280ms）
+    val enterAnim = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(Unit) {
+        enterAnim.animateTo(
+            0f,
+            androidx.compose.animation.core.tween(280, easing = OptionSwitcherEasing)
+        )
+    }
     Box(Modifier.fillMaxSize()) {
         // 半透明遮罩：点击空白关闭，随返回手势逐渐变透。
         Box(
@@ -2325,8 +2354,9 @@ private fun WifiShareSidePanel(iface: WirelessIface, onDismiss: () -> Unit) {
                 .fillMaxHeight()
                 .width(300.dp)
                 .graphicsLayer {
-                    alpha = 1f - 0.4f * p
-                    translationX = size.width * 0.3f * p
+                    val enter = enterAnim.value
+                    alpha = (1f - 0.4f * p) * (1f - enter)
+                    translationX = size.width * (0.3f * p + enter)
                 }
         ) {
             Column(

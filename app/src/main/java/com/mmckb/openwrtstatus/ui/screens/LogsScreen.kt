@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -262,12 +263,14 @@ fun LogsScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
             // 标题区（提示栈锚定其底部）
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
                 }
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -344,48 +347,55 @@ fun LogsScreen(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (tab == "syslog") {
                         LogsFilterCard {
-                            LogFilterSelectRow(
-                                label = "设施",
-                                notChecked = sysFacilityNot,
-                                onNotChange = { sysFacilityNot = it },
-                                value = if (sysFacility == "any") "任意" else sysFacility
-                            ) {
-                                selectState = LogsSelectState(
-                                    "选择设施",
-                                    listOf("any" to "任意") + SYSLOG_FACILITIES.map { it to it },
-                                    sysFacility
-                                ) { v -> sysFacility = v }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LogFilterSelectRow(
+                                    label = "设施",
+                                    notChecked = sysFacilityNot,
+                                    onNotChange = { sysFacilityNot = it },
+                                    value = if (sysFacility == "any") "任意" else sysFacility,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    selectState = LogsSelectState(
+                                        "选择设施",
+                                        listOf("any" to "任意") + SYSLOG_FACILITIES.map { it to it },
+                                        sysFacility
+                                    ) { v -> sysFacility = v }
+                                }
+                                LogFilterSelectRow(
+                                    label = "级别",
+                                    notChecked = sysSeverityNot,
+                                    onNotChange = { sysSeverityNot = it },
+                                    value = if (sysSeverity == "any") "任意" else sysSeverity,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    selectState = LogsSelectState(
+                                        "选择级别",
+                                        listOf("any" to "任意") + SYSLOG_SEVERITIES.map { it to it },
+                                        sysSeverity
+                                    ) { v -> sysSeverity = v }
+                                }
                             }
-                            LogFilterSelectRow(
-                                label = "级别",
-                                notChecked = sysSeverityNot,
-                                onNotChange = { sysSeverityNot = it },
-                                value = if (sysSeverity == "any") "任意" else sysSeverity
-                            ) {
-                                selectState = LogsSelectState(
-                                    "选择级别",
-                                    listOf("any" to "任意") + SYSLOG_SEVERITIES.map { it to it },
-                                    sysSeverity
-                                ) { v -> sysSeverity = v }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LogTextRow(
+                                    value = sysTag,
+                                    onValueChange = { sysTag = it },
+                                    label = "标签",
+                                    modifier = Modifier.weight(1f)
+                                )
+                                LogTextRow(
+                                    value = sysText,
+                                    onValueChange = { sysText = it },
+                                    label = "文本",
+                                    notChecked = sysTextNot,
+                                    onNotChange = { sysTextNot = it },
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
-                        }
-                        LogsFilterCard {
-                            LogTextRow(
-                                value = sysTag,
-                                onValueChange = { sysTag = it },
-                                label = "标签包含"
-                            )
-                            LogTextRow(
-                                value = sysText,
-                                onValueChange = { sysText = it },
-                                label = "文本包含",
-                                notChecked = sysTextNot,
-                                onNotChange = { sysTextNot = it }
-                            )
                             LogSwitchRow("最新在前", sysNewestFirst) { sysNewestFirst = it }
                         }
                     } else {
@@ -411,8 +421,6 @@ fun LogsScreen(
                                     kernSeverity
                                 ) { v -> kernSeverity = v }
                             }
-                        }
-                        LogsFilterCard {
                             LogTextRow(
                                 value = kernText,
                                 onValueChange = { kernText = it },
@@ -427,27 +435,28 @@ fun LogsScreen(
                     val text = if (tab == "syslog") syslogText else kernelText
                     val lines = text.lineSequence().toList()
 
-                    Text(
-                        "共 ${lines.size} 行",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    if (lines.isEmpty()) {
+                    // 日志框：标题行（行数 + 过滤开关）与内容同一卡片，节省纵向空间
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(colors.surface)
+                            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text(
-                            "无匹配的日志条目。",
+                            "共 ${lines.size} 行",
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.onSurfaceVariant
                         )
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(colors.surface)
-                                .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                        ) {
+                        if (lines.isEmpty()) {
+                            Text(
+                                "无匹配的日志条目。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant
+                            )
+                        } else {
                             lines.forEach { line ->
                                 Text(
                                     line,
@@ -456,6 +465,10 @@ fun LogsScreen(
                                     color = colors.onSurface
                                 )
                             }
+                            // 卡片背景延伸到手势条区域，内容在其内滚动
+                            Spacer(
+                                Modifier.navigationBarsPadding().height(6.dp)
+                            )
                         }
                     }
                 }
@@ -532,32 +545,30 @@ private fun LogFilterSelectRow(
     notChecked: Boolean,
     onNotChange: (Boolean) -> Unit,
     value: String,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val colors = LocalAppColors.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
             .background(colors.surfaceVariant)
-            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(44.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(36.dp)) {
             Text("非", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             AppSwitch(
                 checked = notChecked,
                 onCheckedChange = onNotChange,
-                modifier = Modifier.scale(0.55f)
+                modifier = Modifier.scale(0.5f)
             )
         }
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-        Spacer(Modifier.width(6.dp))
-        Text("›", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
+        Spacer(Modifier.width(4.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurface, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1)
     }
 }
 
@@ -567,17 +578,22 @@ private fun LogTextRow(
     onValueChange: (String) -> Unit,
     label: String,
     notChecked: Boolean? = null,
-    onNotChange: ((Boolean) -> Unit)? = null
+    onNotChange: ((Boolean) -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+    ) {
         if (notChecked != null && onNotChange != null) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(44.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(36.dp)) {
                 Text("非", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 AppSwitch(
                     checked = notChecked,
                     onCheckedChange = onNotChange,
-                    modifier = Modifier.scale(0.55f)
+                    modifier = Modifier.scale(0.5f)
                 )
             }
         }
