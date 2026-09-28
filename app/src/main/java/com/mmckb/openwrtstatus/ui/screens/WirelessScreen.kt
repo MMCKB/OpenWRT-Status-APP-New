@@ -12,8 +12,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
@@ -66,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -2137,7 +2136,8 @@ private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
  * SmoothOptionSwitcher（每行独立实例，选中项所在行高亮、其余行无选中）。
  * 收起时只显示选中项所在行（不留白）；末行右侧的圆形按钮展开/收起其余行。
  * 展开时弹窗整体拉高：窗口高度一次性切换（不在动画期间逐帧缩放窗口，
- * 杜绝 Dialog 缩放掉帧），新行以纯位移+淡入出现；收起先播退场再缩窗。
+ * 杜绝 Dialog 缩放掉帧），新行从容器的下边缘上移滑入、收起时下移滑出
+ * （容器裁切遮罩，只有纯粹的上移下移，无淡入淡出）；收起先播退场再缩窗。
  */
 @Composable
 private fun GroupedSectionSwitcher(
@@ -2207,20 +2207,25 @@ private fun GroupedSectionSwitcher(
             label = "groupBtnY"
         )
 
-        // 容器高度随窗口一次性切换，动画期间保持不变（正文不逐帧重排）
-        Box(modifier = Modifier.height(if (windowTall) (rowH * rows.size + rowGap * (rows.size - 1)) else rowH)) {
+        // 容器高度随窗口一次性切换，动画期间保持不变（正文不逐帧重排）；
+        // clipToBounds 把滑出下边缘的行裁掉——行动画只有纯粹的上移下移。
+        Box(
+            modifier = Modifier
+                .height(if (windowTall) (rowH * rows.size + rowGap * (rows.size - 1)) else rowH)
+                .clipToBounds()
+        ) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
                     rows.forEachIndexed { i, rowOpts ->
                         AnimatedVisibility(
                             visible = expanded || i == anchorRow,
-                            enter = fadeIn(tween(170)) + slideInVertically(
-                                animationSpec = tween(240, easing = OptionSwitcherEasing),
-                                initialOffsetY = { it / 3 }
+                            enter = slideInVertically(
+                                animationSpec = tween(260, easing = OptionSwitcherEasing),
+                                initialOffsetY = { it.height }
                             ),
-                            exit = fadeOut(tween(130)) + slideOutVertically(
-                                animationSpec = tween(180),
-                                targetOffsetY = { it / 3 }
+                            exit = slideOutVertically(
+                                animationSpec = tween(180, easing = OptionSwitcherEasing),
+                                targetOffsetY = { it.height }
                             )
                         ) {
                             SmoothOptionSwitcher(
