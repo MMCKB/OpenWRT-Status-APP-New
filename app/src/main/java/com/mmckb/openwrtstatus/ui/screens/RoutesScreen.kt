@@ -210,35 +210,33 @@ fun RoutesScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface
                     )
-                    androidx.compose.runtime.WithCompositionLocalProvider(
-                        androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement provides false
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showBackToTop,
+                        enter = androidx.compose.animation.fadeIn(tween(200)) +
+                            androidx.compose.animation.scaleIn(
+                                initialScale = 0.8f, animationSpec = tween(200)
+                            ),
+                        exit = androidx.compose.animation.fadeOut(tween(200)) +
+                            androidx.compose.animation.scaleOut(
+                                targetScale = 0.8f, animationSpec = tween(200)
+                            ),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .clickable { scope.launch { listState.animateScrollToItem(0) } }
                     ) {
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = showBackToTop,
-                            enter = androidx.compose.animation.fadeIn(tween(200)) +
-                                androidx.compose.animation.scaleIn(
-                                    initialScale = 0.8f, animationSpec = tween(200)
-                                ),
-                            exit = androidx.compose.animation.fadeOut(tween(200)) +
-                                androidx.compose.animation.scaleOut(
-                                    targetScale = 0.8f, animationSpec = tween(200)
-                                ),
-                            modifier = Modifier.align(Alignment.CenterEnd)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(colors.surfaceVariant)
+                                .size(30.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(colors.surfaceVariant)
-                                    .size(30.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.KeyboardArrowUp,
-                                    contentDescription = "回到顶部",
-                                    tint = colors.onSurface,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                            Icon(
+                                Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "回到顶部",
+                                tint = colors.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
