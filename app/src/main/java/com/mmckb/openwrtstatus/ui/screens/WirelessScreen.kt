@@ -12,10 +12,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -79,7 +79,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -104,6 +103,7 @@ import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
@@ -2136,7 +2136,8 @@ private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
  * 分区选择器多行版：一行放不下全部选项时按文字宽度自适应拆成 2~3 行
  * SmoothOptionSwitcher（每行独立实例，选中项所在行高亮、其余行无选中）。
  * 收起时只显示选中项所在行（不留白）；末行右侧的圆形按钮展开/收起其余行。
- * 展开时新增行把下方正文往下推、弹窗整体拉高，行出现/收回均带动画。
+ * 展开时弹窗整体拉高：窗口高度一次性切换（不在动画期间逐帧缩放窗口，
+ * 杜绝 Dialog 缩放掉帧），新行以纯位移+淡入出现；收起先播退场再缩窗。
  */
 @Composable
 private fun GroupedSectionSwitcher(
@@ -2178,15 +2179,25 @@ private fun GroupedSectionSwitcher(
         val anchorRow = if (selRow >= 0) selRow else 0
         var expanded by rememberSaveable { mutableStateOf(false) }
 
+        // 掉帧根源是 Dialog 窗口逐帧跟随内容缩放（每帧窗口重排+表面重建）。
+        // 因此窗口高度只在展开/收起那一刻一次性切换，绝不在动画期间逐帧变化：
+        // 展开时立刻按全部行预留高度，新行在预留空间内以纯位移+淡入出现
+        // （逐帧零重排，纯 GPU 合成）；收起时先播退场动画，约 190ms 后窗口
+        // 再缩回。收起态只占一行，不留白。
+        var windowTall by remember { mutableStateOf(false) }
+        LaunchedEffect(expanded) {
+            if (expanded) {
+                windowTall = true
+            } else {
+                delay(190)
+                windowTall = false
+            }
+        }
+
         val lastVisible = if (expanded) rows.size - 1 else 0
-        // 行展开/收起与按钮下移共用同一条无回弹弹簧：可中断——快速连点时
-        // 从当前位置和速度续动而不是跳回起点，观感连贯顺滑；两条动画同参数
-        // 保证按钮与新增行严格同步。淡入淡出比尺寸动画更快收尾，减少文字闪烁。
+        // 行的出现/离开与按钮下移共用同一条无回弹弹簧：可中断——快速连点时
+        // 从当前位置和速度续动而不是跳回起点，观感连贯顺滑。
         val moveSpec = spring<Dp>(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = 650f
-        )
-        val sizeSpec = spring<IntSize>(
             dampingRatio = Spring.DampingRatioNoBouncy,
             stiffness = 650f
         )
@@ -2196,22 +2207,21 @@ private fun GroupedSectionSwitcher(
             label = "groupBtnY"
         )
 
-        // 展开时新增行把下方正文往下推：容器随可见行数撑开，
-        // Dialog 窗口逐帧跟随（弹窗整体拉高）；收起时不留白。
-        Box {
+        // 容器高度随窗口一次性切换，动画期间保持不变（正文不逐帧重排）
+        Box(modifier = Modifier.height(if (windowTall) (rowH * rows.size + rowGap * (rows.size - 1)) else rowH)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
                     rows.forEachIndexed { i, rowOpts ->
                         AnimatedVisibility(
                             visible = expanded || i == anchorRow,
-                            enter = expandVertically(
-                                animationSpec = sizeSpec,
-                                expandFrom = Alignment.Top
-                            ) + fadeIn(tween(150)),
-                            exit = shrinkVertically(
-                                animationSpec = sizeSpec,
-                                shrinkTowards = Alignment.Top
-                            ) + fadeOut(tween(110))
+                            enter = fadeIn(tween(170)) + slideInVertically(
+                                animationSpec = tween(240, easing = OptionSwitcherEasing),
+                                initialOffsetY = { it / 3 }
+                            ),
+                            exit = fadeOut(tween(130)) + slideOutVertically(
+                                animationSpec = tween(180),
+                                targetOffsetY = { it / 3 }
+                            )
                         ) {
                             SmoothOptionSwitcher(
                                 options = rowOpts,
