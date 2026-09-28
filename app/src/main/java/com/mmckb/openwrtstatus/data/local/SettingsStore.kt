@@ -50,6 +50,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_TOOLS_GRID, enabled).apply()
     }
 
+    /** 终端直接输入：true = 输出区底部内联输入（无独立输入框/发送键）。 */
+    fun isTerminalInlineInput(): Boolean = prefs.getBoolean(KEY_TERMINAL_INLINE, false)
+
+    fun saveTerminalInlineInput(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TERMINAL_INLINE, enabled).apply()
+    }
+
     fun saveDevices(devices: List<RouterConfig>, activeId: String) {
         val array = JSONArray()
         devices.forEach { array.put(it.toJson()) }
@@ -116,5 +123,6 @@ class SettingsStore(context: Context) {
         private const val KEY_ACTIVE = "activeDeviceId"
         private const val KEY_CONN_NOTIFY = "connection_notify_enabled"
         private const val KEY_TOOLS_GRID = "tools_grid_enabled"
+        private const val KEY_TERMINAL_INLINE = "terminal_inline_input"
     }
 }

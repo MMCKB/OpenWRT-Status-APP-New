@@ -74,6 +74,10 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val _toolsGridEnabled = MutableStateFlow(settingsStore.isToolsGridEnabled())
     val toolsGridEnabled: StateFlow<Boolean> = _toolsGridEnabled
 
+    /** 终端直接输入：true = 输出区底部内联输入（无独立输入框/发送键）。 */
+    private val _terminalInlineInput = MutableStateFlow(settingsStore.isTerminalInlineInput())
+    val terminalInlineInput: StateFlow<Boolean> = _terminalInlineInput
+
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
     private var previousTime = 0L
@@ -259,6 +263,12 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     fun setToolsGridEnabled(enabled: Boolean) {
         settingsStore.saveToolsGridEnabled(enabled)
         _toolsGridEnabled.value = enabled
+    }
+
+    /** 终端直接输入切换（设置页开关），持久化到本地。 */
+    fun setTerminalInlineInput(enabled: Boolean) {
+        settingsStore.saveTerminalInlineInput(enabled)
+        _terminalInlineInput.value = enabled
     }
 
     /** Adds a device and makes it the active one. */

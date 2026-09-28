@@ -332,7 +332,9 @@ fun LedScreen(
             // 标题区（提示栈锚定其底部）
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
                 }
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

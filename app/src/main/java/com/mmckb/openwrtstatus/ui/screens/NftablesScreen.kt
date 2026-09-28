@@ -1,12 +1,17 @@
 package com.mmckb.openwrtstatus.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
@@ -153,8 +159,19 @@ fun NftablesScreen(
     var alertTopPadding by remember { mutableStateOf(0.dp) }
     var iptFamily by remember { mutableStateOf("iptables") }
     var showIptables by remember { mutableStateOf(false) }
-    // iptables 概况子页打开时，系统返回先回到防火墙主视图
+    // iptables 概况子页打开时，系统返回先回到防火墙主视图（预测性返回：跟手滑动）
     BackHandler(enabled = showIptables) { showIptables = false }
+    var iptBackProgress by remember { mutableStateOf(0f) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = showIptables) { progress ->
+        try {
+            progress.collect { iptBackProgress = it.progress }
+            showIptables = false
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            // 取消：回弹由 progress 归零驱动
+        } finally {
+            iptBackProgress = 0f
+        }
+    }
 
     // 浏览超过一屏后，标题右侧出现「回到顶部」按钮（两份列表各自跟踪）
     val nftListState = rememberLazyListState()
@@ -224,7 +241,9 @@ fun NftablesScreen(
             // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
                 }
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -249,41 +268,46 @@ fun NftablesScreen(
                         )
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 标题行：回到顶部按钮叠加在右侧（固定行高，不因按钮出现/消失而变化）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 34.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
                     Text(
                         if (showIptables) "iptables 规则概况" else "防火墙",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface,
-                        modifier = Modifier.weight(1f)
+                        color = colors.onSurface
                     )
-                    AnimatedVisibility(
-                        visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
-                        enter = fadeIn(tween(200)) + scaleIn(
-                            initialScale = 0.8f, animationSpec = tween(200)
-                        ),
-                        exit = fadeOut(tween(200)) + scaleOut(
-                            targetScale = 0.8f, animationSpec = tween(200)
-                        )
+                    androidx.compose.runtime.WithCompositionLocalProvider(
+                        androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement provides false
                     ) {
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    if (showIptables) iptListState.animateScrollToItem(0)
-                                    else nftListState.animateScrollToItem(0)
-                                }
-                            },
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(colors.surfaceVariant)
-                                .size(34.dp)
+                        AnimatedVisibility(
+                            visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
+                            enter = fadeIn(tween(200)) + scaleIn(
+                                initialScale = 0.8f, animationSpec = tween(200)
+                            ),
+                            exit = fadeOut(tween(200)) + scaleOut(
+                                targetScale = 0.8f, animationSpec = tween(200)
+                            ),
+                            modifier = Modifier.align(Alignment.CenterEnd)
                         ) {
-                            Icon(
-                                Icons.Filled.KeyboardArrowUp,
-                                contentDescription = "回到顶部",
-                                tint = colors.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(colors.surfaceVariant)
+                                    .size(30.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.KeyboardArrowUp,
+                                    contentDescription = "回到顶部",
+                                    tint = colors.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -311,40 +335,61 @@ fun NftablesScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant
                     )
-                } else if (showIptables) {
-                    IptablesOverview(
-                        data = d, family = iptFamily, listState = iptListState,
-                        onFamilyChange = { iptFamily = it }
-                    )
                 } else {
-                    LazyColumn(
-                        state = nftListState,
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (d.hasLegacy) {
-                            item {
-                                LegacyNoticeCard(onOpen = { showIptables = true })
-                            }
-                        }
-                        if (d.ruleset.tables.isEmpty()) {
-                            item {
-                                Text(
-                                    "未加载 nftables 规则集。",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.onSurfaceVariant
+                    // iptables 概况与 nft 规则集之间的过渡（滑入/滑出 + 淡入淡出）
+                    AnimatedContent(
+                        targetState = showIptables,
+                        transitionSpec = {
+                            val enter = slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(260))
+                            val exit = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(260))
+                            if (targetState) enter togetherWith exit else exit togetherWith enter
+                        },
+                        label = "fwViewSwitch"
+                    ) { isIpt ->
+                        if (isIpt) {
+                            // 预测性返回：跟手位移与淡出
+                            Box(
+                                modifier = Modifier.graphicsLayer {
+                                    translationX = size.width * 0.3f * iptBackProgress
+                                    alpha = 1f - 0.5f * iptBackProgress
+                                }
+                            ) {
+                                IptablesOverview(
+                                    data = d, family = iptFamily, listState = iptListState,
+                                    onFamilyChange = { iptFamily = it }
                                 )
                             }
-                        }
-                        d.ruleset.tables.forEach { t ->
-                            item {
-                                val chains = d.ruleset.chains.filter {
-                                    it.family == t.family && it.table == t.name
+                        } else {
+                            LazyColumn(
+                                state = nftListState,
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                if (d.hasLegacy) {
+                                    item {
+                                        LegacyNoticeCard(onOpen = { showIptables = true })
+                                    }
                                 }
-                                val rules = d.ruleset.rules.filter {
-                                    it.family == t.family && it.table == t.name
+                                if (d.ruleset.tables.isEmpty()) {
+                                    item {
+                                        Text(
+                                            "未加载 nftables 规则集。",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.onSurfaceVariant
+                                        )
+                                    }
                                 }
-                                NftTableCard(t, chains, rules)
+                                d.ruleset.tables.forEach { t ->
+                                    item {
+                                        val chains = d.ruleset.chains.filter {
+                                            it.family == t.family && it.table == t.name
+                                        }
+                                        val rules = d.ruleset.rules.filter {
+                                            it.family == t.family && it.table == t.name
+                                        }
+                                        NftTableCard(t, chains, rules)
+                                    }
+                                }
                             }
                         }
                     }

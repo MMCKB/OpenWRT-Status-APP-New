@@ -129,6 +129,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val config by viewModel.config.collectAsState()
     val devices by viewModel.devices.collectAsState()
     val toolsGrid by viewModel.toolsGridEnabled.collectAsState()
+    val terminalInlineInput by viewModel.terminalInlineInput.collectAsState()
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
@@ -426,7 +427,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         // 横屏双栏且未开二级页时，输出区渲染在右栏，左侧只保留输入。
                         hideOutput = isLandscape && secondary == null,
                         bottomSpacer = if (isLandscape) 40.dp else 76.dp,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        inlineInput = terminalInlineInput,
                     )
                     TAB_TOOL -> ToolScreen(
                         grid = toolsGrid,
@@ -569,6 +571,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     if (selectedTab == TAB_TERMINAL && secondary == null) {
                         TerminalOutputPane(
                             viewModel = viewModel,
+                            inlineInput = terminalInlineInput,
                             modifier = Modifier.fillMaxSize()
                         )
                     }

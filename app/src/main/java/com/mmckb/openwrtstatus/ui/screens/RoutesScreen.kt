@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -179,7 +180,9 @@ fun RoutesScreen(
             // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
                 }
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,38 +197,48 @@ fun RoutesScreen(
                         )
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 标题行：回到顶部按钮叠加在右侧（固定行高，不因按钮出现/消失而变化）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 34.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
                     Text(
                         "路由表",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface,
-                        modifier = Modifier.weight(1f)
+                        color = colors.onSurface
                     )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showBackToTop,
-                        enter = androidx.compose.animation.fadeIn(tween(200)) +
-                            androidx.compose.animation.scaleIn(
-                                initialScale = 0.8f, animationSpec = tween(200)
-                            ),
-                        exit = androidx.compose.animation.fadeOut(tween(200)) +
-                            androidx.compose.animation.scaleOut(
-                                targetScale = 0.8f, animationSpec = tween(200)
-                            )
+                    androidx.compose.runtime.WithCompositionLocalProvider(
+                        androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement provides false
                     ) {
-                        IconButton(
-                            onClick = { scope.launch { listState.animateScrollToItem(0) } },
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(colors.surfaceVariant)
-                                .size(34.dp)
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showBackToTop,
+                            enter = androidx.compose.animation.fadeIn(tween(200)) +
+                                androidx.compose.animation.scaleIn(
+                                    initialScale = 0.8f, animationSpec = tween(200)
+                                ),
+                            exit = androidx.compose.animation.fadeOut(tween(200)) +
+                                androidx.compose.animation.scaleOut(
+                                    targetScale = 0.8f, animationSpec = tween(200)
+                                ),
+                            modifier = Modifier.align(Alignment.CenterEnd)
                         ) {
-                            Icon(
-                                Icons.Filled.KeyboardArrowUp,
-                                contentDescription = "回到顶部",
-                                tint = colors.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(colors.surfaceVariant)
+                                    .size(30.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.KeyboardArrowUp,
+                                    contentDescription = "回到顶部",
+                                    tint = colors.onSurface,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -45,11 +47,13 @@ fun SettingsScreen(
     val colors = LocalAppColors.current
     val connNotify by viewModel.connNotifyEnabled.collectAsStateWithLifecycle()
     val toolsGrid by viewModel.toolsGridEnabled.collectAsStateWithLifecycle()
+    val terminalInline by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = rememberTopBarPadding())
             .padding(bottom = 12.dp),
@@ -105,6 +109,30 @@ fun SettingsScreen(
                 AppSwitch(
                     checked = toolsGrid,
                     onCheckedChange = { viewModel.setToolsGridEnabled(it) }
+                )
+            }
+        }
+        AppCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "终端直接输入",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "开启后终端页去掉输入框与发送键，直接在输出区底部输入命令（回车发送）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                AppSwitch(
+                    checked = terminalInline,
+                    onCheckedChange = { viewModel.setTerminalInlineInput(it) }
                 )
             }
         }

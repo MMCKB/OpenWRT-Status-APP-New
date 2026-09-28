@@ -146,7 +146,7 @@ fun StackedAlertHost(
 ) {
     val hostScope = rememberCoroutineScope()
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val swipeThresholdPx = with(density) { 48.dp.toPx() }
+    val swipeThresholdPx = with(density) { 70.dp.toPx() }
     val maxUpPx = with(density) { 280.dp.toPx() }
 
     Box(modifier = modifier) {
