@@ -73,6 +73,7 @@ pub extern "system" fn Java_com_mmckb_openwrtstatus_data_ssh_RustSsh_sshExec<'lo
         runtime()
             .block_on(ssh_exec(config, command, timeout_ms as u64))
             .map(|outcome| outcome.stdout)
+            .map_err(|e| e.to_string())
     })();
 
     match outcome {
