@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: ["main", "master", "Dev"]
+    branches: ["main", "master", "Dev", "RustDev"]
   pull_request:
     branches: ["main", "master", "Dev"]
   workflow_dispatch:
@@ -40,6 +40,36 @@ jobs:
             https://services.gradle.org/distributions/gradle-9.7.1-bin.zip -o /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /opt
           echo "/opt/gradle-9.7.1/bin" >> "$GITHUB_PATH"
+
+      # --- Rust 核心（core/，libowrt_core.so）---
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      # ubuntu runner 预装了多个 NDK 版本，取最新一个给 cargo-ndk 用。
+      - name: Export Android NDK for Rust
+        run: echo "ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)" >> "$GITHUB_ENV"
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Rust unit tests
+        working-directory: core
+        run: cargo test
+
+      # 产物输出到 app/src/main/jniLibs/<abi>/libowrt_core.so，Gradle 打包自动带上。
+      - name: Build Rust core (4 ABIs)
+        working-directory: core
+        run: >
+          cargo ndk -t aarch64-linux-android -t armv7-linux-androideabi
+          -t i686-linux-android -t x86_64-linux-android
+          -o ../app/src/main/jniLibs -- build --release
 
       # 还原签名密钥（来自仓库 Secrets）。未配置 Secrets 时跳过：
       # 构建会自动回退 debug 签名并使用 .dev 后缀的 applicationId。

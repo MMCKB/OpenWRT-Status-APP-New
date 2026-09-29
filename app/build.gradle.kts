@@ -39,6 +39,9 @@ android {
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Rust SSH 传输开关（RustDev 分支）：出问题改 false 可整体回到纯 JSch。
+        buildConfigField("boolean", "USE_RUST_SSH", "true")
     }
 
     signingConfigs {

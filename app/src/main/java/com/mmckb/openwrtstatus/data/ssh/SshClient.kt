@@ -1,5 +1,6 @@
 package com.mmckb.openwrtstatus.data.ssh
 
+import android.util.Log
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.JSch
@@ -7,7 +8,9 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
+import com.mmckb.openwrtstatus.BuildConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -185,10 +188,30 @@ class SshTerminal {
  * Runs a single command over SSH and returns its stdout.
  *
  * Used for one-shot reads such as `/tmp/dhcp.leases`.
+ *
+ * 优先走 Rust 核心（libowrt_core.so，russh 实现）；包里没有 .so、库加载失败或
+ * 执行失败时回退 JSch 实现，超时与错误文案语义两边一致。回退用 BuildConfig 开关
+ * `USE_RUST_SSH` 兜底，出问题可改 false 快速回到纯 JSch。
  */
 object SshExec {
 
     suspend fun run(config: SshConfig, command: String, timeoutMs: Int = 10_000): String =
+        withContext(Dispatchers.IO) {
+            if (BuildConfig.USE_RUST_SSH && RustSshTransport.isAvailable) {
+                try {
+                    return@withContext RustSshTransport.exec(config, command, timeoutMs)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Rust 链路刚落地：失败（含认证失败）回退 JSch 重试一次，
+                    // 保证功能不因新链路回归。
+                    Log.w("RustSsh", "Rust SSH 执行失败，回退 JSch：${e.message}")
+                }
+            }
+            runJsch(config, command, timeoutMs)
+        }
+
+    private suspend fun runJsch(config: SshConfig, command: String, timeoutMs: Int): String =
         withContext(Dispatchers.IO) {
             val jsch = JSch()
             val session = jsch.getSession(config.username, config.host, config.port)
