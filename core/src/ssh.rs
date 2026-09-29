@@ -30,7 +30,8 @@ pub struct SshConfig {
     pub password: String,
 }
 
-/// 执行结果。Kotlin 侧目前只用 stdout，stderr/exit_status 留给后续功能。
+/// 执行结果。Kotlin 侧目前只用 stdout，stderr/exit_status 留给后续功能使用。
+#[allow(dead_code)]
 pub struct ExecOutcome {
     pub stdout: String,
     pub stderr: String,
@@ -69,7 +70,7 @@ impl client::Handler for AcceptAllKeys {
 /// 把 russh 的传输层错误映射成用户能看懂的提示，分类口径与 Kotlin `readableError` 一致。
 fn map_error_message(msg: String) -> SshError {
     let lower = msg.to_ascii_lowercase();
-    if lower.contains("timeout") {
+    if lower.contains("timeout") || lower.contains("timed out") {
         SshError::Timeout(format!("{MSG_CONNECT_TIMEOUT}（{msg}）"))
     } else if lower.contains("refused") {
         SshError::Connect(format!(
