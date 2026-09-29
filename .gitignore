@@ -39,3 +39,7 @@ keystore.properties
 app/keystore/*.p12
 app/keystore/*.jks
 *.idsig
+
+# Rust core (RustDev): build artifacts and the .so outputs are produced by CI
+core/target/
+app/src/main/jniLibs/
