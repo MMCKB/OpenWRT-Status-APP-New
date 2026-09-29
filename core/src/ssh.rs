@@ -140,7 +140,6 @@ async fn authenticate(
                     Ok(Err(e)) => return Err(phase(e)),
                 }
             }
-            _ => break,
         };
     }
 
