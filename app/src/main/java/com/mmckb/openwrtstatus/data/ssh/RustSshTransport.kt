@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus.data.ssh
 
 import android.util.Log
+import com.mmckb.openwrtstatus.data.model.SshConfig
 
 /**
  * Rust 核心抛出的 SSH 错误。消息在 Rust 侧已生成成人话（与 JSch 路径 readableError
