@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
@@ -76,6 +77,7 @@ fun ToolScreen(
     onOpenFirewall: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenFlash: () -> Unit,
+    onOpenStartup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -154,6 +156,16 @@ fun ToolScreen(
                     Modifier.weight(1f).fillMaxHeight(), onOpenFlash
                 )
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.PlayCircle, "启动项", "开机自启 · rc.local",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenStartup
+                )
+                Spacer(Modifier.weight(1f))
+            }
         } else {
             ToolEntryCard(
                 Icons.Filled.Folder, "文件管理",
@@ -190,6 +202,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Description, "日志",
                 "系统日志（logread）与内核日志（dmesg），支持复制", onOpenLogs
+            )
+            ToolEntryCard(
+                Icons.Filled.PlayCircle, "启动项",
+                "启停/启禁 init 脚本与本地启动脚本编辑", onOpenStartup
             )
             ToolEntryCard(
                 Icons.Filled.Backup, "备份与更新",
