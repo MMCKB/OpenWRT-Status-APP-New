@@ -38,7 +38,7 @@ class StartupClient {
         val script = listOf(
             "echo __RC__", "ls /etc/rc.d 2>/dev/null",
             "echo __INIT__",
-            "for f in /etc/init.d/*; do [ -x \"$f\" ] || continue; " +
+            "for f in /etc/init.d/*; do [ -x \"\$f\" ] || continue; " +
                 "st=\$(grep -m1 -E '^START=[-0-9]+' \"\$f\" 2>/dev/null | cut -d= -f2); " +
                 "echo \"\$(basename \"\$f\")|\$st\"; done",
             "echo __LOCAL__", "cat /etc/rc.local 2>/dev/null"

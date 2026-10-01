@@ -59,6 +59,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -160,7 +161,7 @@ fun StartupScreen(
             busy = true
             try {
                 withTimeout(STARTUP_ACTION_TIMEOUT_MS) {
-                    withContext(Dispatchers.IO) { client.runAction(config, name, action) }
+                    withContext(Dispatchers.IO) { client.runAction(config, sshOrNull, name, action) }
                 }
                 setAlert(AppAlertType.Success, successText, "已执行 /etc/init.d/$name $action")
                 load()
@@ -179,7 +180,7 @@ fun StartupScreen(
             busy = true
             try {
                 withTimeout(STARTUP_ACTION_TIMEOUT_MS) {
-                    withContext(Dispatchers.IO) { client.saveRcLocal(config, content) }
+                    withContext(Dispatchers.IO) { client.saveRcLocal(config, sshOrNull, content) }
                 }
                 setAlert(AppAlertType.Success, "已保存")
                 load()
