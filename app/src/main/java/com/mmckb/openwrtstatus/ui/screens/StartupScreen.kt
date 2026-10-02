@@ -378,6 +378,16 @@ private fun InitScriptCard(
                     color = colors.onSurface,
                     modifier = Modifier.weight(1f)
                 )
+                // 状态胶囊徽章（方案 A）：淡底色 + 状态色文字
+                Text(
+                    if (script.enabled) "已启用" else "已禁用",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = stateLineColor,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(stateLineColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                )
             }
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             FlowRow(
