@@ -347,7 +347,7 @@ private fun InitScriptCard(
     onAction: (action: String, successText: String) -> Unit
 ) {
     val colors = LocalAppColors.current
-    // 状态横线颜色：已启用 = 绿、已禁用 = 灰（点击横线切换启用/禁用）
+    // Status Accent：已启用 = 绿、已禁用 = 灰（点击底部 Accent Bar 切换启用/禁用）
     val stateLineColor = if (script.enabled) colors.success else colors.onSurfaceVariant
     Column(
         modifier = Modifier
@@ -355,58 +355,68 @@ private fun InitScriptCard(
             .clip(RoundedCornerShape(18.dp))
             .background(colors.surface)
             .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                String.format("%02d", script.priority ?: 0),
-                style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace,
-                color = colors.onSurfaceVariant,
-                modifier = Modifier.width(30.dp)
-            )
-            Text(
-                script.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = FontFamily.Monospace,
-                color = colors.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            listOf("start" to "启动", "restart" to "重启", "reload" to "重载", "stop" to "停止")
-                .forEach { (action, label) ->
-                    OutlinedButton(
-                        onClick = { onAction(action, "$label 已执行") },
-                        enabled = !busy,
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            horizontal = 12.dp, vertical = 2.dp
-                        )
-                    ) {
-                        Text(label, style = MaterialTheme.typography.labelMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    String.format("%02d", script.priority ?: 0),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.width(30.dp)
+                )
+                Text(
+                    script.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf("start" to "启动", "restart" to "重启", "reload" to "重载", "stop" to "停止")
+                    .forEach { (action, label) ->
+                        OutlinedButton(
+                            onClick = { onAction(action, "$label 已执行") },
+                            enabled = !busy,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 12.dp, vertical = 2.dp
+                            )
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
                     }
-                }
+            }
         }
-        // 底部状态横线：绿 = 已启用、灰 = 已禁用；点击横线切换启用/禁用
+        // 底部 Status Accent Bar：贴卡片底边、被圆角裁切；绿 = 已启用、灰 = 已禁用
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 2.dp, bottom = 2.dp)
-                .height(10.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(stateLineColor.copy(alpha = 0.55f))
+                .height(12.dp)
                 .clickable(enabled = !busy) {
                     onAction(
                         if (script.enabled) "disable" else "enable",
                         if (script.enabled) "已禁用（重启后生效）" else "已启用（重启后生效）"
                     )
-                }
-        )
+                },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(stateLineColor)
+            )
+        }
     }
 }
