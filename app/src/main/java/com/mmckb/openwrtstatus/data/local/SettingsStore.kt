@@ -131,5 +131,6 @@ class SettingsStore(context: Context) {
         private const val KEY_CONN_NOTIFY = "connection_notify_enabled"
         private const val KEY_TOOLS_GRID = "tools_grid_enabled"
         private const val KEY_TERMINAL_INLINE = "terminal_inline_input"
+        private const val KEY_HIDDEN_DIAG = "hidden_diag_unlocked"
     }
 }
