@@ -431,19 +431,17 @@ private fun HiddenDiagCard(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
             )
         }
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            "存储",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onSurface
-        )
-        Spacer(Modifier.height(4.dp))
+        // 存储/端口：获取不到（SSH 未开或读取失败）时整节隐藏，不留占位
         val mounts = diag?.mounts.orEmpty()
-        if (mounts.isEmpty()) {
-            DetailRow("存储", "读取中…")
-        } else {
+        if (mounts.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "存储",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
             mounts.forEach { m ->
                 val pct = if (m.totalKB > 0) (m.usedKB * 100 / m.totalKB).coerceIn(0, 100) else 0L
                 DetailRow(
@@ -453,19 +451,17 @@ private fun HiddenDiagCard(
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
 
-        Text(
-            "端口状态",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onSurface
-        )
-        Spacer(Modifier.height(4.dp))
         val ports = diag?.ports.orEmpty()
-        if (ports.isEmpty()) {
-            DetailRow("端口", "读取中…")
-        } else {
+        if (ports.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "端口状态",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
             ports.forEach { p ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
