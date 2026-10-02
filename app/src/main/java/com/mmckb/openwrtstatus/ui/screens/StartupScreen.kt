@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -209,10 +210,12 @@ fun StartupScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
-            // 标题区（提示栈锚定其底部）
+            // 标题区（提示栈锚定其底部；positionInParent 已含状态栏 inset）
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) { coords.size.height.toDp() + 8.dp }
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
                 }
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
