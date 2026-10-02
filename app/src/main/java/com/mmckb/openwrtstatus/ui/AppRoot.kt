@@ -61,7 +61,11 @@ import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.AdminActivity
 import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
+import com.mmckb.openwrtstatus.ChannelAnalysisActivity
 import com.mmckb.openwrtstatus.LedActivity
+import com.mmckb.openwrtstatus.RealtimeActivity
+import com.mmckb.openwrtstatus.ui.screens.RealtimeScreen
+import com.mmckb.openwrtstatus.ui.screens.ChannelAnalysisScreen
 import com.mmckb.openwrtstatus.LogsActivity
 import com.mmckb.openwrtstatus.NftablesActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
@@ -122,6 +126,8 @@ private sealed interface SecondaryPage {
     data object Flash : SecondaryPage
     data object Startup : SecondaryPage
     data object About : SecondaryPage
+    data object Realtime : SecondaryPage
+    data object ChannelAnalysis : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
 
@@ -213,6 +219,20 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Admin
         }
     }
+    val realtimeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(RealtimeActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Realtime
+        }
+    }
+    val channelAnalysisLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(ChannelAnalysisActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.ChannelAnalysis
+        }
+    }
     val ledLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -302,6 +322,15 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
                     )
+                    SecondaryPage.Realtime -> RealtimeScreen(
+                        config = cfg,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.ChannelAnalysis -> ChannelAnalysisScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
                     SecondaryPage.Led -> LedScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
@@ -384,6 +413,14 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     SecondaryPage.Admin -> adminLauncher.launch(
                         Intent(context, AdminActivity::class.java)
                             .putExtra(AdminActivity.EXTRA_CONFIG, config)
+                    )
+                    SecondaryPage.Realtime -> realtimeLauncher.launch(
+                        Intent(context, RealtimeActivity::class.java)
+                            .putExtra(RealtimeActivity.EXTRA_CONFIG, config)
+                    )
+                    SecondaryPage.ChannelAnalysis -> channelAnalysisLauncher.launch(
+                        Intent(context, ChannelAnalysisActivity::class.java)
+                            .putExtra(ChannelAnalysisActivity.EXTRA_CONFIG, config)
                     )
                     SecondaryPage.Led -> ledLauncher.launch(
                         Intent(context, LedActivity::class.java)
@@ -468,6 +505,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenLogs = { openSecondary(SecondaryPage.Logs) },
                         onOpenFlash = { openSecondary(SecondaryPage.Flash) },
                         onOpenStartup = { openSecondary(SecondaryPage.Startup) },
+                        onOpenRealtime = { openSecondary(SecondaryPage.Realtime) },
+                        onOpenChannelAnalysis = { openSecondary(SecondaryPage.ChannelAnalysis) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(

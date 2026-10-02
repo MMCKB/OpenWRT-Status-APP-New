@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
@@ -80,6 +82,8 @@ fun ToolScreen(
     onOpenLogs: () -> Unit,
     onOpenFlash: () -> Unit,
     onOpenStartup: () -> Unit,
+    onOpenRealtime: () -> Unit,
+    onOpenChannelAnalysis: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -166,6 +170,19 @@ fun ToolScreen(
                     Icons.Filled.PlayCircle, "启动项", "开机自启 · rc.local",
                     Modifier.weight(1f).fillMaxHeight(), onOpenStartup
                 )
+                ToolTile(
+                    Icons.Filled.Speed, "实时监控", "负载 · 流量 · 连接",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenRealtime
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.WifiTethering, "信道分析", "信道占用 · 邻近网络",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenChannelAnalysis
+                )
                 Spacer(Modifier.weight(1f))
             }
         } else {
@@ -208,6 +225,14 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.PlayCircle, "启动项",
                 "启停/启禁 init 脚本与本地启动脚本编辑", onOpenStartup
+            )
+            ToolEntryCard(
+                Icons.Filled.Speed, "实时监控",
+                "负载、流量、连接数与无线信号的实时曲线", onOpenRealtime
+            )
+            ToolEntryCard(
+                Icons.Filled.WifiTethering, "信道分析",
+                "邻近网络信道占用与信号强度分布", onOpenChannelAnalysis
             )
             ToolEntryCard(
                 Icons.Filled.Backup, "备份与更新",
