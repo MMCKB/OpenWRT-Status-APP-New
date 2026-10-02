@@ -79,6 +79,20 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".RealtimeActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ChannelAnalysisActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".NftablesActivity"
             android:exported="false"
             android:label="@string/app_name"
