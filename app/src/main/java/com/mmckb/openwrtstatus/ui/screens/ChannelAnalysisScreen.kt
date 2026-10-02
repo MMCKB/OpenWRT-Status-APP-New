@@ -79,8 +79,8 @@ private fun caErrText(e: Exception): String = when {
 private fun stationColor(bssid: String): Color {
     var h = 1125899906842597L
     for (c in bssid) h = 31 * h + c
-    val hue = ((h % 360) + 360) % 360
-    return Color.hsv(hue.toFloat(), 0.72f, 0.92f)
+    val hue = (((h % 360) + 360) % 360).toFloat()
+    return Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.72f, 0.92f)))
 }
 
 /** 信号 dBm → 0..1 相对强度（-100 → 0.05，-30 → 1）。 */
@@ -324,7 +324,7 @@ private fun ChannelGraphCard(band: ChannelAnalysisClient.ChannelBandData) {
             val h = size.height
             val channels = band.channels
             if (channels.isEmpty()) return@Canvas
-            val freqs = channels.mapNotNull { band.channelMhz[it]?.takeIf { m -> m > 0 } }
+            val freqs = channels.mapNotNull { ch -> band.channelMhz[ch]?.toFloat()?.takeIf { m -> m > 0f } }
             val minF = (freqs.minOrNull() ?: 2412f) - 10f
             val maxF = (freqs.maxOrNull() ?: 2482f) + 10f
             val span = (maxF - minF).coerceAtLeast(1f)

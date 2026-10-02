@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -80,14 +81,14 @@ class ChannelAnalysisClient {
         val s = requireSsh(ssh)
         val script = buildString {
             append("echo __DEVS__; ")
-            append("ls /sys/class/net 2>/dev/null | grep -E '^wlan[0-9]+$'; ")
-            append("for d in \\$(ls /sys/class/net 2>/dev/null | grep -E '^wlan[0-9]+$'); do ")
-            append("echo \"__IF__:\\$d\"; ")
-            append("ubus -S call iwinfo info \"{\\\"device\\\":\\\"\\$d\\\"}\" 2>/dev/null; ")
-            append("echo \"__FREQ__:\\$d\"; ")
-            append("ubus -S call iwinfo freqlist \"{\\\"device\\\":\\\"\\$d\\\"}\" 2>/dev/null; ")
-            append("echo \"__SCAN__:\\$d\"; ")
-            append("ubus -S call iwinfo scan \"{\\\"device\\\":\\\"\\$d\\\"}\" 2>/dev/null; ")
+            append("ls /sys/class/net 2>/dev/null | grep -E '^wlan[0-9]+\$'; ")
+            append("for d in \$(ls /sys/class/net 2>/dev/null | grep -E '^wlan[0-9]+\$'); do ")
+            append("echo \"__IF__:\$d\"; ")
+            append("ubus -S call iwinfo info \"{\\\"device\\\":\\\"\$d\\\"}\" 2>/dev/null; ")
+            append("echo \"__FREQ__:\$d\"; ")
+            append("ubus -S call iwinfo freqlist \"{\\\"device\\\":\\\"\$d\\\"}\" 2>/dev/null; ")
+            append("echo \"__SCAN__:\$d\"; ")
+            append("ubus -S call iwinfo scan \"{\\\"device\\\":\\\"\$d\\\"}\" 2>/dev/null; ")
             append("done")
         }
         val out = SshExec.run(s, script, 90_000)
@@ -112,7 +113,7 @@ class ChannelAnalysisClient {
             val body = out.substring(start, end).trim()
             when (type) {
                 "DEVS" -> devs = body.lineSequence().filter { it.isNotBlank() }.map { it.trim() }.toList()
-                "IF" -> infos[arg] = parseObj(body)
+                "IF" -> parseObj(body)?.let { infos[arg] = it }
                 "FREQ" -> freqs[arg] = parseArr(body)
                 "SCAN" -> scans[arg] = parseArr(body)
             }

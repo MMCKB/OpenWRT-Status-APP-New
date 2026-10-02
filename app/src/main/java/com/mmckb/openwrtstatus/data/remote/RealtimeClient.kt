@@ -84,8 +84,8 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             rpc.call(retry.endpoint, retry.sid, "iwinfo", "info", params, config.allowInsecureTls)
         }
         val o = res as? JsonObject ?: return@withContext null
-        val signal = o["signal"]?.doubleOrNull()
-        val noise = o["noise"]?.doubleOrNull()
+        val signal = (o["signal"] as? JsonPrimitive)?.doubleOrNull
+        val noise = (o["noise"] as? JsonPrimitive)?.doubleOrNull
         if (signal != null && noise != null) signal to noise else null
     }
 
