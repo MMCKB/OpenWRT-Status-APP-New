@@ -60,6 +60,7 @@ import com.mmckb.openwrtstatus.data.remote.RoutingData
 import com.mmckb.openwrtstatus.data.remote.RuleEntry
 import com.mmckb.openwrtstatus.data.remote.RoutesClient
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
+import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
@@ -190,7 +191,7 @@ fun RoutesScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { load() }, enabled = !loading) {
+                    AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
                             contentDescription = "刷新",

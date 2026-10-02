@@ -280,7 +280,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
                     )
-                    SecondaryPage.About -> AboutScreen(onBack = { secondary = null })
+                    SecondaryPage.About -> AboutScreen(
+                        onBack = { secondary = null },
+                        hiddenDiagUnlocked = viewModel.hiddenDiagUnlocked.collectAsState().value,
+                        onUnlockHiddenDiag = { viewModel.unlockHiddenDiag() }
+                    )
                     SecondaryPage.Wireless -> WirelessScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,

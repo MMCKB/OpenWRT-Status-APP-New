@@ -289,12 +289,14 @@ fun PackageManagerScreen(
             scope.launch {
                 busy = true
                 message = null
+                // 上传与安装必须是同一个文件：opkg 装 .ipk，apk 装 .apk
+                val uploadPath = if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH
                 try {
                     val bytes = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                             ?: throw SshFileException("无法读取所选文件。")
                     }
-                    withContext(Dispatchers.IO) { SshFiles.upload(ssh, UPLOAD_TMP_PATH, bytes) }
+                    withContext(Dispatchers.IO) { SshFiles.upload(ssh, uploadPath, bytes) }
                     busy = false
                     opRunning = true
                     opDialogHidden = false
@@ -302,7 +304,7 @@ fun PackageManagerScreen(
                     reloadOnOpClose = true
                     opInfo = "上传安装"
                     val result = withContext(Dispatchers.IO) {
-                        client.install(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH)
+                        client.install(ssh, uploadPath, allowUntrusted = true)
                     }
                     opRunning = false
                     opResult = result
@@ -316,7 +318,7 @@ fun PackageManagerScreen(
                     reloadOnOpClose = false
                 } finally {
                     runCatching {
-                        withContext(Dispatchers.IO) { SshFiles.delete(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH, isDir = false) }
+                        withContext(Dispatchers.IO) { SshFiles.delete(ssh, uploadPath, isDir = false) }
                     }
                     busy = false
                     opRunning = false

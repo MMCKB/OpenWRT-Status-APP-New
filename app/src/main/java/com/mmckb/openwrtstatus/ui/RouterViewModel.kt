@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mmckb.openwrtstatus.data.local.SettingsStore
 import com.mmckb.openwrtstatus.data.model.DashboardData
+import com.mmckb.openwrtstatus.data.model.HiddenDiagData
 import com.mmckb.openwrtstatus.data.model.HistorySample
 import com.mmckb.openwrtstatus.data.model.LeaseInfo
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -77,6 +78,18 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     /** 终端直接输入：true = 输出区底部内联输入（无独立输入框/发送键）。 */
     private val _terminalInlineInput = MutableStateFlow(settingsStore.isTerminalInlineInput())
     val terminalInlineInput: StateFlow<Boolean> = _terminalInlineInput
+
+    /** 隐藏的设备扩展信息（内存/存储/端口状态）：关于页图标连点 7 次解锁。 */
+    private val _hiddenDiagUnlocked = MutableStateFlow(settingsStore.isHiddenDiagUnlocked())
+    val hiddenDiagUnlocked: StateFlow<Boolean> = _hiddenDiagUnlocked
+
+    /** CPU 温度（°C）；设备无 thermal_zone 或未开 SSH 时为 null。 */
+    private val _temperatureC = MutableStateFlow<Double?>(null)
+    val temperatureC: StateFlow<Double?> = _temperatureC
+
+    /** 扩展信息数据：端口状态 + 存储挂载点。 */
+    private val _hiddenDiag = MutableStateFlow<HiddenDiagData?>(null)
+    val hiddenDiag: StateFlow<HiddenDiagData?> = _hiddenDiag
 
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
@@ -191,7 +204,11 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
 
-                if (cfg.sshEnabled) refreshLeases()
+                if (cfg.sshEnabled) {
+                    refreshLeases()
+                    refreshTemperature()
+                    if (_hiddenDiagUnlocked.value) refreshHiddenDiag()
+                }
                 ConnectionMonitor.status.value = ConnectionMonitor.Status.Online
             } catch (e: RouterException) {
                 _uiState.value = StatusUiState.Error(e.message ?: "连接失败", e.hint)
@@ -269,6 +286,100 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     fun setTerminalInlineInput(enabled: Boolean) {
         settingsStore.saveTerminalInlineInput(enabled)
         _terminalInlineInput.value = enabled
+    }
+
+    /** 关于页图标连点 7 次后解锁隐藏的扩展信息，并立即读取一次。 */
+    fun unlockHiddenDiag() {
+        settingsStore.saveHiddenDiagUnlocked(true)
+        _hiddenDiagUnlocked.value = true
+        refreshHiddenDiag()
+    }
+
+    /** 当前设备的 SSH 配置；未开启 SSH 时返回 null。 */
+    private fun currentSsh(): SshConfig? {
+        val cfg = _config.value
+        if (!cfg.sshEnabled) return null
+        return SshConfig(
+            host = cfg.sshHost.ifBlank { cfg.ip },
+            port = cfg.sshPort,
+            username = cfg.sshUsername,
+            password = cfg.sshPassword
+        )
+    }
+
+    /** 读取 CPU 温度（/sys/class/thermal 首个 thermal_zone；不支持时保持 null）。 */
+    private fun refreshTemperature() {
+        viewModelScope.launch {
+            val ssh = currentSsh() ?: return@launch
+            runCatching {
+                SshExec.run(
+                    ssh,
+                    "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | head -n 1",
+                    10_000
+                )
+            }.onSuccess { raw ->
+                val milli = raw.trim().toLongOrNull()
+                _temperatureC.value =
+                    if (milli != null && milli in 1..150_000) milli / 1000.0 else null
+            }.onFailure { _temperatureC.value = null }
+        }
+    }
+
+    /** 读取扩展信息：端口状态（/sys/class/net）+ 存储挂载点（df -k）。 */
+    fun refreshHiddenDiag() {
+        viewModelScope.launch {
+            val ssh = currentSsh() ?: return@launch
+            val script = "echo __PORTS__; " +
+                "for d in /sys/class/net/*; do n=\${d##*/}; [ \"\$n\" = lo ] && continue; " +
+                "c=\$(cat \"\$d/carrier\" 2>/dev/null || echo 0); " +
+                "s=\$(cat \"\$d/speed\" 2>/dev/null || echo -1); " +
+                "echo \"\$n|\$c|\$s\"; done; " +
+                "echo __DF__; df -k 2>/dev/null | tail -n +2"
+            runCatching { SshExec.run(ssh, script, 20_000) }.onSuccess { raw ->
+                _hiddenDiag.value = parseHiddenDiag(raw)
+            }
+        }
+    }
+
+    /** 解析隐藏信息脚本的标记分段输出。 */
+    private fun parseHiddenDiag(raw: String): HiddenDiagData {
+        val ports = mutableListOf<com.mmckb.openwrtstatus.data.model.PortStatus>()
+        val mounts = mutableListOf<com.mmckb.openwrtstatus.data.model.StorageMount>()
+        var section = ""
+        for (line in raw.lineSequence()) {
+            val t = line.trim()
+            when (t) {
+                "__PORTS__" -> { section = "ports"; continue }
+                "__DF__" -> { section = "df"; continue }
+            }
+            if (t.isEmpty()) continue
+            if (section == "ports") {
+                val p = t.split('|')
+                if (p.size >= 3) {
+                    ports.add(
+                        com.mmckb.openwrtstatus.data.model.PortStatus(
+                            name = p[0].trim(),
+                            up = p[1].trim() == "1",
+                            speedMbps = p[2].trim().toIntOrNull()?.takeIf { it > 0 }
+                        )
+                    )
+                }
+            } else if (section == "df") {
+                val f = t.split(Regex("\\s+"))
+                if (f.size >= 6) {
+                    mounts.add(
+                        com.mmckb.openwrtstatus.data.model.StorageMount(
+                            fs = f[0],
+                            mount = f[5],
+                            totalKB = f[1].toLongOrNull() ?: 0L,
+                            usedKB = f[2].toLongOrNull() ?: 0L,
+                            availKB = f[3].toLongOrNull() ?: 0L
+                        )
+                    )
+                }
+            }
+        }
+        return HiddenDiagData(ports, mounts)
     }
 
     /** Adds a device and makes it the active one. */

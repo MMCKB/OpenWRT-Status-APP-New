@@ -57,6 +57,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_TERMINAL_INLINE, enabled).apply()
     }
 
+    /** 隐藏的设备扩展信息（内存/存储/端口状态）：关于页图标连点 7 次解锁。 */
+    fun isHiddenDiagUnlocked(): Boolean = prefs.getBoolean(KEY_HIDDEN_DIAG, false)
+
+    fun saveHiddenDiagUnlocked(unlocked: Boolean) {
+        prefs.edit().putBoolean(KEY_HIDDEN_DIAG, unlocked).apply()
+    }
+
     fun saveDevices(devices: List<RouterConfig>, activeId: String) {
         val array = JSONArray()
         devices.forEach { array.put(it.toJson()) }

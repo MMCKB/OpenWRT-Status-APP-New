@@ -129,6 +129,31 @@ data class RouterStatus(
     val warnings: List<String> = emptyList()
 )
 
+/** 端口状态（来自 /sys/class/net，lo 除外）。 */
+data class PortStatus(
+    val name: String,
+    val up: Boolean,
+    val speedMbps: Int? = null
+)
+
+/** 存储挂载点（df -k 行）。 */
+data class StorageMount(
+    val fs: String,
+    val mount: String,
+    val totalKB: Long,
+    val usedKB: Long,
+    val availKB: Long
+)
+
+/**
+ * 隐藏区（关于页图标连点 7 次解锁）的扩展信息：端口状态 + 存储挂载点；
+ * 内存信息直接复用 [DashboardData] 的字段。
+ */
+data class HiddenDiagData(
+    val ports: List<PortStatus> = emptyList(),
+    val mounts: List<StorageMount> = emptyList()
+)
+
 /**
  * Aggregated state consumed by the dashboard UI.
  */

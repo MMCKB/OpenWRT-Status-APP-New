@@ -55,6 +55,7 @@ import com.mmckb.openwrtstatus.data.remote.FlashClient
 import com.mmckb.openwrtstatus.data.remote.FlashInfo
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
+import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
@@ -65,6 +66,7 @@ import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -156,6 +158,22 @@ fun FlashScreen(
         }
     }
 
+    // busy 看门狗：每个操作带总预算，超时后无条件恢复按钮，杜绝「正在…」永不消失
+    var busyDeadline by remember { mutableStateOf(Long.MAX_VALUE) }
+    fun beginBusy(budgetMs: Long) {
+        busy = true
+        busyDeadline = System.currentTimeMillis() + budgetMs
+    }
+    LaunchedEffect(busy, busyDeadline) {
+        if (!busy) return@LaunchedEffect
+        val remain = busyDeadline - System.currentTimeMillis()
+        if (remain > 0) delay(remain)
+        if (busy) {
+            busy = false
+            setAlert(AppAlertType.Error, "操作超时", "路由器长时间无响应，已中止等待，请检查连接后重试。")
+        }
+    }
+
     var info by remember { mutableStateOf<FlashInfo?>(null) }
     var confContent by remember { mutableStateOf("") }
     var selectState by remember { mutableStateOf<FlashSelectState?>(null) }
@@ -205,9 +223,9 @@ fun FlashScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                busy = true
+                beginBusy(FLASH_TRANSFER_TIMEOUT_MS + 30_000)
                 try {
-                    val bytes = withTimeout(FLASH_LOAD_TIMEOUT_MS) {
+                    val bytes = withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
                         withContext(Dispatchers.IO) { client.generateBackup(config, sshOrNull) }
                     }
                     context.contentResolver.openOutputStream(uri)?.use { os ->
@@ -228,7 +246,7 @@ fun FlashScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                busy = true
+                beginBusy(FLASH_TRANSFER_TIMEOUT_MS + 120_000)
                 try {
                     val bytes = withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
                         withContext(Dispatchers.IO) {
@@ -239,13 +257,22 @@ fun FlashScreen(
                         setAlert(AppAlertType.Error, "读取备份文件失败", "无法从所选文件读取内容。")
                         return@launch
                     }
-                    withContext(Dispatchers.IO) {
-                        com.mmckb.openwrtstatus.data.ssh.SshFiles.upload(
-                            sshOrNull!!, "/tmp/backup.tar.gz", bytes
-                        )
+                    val s = sshOrNull
+                    if (s == null) {
+                        setAlert(AppAlertType.Error, "需要开启 SSH", "备份与更新需要 SSH 访问，请在设备编辑页开启后重试。")
+                        return@launch
                     }
-                    val ok = withContext(Dispatchers.IO) {
-                        client.verifyRestoreArchive(config, sshOrNull)
+                    withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) {
+                            com.mmckb.openwrtstatus.data.ssh.SshFiles.upload(
+                                s, "/tmp/backup.tar.gz", bytes
+                            )
+                        }
+                    }
+                    val ok = withTimeout(FLASH_LOAD_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) {
+                            client.verifyRestoreArchive(config, sshOrNull)
+                        }
                     }
                     if (!ok) {
                         setAlert(AppAlertType.Error, "备份存档不可读", "上传的文件不是有效的配置备份。")
@@ -266,7 +293,7 @@ fun FlashScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                busy = true
+                beginBusy(FLASH_TRANSFER_TIMEOUT_MS + 180_000)
                 try {
                     val bytes = withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
                         withContext(Dispatchers.IO) {
@@ -277,10 +304,17 @@ fun FlashScreen(
                         setAlert(AppAlertType.Error, "读取固件文件失败", "无法从所选文件读取内容。")
                         return@launch
                     }
-                    withContext(Dispatchers.IO) {
-                        com.mmckb.openwrtstatus.data.ssh.SshFiles.upload(
-                            sshOrNull!!, "/tmp/firmware.bin", bytes
-                        )
+                    val s = sshOrNull
+                    if (s == null) {
+                        setAlert(AppAlertType.Error, "需要开启 SSH", "备份与更新需要 SSH 访问，请在设备编辑页开启后重试。")
+                        return@launch
+                    }
+                    withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
+                        withContext(Dispatchers.IO) {
+                            com.mmckb.openwrtstatus.data.ssh.SshFiles.upload(
+                                s, "/tmp/firmware.bin", bytes
+                            )
+                        }
                     }
                     val check = withTimeout(FLASH_LOAD_TIMEOUT_MS) {
                         withContext(Dispatchers.IO) { client.testFirmware(config, sshOrNull) }
@@ -323,7 +357,7 @@ fun FlashScreen(
     fun saveConf() {
         if (!ensureConnected()) return
         scope.launch {
-            busy = true
+            beginBusy(FLASH_LOAD_TIMEOUT_MS + 30_000)
             try {
                 withTimeout(FLASH_LOAD_TIMEOUT_MS) {
                     withContext(Dispatchers.IO) {
@@ -342,10 +376,12 @@ fun FlashScreen(
     fun startFlash() {
         if (!ensureConnected()) return
         scope.launch {
-            busy = true
+            beginBusy(60_000)
             try {
-                withContext(Dispatchers.IO) {
-                    client.flashFirmware(config, sshOrNull, flashKeep, flashForce)
+                withTimeout(FLASH_LOAD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) {
+                        client.flashFirmware(config, sshOrNull, flashKeep, flashForce)
+                    }
                 }
                 setAlert(
                     AppAlertType.Warning, "正在刷写固件",
@@ -361,9 +397,11 @@ fun FlashScreen(
 
     fun startRestore() {
         scope.launch {
-            busy = true
+            beginBusy(120_000)
             try {
-                withContext(Dispatchers.IO) { client.restoreBackup(config, sshOrNull) }
+                withTimeout(FLASH_LOAD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.restoreBackup(config, sshOrNull) }
+                }
                 setAlert(
                     AppAlertType.Warning, "正在恢复配置",
                     "配置已恢复，设备正在重启。若 LAN 地址变化需要重新连接。"
@@ -378,9 +416,11 @@ fun FlashScreen(
 
     fun startReset() {
         scope.launch {
-            busy = true
+            beginBusy(90_000)
             try {
-                withContext(Dispatchers.IO) { client.performReset(config, sshOrNull) }
+                withTimeout(FLASH_LOAD_TIMEOUT_MS) {
+                    withContext(Dispatchers.IO) { client.performReset(config, sshOrNull) }
+                }
                 setAlert(
                     AppAlertType.Warning, "正在恢复出厂设置",
                     "配置分区已擦除，设备即将重启。"
@@ -412,7 +452,7 @@ fun FlashScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { load() }, enabled = !loading && !busy) {
+                    AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
                             contentDescription = "刷新",
@@ -550,12 +590,17 @@ fun FlashScreen(
                                     onClick = {
                                         if (!ensureConnected()) return@Button
                                         scope.launch {
-                                            busy = true
+                                            beginBusy(FLASH_TRANSFER_TIMEOUT_MS + 30_000)
                                             try {
+                                                val s = sshOrNull
+                                                if (s == null) {
+                                                    setAlert(AppAlertType.Error, "需要开启 SSH", "备份与更新需要 SSH 访问，请在设备编辑页开启后重试。")
+                                                    return@launch
+                                                }
                                                 val bytes = withTimeout(FLASH_TRANSFER_TIMEOUT_MS) {
                                                     withContext(Dispatchers.IO) {
                                                         com.mmckb.openwrtstatus.data.ssh.SshFiles.download(
-                                                            sshOrNull!!, "/dev/$mtdSelected"
+                                                            s, "/dev/$mtdSelected"
                                                         )
                                                     }
                                                 }
