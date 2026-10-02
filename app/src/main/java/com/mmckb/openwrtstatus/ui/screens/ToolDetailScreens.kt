@@ -385,9 +385,10 @@ private fun SystemCard(
                 data.loadAverage.take(3).joinToString(" / ") { String.format(java.util.Locale.US, "%.2f", it) }
             )
         }
-        temperatureC?.let {
-            DetailRow("温度", String.format(java.util.Locale.US, "%.1f °C", it))
-        }
+        DetailRow(
+            "温度",
+            temperatureC?.let { String.format(java.util.Locale.US, "%.1f °C", it) } ?: "未获取"
+        )
         if (data.warnings.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -431,17 +432,18 @@ private fun HiddenDiagCard(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
             )
         }
-        // 存储/端口：获取不到（SSH 未开或读取失败）时整节隐藏，不留占位
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "存储",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
         val mounts = diag?.mounts.orEmpty()
-        if (mounts.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "存储",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
+        if (mounts.isEmpty()) {
+            DetailRow("存储", "未获取（请确认设备已开启 SSH）")
+        } else {
             mounts.forEach { m ->
                 val pct = if (m.totalKB > 0) (m.usedKB * 100 / m.totalKB).coerceIn(0, 100) else 0L
                 DetailRow(
@@ -452,16 +454,18 @@ private fun HiddenDiagCard(
             }
         }
 
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "端口状态",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
         val ports = diag?.ports.orEmpty()
-        if (ports.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "端口状态",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
+        if (ports.isEmpty()) {
+            DetailRow("端口", "未获取（请确认设备已开启 SSH）")
+        } else {
             ports.forEach { p ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
