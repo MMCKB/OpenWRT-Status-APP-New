@@ -66,7 +66,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /** 扫描（含触发）较慢：无数据不活动超时给足 90 秒。 */
-private const val CA_SCAN_TIMEOUT_MS = 90_000
+private const val CA_SCAN_TIMEOUT_MS = 90_000L
 
 private fun caErrText(e: Exception): String = when {
     e is TimeoutCancellationException -> "路由器连接中断或扫描超时，请重试。"
@@ -78,7 +78,7 @@ private fun caErrText(e: Exception): String = when {
 /** BSSID → 稳定的高饱和颜色（同 LuCI 由 bssid 派生）。 */
 private fun stationColor(bssid: String): Color {
     var h = 1125899906842597L
-    for (c in bssid) h = 31 * h + c
+    for (c in bssid) h = 31 * h + c.code
     val hue = (((h % 360) + 360) % 360).toFloat()
     return Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.72f, 0.92f)))
 }
