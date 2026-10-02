@@ -34,11 +34,13 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -327,6 +329,14 @@ private fun DetailContent(
 ) {
     val leases by viewModel.leases.collectAsState()
     val leaseError by viewModel.leaseError.collectAsState()
+    val temperatureC by viewModel.temperatureC.collectAsState()
+    val diagUnlocked by viewModel.hiddenDiagUnlocked.collectAsState()
+    val hiddenDiag by viewModel.hiddenDiag.collectAsState()
+
+    // 解锁后进入设备页时读取一次扩展信息（端口状态/存储挂载）
+    LaunchedEffect(diagUnlocked) {
+        if (diagUnlocked) viewModel.refreshHiddenDiag()
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -338,7 +348,8 @@ private fun DetailContent(
             bottom = 96.dp
         )
     ) {
-        item { SystemCard(data) }
+        item { SystemCard(data, temperatureC) }
+        if (diagUnlocked) item { HiddenDiagCard(data, hiddenDiag) }
         if (data.interfaceDetails.isNotEmpty()) item { InterfaceCard(data.interfaceDetails) }
         if (data.wireless.isNotEmpty()) item { WirelessCard(data.wireless) }
         item { LeaseCard(leases, leaseError) }
@@ -346,7 +357,10 @@ private fun DetailContent(
 }
 
 @Composable
-private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
+private fun SystemCard(
+    data: com.mmckb.openwrtstatus.data.model.DashboardData,
+    temperatureC: Double?
+) {
     val colors = LocalAppColors.current
     AppCard {
         CardSectionTitle("系统信息")
@@ -371,6 +385,9 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
                 data.loadAverage.take(3).joinToString(" / ") { String.format(java.util.Locale.US, "%.2f", it) }
             )
         }
+        temperatureC?.let {
+            DetailRow("温度", String.format(java.util.Locale.US, "%.1f °C", it))
+        }
         if (data.warnings.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -378,6 +395,100 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )
+        }
+    }
+}
+
+/**
+ * 隐藏的设备扩展信息卡（关于页图标连点 7 次解锁）：内存、存储挂载点与端口状态。
+ */
+@Composable
+private fun HiddenDiagCard(
+    data: com.mmckb.openwrtstatus.data.model.DashboardData,
+    diag: com.mmckb.openwrtstatus.data.model.HiddenDiagData?
+) {
+    val colors = LocalAppColors.current
+    AppCard {
+        CardSectionTitle("扩展信息")
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            "内存",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        val memTotal = data.memoryTotalBytes
+        val memUsed = (memTotal - data.memoryAvailableBytes).coerceAtLeast(0L)
+        DetailRow(
+            "已用 / 总量",
+            formatBytes(memUsed) + " / " + formatBytes(memTotal)
+        )
+        if (memTotal > 0) {
+            LinearProgressIndicator(
+                progress = { (memUsed.toFloat() / memTotal).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "存储",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        val mounts = diag?.mounts.orEmpty()
+        if (mounts.isEmpty()) {
+            DetailRow("存储", "读取中…")
+        } else {
+            mounts.forEach { m ->
+                val pct = if (m.totalKB > 0) (m.usedKB * 100 / m.totalKB).coerceIn(0, 100) else 0L
+                DetailRow(
+                    m.mount,
+                    formatBytes(m.usedKB * 1024) + " / " + formatBytes(m.totalKB * 1024) +
+                        "（" + pct + "%）"
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "端口状态",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        val ports = diag?.ports.orEmpty()
+        if (ports.isEmpty()) {
+            DetailRow("端口", "读取中…")
+        } else {
+            ports.forEach { p ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        p.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        p.speedMbps?.let { it.toString() + " Mbps" } ?: "—",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        if (p.up) "已连接" else "未连接",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (p.up) colors.success else colors.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
         }
     }
 }

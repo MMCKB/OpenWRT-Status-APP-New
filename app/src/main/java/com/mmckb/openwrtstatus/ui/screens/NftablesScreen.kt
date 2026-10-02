@@ -72,6 +72,7 @@ import com.mmckb.openwrtstatus.data.remote.NftTableSpec
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.data.remote.RoutesClient
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
+import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
@@ -262,7 +263,7 @@ fun NftablesScreen(
                         AppBackButton(onBack = onBack)
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { load() }, enabled = !loading) {
+                    AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
                             contentDescription = "刷新",

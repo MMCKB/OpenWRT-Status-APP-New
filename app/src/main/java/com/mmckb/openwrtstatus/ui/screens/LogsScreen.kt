@@ -55,6 +55,7 @@ import com.mmckb.openwrtstatus.data.remote.LogsClient
 import com.mmckb.openwrtstatus.data.remote.LogsData
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
+import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
@@ -277,7 +278,7 @@ fun LogsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.weight(1f))
-                    IconButton(
+                    AppIconButton(
                         onClick = {
                             val name = if (tab == "syslog") "syslog.txt" else "kernel.txt"
                             downloadLauncher.launch(name)
@@ -291,7 +292,7 @@ fun LogsScreen(
                             modifier = Modifier.size(22.dp)
                         )
                     }
-                    IconButton(
+                    AppIconButton(
                         onClick = {
                             clipboard.setText(AnnotatedString(currentText))
                             android.widget.Toast.makeText(
@@ -307,7 +308,7 @@ fun LogsScreen(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = { load() }, enabled = !loading) {
+                    AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
                             contentDescription = "刷新",
@@ -356,8 +357,6 @@ fun LogsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 LogFilterSelectRow(
                                     label = "设施",
-                                    notChecked = sysFacilityNot,
-                                    onNotChange = { sysFacilityNot = it },
                                     value = if (sysFacility == "any") "任意" else sysFacility,
                                     modifier = Modifier.weight(1f)
                                 ) {
@@ -369,8 +368,6 @@ fun LogsScreen(
                                 }
                                 LogFilterSelectRow(
                                     label = "级别",
-                                    notChecked = sysSeverityNot,
-                                    onNotChange = { sysSeverityNot = it },
                                     value = if (sysSeverity == "any") "任意" else sysSeverity,
                                     modifier = Modifier.weight(1f)
                                 ) {
@@ -392,19 +389,20 @@ fun LogsScreen(
                                     value = sysText,
                                     onValueChange = { sysText = it },
                                     label = "文本",
-                                    notChecked = sysTextNot,
-                                    onNotChange = { sysTextNot = it },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
+                            LogNotBox(
+                                LogNotEntry("排除设施（命中的行不显示）", sysFacilityNot) { sysFacilityNot = it },
+                                LogNotEntry("排除级别（命中的行不显示）", sysSeverityNot) { sysSeverityNot = it },
+                                LogNotEntry("排除文本（命中的行不显示）", sysTextNot) { sysTextNot = it }
+                            )
                             LogSwitchRow("最新在前", sysNewestFirst) { sysNewestFirst = it }
                         }
                     } else {
                         LogsFilterCard {
                             LogFilterSelectRow(
                                 label = "级别",
-                                notChecked = kernSeverityNot,
-                                onNotChange = { kernSeverityNot = it },
                                 value = if (kernSeverity.isBlank()) "默认" else kernSeverity
                             ) {
                                 selectState = LogsSelectState(
@@ -425,9 +423,11 @@ fun LogsScreen(
                             LogTextRow(
                                 value = kernText,
                                 onValueChange = { kernText = it },
-                                label = "文本包含",
-                                notChecked = kernTextNot,
-                                onNotChange = { kernTextNot = it }
+                                label = "文本包含"
+                            )
+                            LogNotBox(
+                                LogNotEntry("排除级别（命中的行不显示）", kernSeverityNot) { kernSeverityNot = it },
+                                LogNotEntry("排除文本（命中的行不显示）", kernTextNot) { kernTextNot = it }
                             )
                             LogSwitchRow("最新在前", kernNewestFirst) { kernNewestFirst = it }
                         }
@@ -540,11 +540,49 @@ private fun LogsFilterCard(content: @Composable () -> Unit) {
     }
 }
 
+/** 排除（非）条目：标签 + 开关。 */
+private class LogNotEntry(
+    val label: String,
+    val checked: Boolean,
+    val onChange: (Boolean) -> Unit
+)
+
+/** 排除（非）子框：包在过滤大卡内，集中展示各字段的排除开关。 */
+@Composable
+private fun LogNotBox(vararg entries: LogNotEntry) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.surfaceVariant)
+            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            "排除",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+            color = colors.onSurfaceVariant
+        )
+        entries.forEach { e ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    e.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                AppSwitch(checked = e.checked, onCheckedChange = e.onChange, modifier = Modifier.scale(0.6f))
+            }
+        }
+    }
+}
+
 @Composable
 private fun LogFilterSelectRow(
     label: String,
-    notChecked: Boolean,
-    onNotChange: (Boolean) -> Unit,
     value: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -554,22 +592,23 @@ private fun LogFilterSelectRow(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(colors.surfaceVariant)
-            .border(1.dp, colors.outline, RoundedCornerShape(14.dp))
+            .border(1.dp, colors.primary.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(36.dp)) {
-            Text("非", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            AppSwitch(
-                checked = notChecked,
-                onCheckedChange = onNotChange,
-                modifier = Modifier.scale(0.5f)
-            )
-        }
-        Spacer(Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurface, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = colors.onSurface,
+            maxLines = 1,
+            modifier = Modifier.weight(1f)
+        )
+        // 明显的下拉指示：主色 ▾，让用户一眼看出可以点选
+        Text("▾", style = MaterialTheme.typography.titleSmall, color = colors.primary)
     }
 }
 
@@ -578,34 +617,15 @@ private fun LogTextRow(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
-    notChecked: Boolean? = null,
-    onNotChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val colors = LocalAppColors.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    AppTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        label = { Text(label) },
         modifier = modifier
-    ) {
-        if (notChecked != null && onNotChange != null) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(36.dp)) {
-                Text("非", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                AppSwitch(
-                    checked = notChecked,
-                    onCheckedChange = onNotChange,
-                    modifier = Modifier.scale(0.5f)
-                )
-            }
-        }
-        AppTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            label = { Text(label) },
-            modifier = Modifier.weight(1f)
-        )
-    }
+    )
 }
 
 @Composable
