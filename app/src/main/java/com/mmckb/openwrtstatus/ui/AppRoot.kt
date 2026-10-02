@@ -186,6 +186,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val aboutLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        // 从关于页（独立 Activity）返回：重读解锁状态，详情页立即出现扩展信息卡
+        viewModel.refreshHiddenDiagUnlocked()
         if (result.data?.getBooleanExtra(AboutActivity.EXTRA_OPEN_INLINE, false) == true) {
             secondary = SecondaryPage.About
         }

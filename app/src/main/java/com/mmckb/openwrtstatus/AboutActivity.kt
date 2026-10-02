@@ -9,7 +9,12 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.mmckb.openwrtstatus.data.local.SettingsStore
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
@@ -30,7 +35,19 @@ class AboutActivity : ComponentActivity() {
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
-                    AboutScreen(onBack = { finish() })
+                    // 解锁状态读本地；解锁时直接写 SharedPreferences——主界面在
+                    // aboutLauncher 回调里重读，跨 Activity 也能生效
+                    var unlocked by remember {
+                        mutableStateOf(SettingsStore(applicationContext).isHiddenDiagUnlocked())
+                    }
+                    AboutScreen(
+                        onBack = { finish() },
+                        hiddenDiagUnlocked = unlocked,
+                        onUnlockHiddenDiag = {
+                            SettingsStore(applicationContext).saveHiddenDiagUnlocked(true)
+                            unlocked = true
+                        }
+                    )
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
                 }
             }
