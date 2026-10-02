@@ -346,14 +346,16 @@ private fun InitScriptCard(
     onAction: (action: String, successText: String) -> Unit
 ) {
     val colors = LocalAppColors.current
+    // 状态横线颜色：已启用 = 绿、已禁用 = 灰（点击横线切换启用/禁用）
+    val stateLineColor = if (script.enabled) colors.success else colors.onSurfaceVariant
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(colors.surface)
             .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -371,27 +373,6 @@ private fun InitScriptCard(
                 color = colors.onSurface,
                 modifier = Modifier.weight(1f)
             )
-            Button(
-                onClick = {
-                    onAction(
-                        if (script.enabled) "disable" else "enable",
-                        if (script.enabled) "已禁用（重启后生效）" else "已启用（重启后生效）"
-                    )
-                },
-                enabled = !busy,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = if (script.enabled) colors.success else colors.onSurfaceVariant,
-                    contentColor = colors.background
-                ),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = 10.dp, vertical = 4.dp
-                )
-            ) {
-                Text(
-                    if (script.enabled) "已启用" else "已禁用",
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
         }
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         FlowRow(
@@ -411,5 +392,20 @@ private fun InitScriptCard(
                     }
                 }
         }
+        // 底部状态横线：绿 = 已启用、灰 = 已禁用；点击横线切换启用/禁用
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp, bottom = 2.dp)
+                .height(10.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(stateLineColor.copy(alpha = 0.55f))
+                .clickable(enabled = !busy) {
+                    onAction(
+                        if (script.enabled) "disable" else "enable",
+                        if (script.enabled) "已禁用（重启后生效）" else "已启用（重启后生效）"
+                    )
+                }
+        )
     }
 }
