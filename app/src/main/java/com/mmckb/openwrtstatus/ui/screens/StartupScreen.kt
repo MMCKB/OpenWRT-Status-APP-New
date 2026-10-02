@@ -406,7 +406,11 @@ private fun InitScriptCard(
                                 horizontal = 12.dp, vertical = 2.dp
                             )
                         ) {
-                            Text(label, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Normal
+                            )
                         }
                     }
             }
