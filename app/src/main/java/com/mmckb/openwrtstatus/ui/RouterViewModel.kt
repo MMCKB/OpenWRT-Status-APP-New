@@ -295,6 +295,18 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         refreshHiddenDiag()
     }
 
+    /**
+     * 重读解锁状态：关于页是独立 Activity（独立 ViewModelStore），只能经
+     * SharedPreferences 传递；从关于页返回主界面时由 aboutLauncher 回调调用。
+     */
+    fun refreshHiddenDiagUnlocked() {
+        val unlocked = settingsStore.isHiddenDiagUnlocked()
+        if (unlocked != _hiddenDiagUnlocked.value) {
+            _hiddenDiagUnlocked.value = unlocked
+            if (unlocked) refreshHiddenDiag()
+        }
+    }
+
     /** 当前设备的 SSH 配置；未开启 SSH 时返回 null。 */
     private fun currentSsh(): SshConfig? {
         val cfg = _config.value
