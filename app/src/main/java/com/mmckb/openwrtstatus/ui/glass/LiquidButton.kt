@@ -54,6 +54,10 @@ fun LiquidButton(
     surfaceColor: Color = Color.Unspecified,
     height: Dp = 48.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp),
+    /** 按压鼓起/拖拽拉伸的最大幅度（dp）。 */
+    pressScaleDp: Dp = 4.dp,
+    /** 拖拽跟手增益（tanh 初始导数）：越大跟手越明显。 */
+    dragFollowGain: Float = 0.05f,
     content: @Composable RowScope.() -> Unit
 ) {
     val animationScope = rememberCoroutineScope()
@@ -79,15 +83,15 @@ fun LiquidButton(
                         val height = size.height
 
                         val progress = interactiveHighlight.pressProgress
-                        val scale = lerp(1f, 1f + 4f.dp.toPx() / size.height, progress)
+                        val scale = lerp(1f, 1f + pressScaleDp.toPx() / size.height, progress)
 
                         val maxOffset = size.minDimension
-                        val initialDerivative = 0.05f
+                        val initialDerivative = dragFollowGain
                         val offset = interactiveHighlight.offset
                         translationX = maxOffset * tanh(initialDerivative * offset.x / maxOffset)
                         translationY = maxOffset * tanh(initialDerivative * offset.y / maxOffset)
 
-                        val maxDragScale = 4f.dp.toPx() / size.height
+                        val maxDragScale = pressScaleDp.toPx() / size.height
                         val offsetAngle = atan2(offset.y, offset.x)
                         scaleX =
                             scale +
