@@ -14,8 +14,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -528,11 +532,16 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         @Composable
         fun MainTopBar(modifier: Modifier) {
             val topBarColors = LocalAppColors.current
-            AppTopBar(
-                modifier = modifier
+            // 模糊效果区域 = 状态栏 + 60dp 标题栏 + 56dp 渐隐延伸区
+            val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val fadeExtension = 56.dp
+            Box(
+                modifier
+                    .fillMaxWidth()
+                    .height(statusBarHeight + 60.dp + fadeExtension)
                     .then(
                         if (Build.VERSION.SDK_INT >= 33) {
-                            // 真模糊：高斯 + 向下渐隐的渐进遮罩（AGSL），无硬边
+                            // 真模糊：高斯 + 渐进遮罩（AGSL）——标题栏内全强度，延伸区内平滑渐隐
                             Modifier.drawPlainBackdrop(
                                 backdrop = backdrop,
                                 shape = { RectangleShape },
@@ -543,11 +552,12 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                         """
                                         uniform shader content;
                                         uniform float2 size;
+                                        uniform float fadeStart;
                                         layout(color) uniform half4 tint;
                                         uniform float tintIntensity;
 
                                         half4 main(float2 coord) {
-                                            float fade = smoothstep(size.y, size.y * 0.5, coord.y);
+                                            float fade = 1.0 - smoothstep(fadeStart, size.y, coord.y);
                                             half4 src = content.eval(coord);
                                             return mix(src, tint, tintIntensity) * fade;
                                         }
@@ -555,6 +565,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                         "content"
                                     ) {
                                         setFloatUniform("size", size.width, size.height)
+                                        setFloatUniform("fadeStart", (statusBarHeight + 60.dp).toPx())
                                         setColorUniform("tint", topBarColors.surface)
                                         setFloatUniform("tintIntensity", 0.6f)
                                     }
@@ -568,7 +579,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                 highlight = { Highlight(alpha = 0f) }
                             )
                         }
-                    ),
+                    )
+            ) {
+                AppTopBar(
+
                 title = when (selectedTab) {
                     TAB_DASHBOARD -> "概览"
                     TAB_DEVICES -> "设备"
@@ -610,6 +624,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     }
                 }
             )
+            }
         }
 
         @Composable
