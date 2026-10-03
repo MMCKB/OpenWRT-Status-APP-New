@@ -190,7 +190,16 @@ fun RoutesScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "路由表",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                     AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
@@ -200,47 +209,32 @@ fun RoutesScreen(
                         )
                     }
                 }
-                // 标题行：回到顶部按钮叠加在右侧（固定行高，不因按钮出现/消失而变化）
-                Box(
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showBackToTop,
+                    enter = androidx.compose.animation.fadeIn(tween(200)) +
+                        androidx.compose.animation.scaleIn(
+                            initialScale = 0.8f, animationSpec = tween(200)
+                        ),
+                    exit = androidx.compose.animation.fadeOut(tween(200)) +
+                        androidx.compose.animation.scaleOut(
+                            targetScale = 0.8f, animationSpec = tween(200)
+                        ),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 34.dp),
-                    contentAlignment = Alignment.CenterStart
+                        .clickable { scope.launch { listState.animateScrollToItem(0) } }
                 ) {
-                    Text(
-                        "路由表",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showBackToTop,
-                        enter = androidx.compose.animation.fadeIn(tween(200)) +
-                            androidx.compose.animation.scaleIn(
-                                initialScale = 0.8f, animationSpec = tween(200)
-                            ),
-                        exit = androidx.compose.animation.fadeOut(tween(200)) +
-                            androidx.compose.animation.scaleOut(
-                                targetScale = 0.8f, animationSpec = tween(200)
-                            ),
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .clickable { scope.launch { listState.animateScrollToItem(0) } }
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(colors.surfaceVariant)
+                            .size(30.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(colors.surfaceVariant)
-                                .size(30.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.KeyboardArrowUp,
-                                contentDescription = "回到顶部",
-                                tint = colors.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Icon(
+                            Icons.Filled.KeyboardArrowUp,
+                            contentDescription = "回到顶部",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 Text(

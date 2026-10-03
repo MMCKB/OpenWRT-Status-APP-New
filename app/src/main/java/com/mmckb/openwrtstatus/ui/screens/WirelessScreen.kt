@@ -893,14 +893,17 @@ fun WirelessScreen(
         ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "无线设置",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
         }
-        Text(
-            "无线设置",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onSurface
-        )
 
         if (loading) {
             Row(

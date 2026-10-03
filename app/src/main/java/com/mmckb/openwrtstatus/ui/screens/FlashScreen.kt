@@ -451,7 +451,16 @@ fun FlashScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "备份与更新",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                     AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
@@ -461,12 +470,6 @@ fun FlashScreen(
                         )
                     }
                 }
-                Text(
-                    "备份与更新",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
-                )
                 Text(
                     "配置备份 / 出厂重置 / 恢复配置 / 固件刷写",
                     style = MaterialTheme.typography.bodySmall,

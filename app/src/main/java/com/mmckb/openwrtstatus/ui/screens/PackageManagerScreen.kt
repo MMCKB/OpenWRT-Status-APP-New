@@ -353,7 +353,16 @@ fun PackageManagerScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "软件包",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
             TextButton(
                 onClick = { runOp("update", emptyList(), "更新列表") },
                 enabled = !busy && sshEnabled
@@ -382,12 +391,6 @@ fun PackageManagerScreen(
             ) { Text("软件源") }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "软件包",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
             Spacer(Modifier.weight(1f))
             // 标题右侧的状态胶囊：运行中（主色+转圈）→ 成功（绿色+打勾动画）/
             // 失败（红色+打叉动画）。颜色与内容切换均带过渡，停留约 1.8 秒后

@@ -221,7 +221,16 @@ fun StartupScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "启动项",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                     AppIconButton(onClick = { load() }, enabled = !loading && !busy) {
                         Icon(
                             Icons.Filled.Refresh,
@@ -231,12 +240,6 @@ fun StartupScreen(
                         )
                     }
                 }
-                Text(
-                    "启动项",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
-                )
                 Text(
                     "启用/禁用开机自启脚本，编辑本地启动脚本",
                     style = MaterialTheme.typography.bodySmall,
