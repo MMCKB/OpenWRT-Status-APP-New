@@ -24,6 +24,17 @@
   - `app/src/main/java/com/mmckb/openwrtstatus/ui/glass/LiquidTab.kt`
 - 许可文本：[licenses/apache-2.0.txt](./licenses/apache-2.0.txt)
 
+### LiquidButton — Apache License 2.0
+
+- 来源：<https://github.com/Kyant0/AndroidLiquidGlass>（`kmp` 分支，对应 release 2.0.1，
+  commit `65ab177`，文件 `app/src/commonMain/kotlin/com/kyant/backdrop/catalog/components/LiquidButton.kt`）
+- 用途：二级页页头的液态玻璃返回按钮（按压果冻形变 + 交互高光）
+- 修改声明：复制并适配——包名调整、高度与内边距参数化（40dp 圆形返回键）、
+  移除 `vibrancy()` 调用（该效果不在已发布的 2.0.1 构件中）。
+  涉及文件（保留来源与许可注释）：
+  - `app/src/main/java/com/mmckb/openwrtstatus/ui/glass/LiquidButton.kt`
+- 许可文本：[licenses/apache-2.0.txt](./licenses/apache-2.0.txt)
+
 > 说明：这些文件在上游位于 catalog（示例应用）模块，未随 `io.github.kyant0:backdrop` 构件发布，
 > 因此无法以依赖方式引入，只能随源码复制并声明修改——这正是 Apache-2.0 第 4 条所要求的形式。
 
