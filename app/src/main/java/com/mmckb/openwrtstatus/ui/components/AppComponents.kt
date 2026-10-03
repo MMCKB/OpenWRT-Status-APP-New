@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -87,6 +88,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.mmckb.openwrtstatus.ui.glass.DampedDragAnimation
 import com.mmckb.openwrtstatus.ui.glass.InteractiveHighlight
+import com.mmckb.openwrtstatus.ui.glass.LiquidButton
 import com.mmckb.openwrtstatus.ui.glass.LiquidTab
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
@@ -636,14 +638,22 @@ fun AppDialog(
 @Composable
 fun AppBackButton(onBack: () -> Unit) {
     val colors = LocalAppColors.current
-    IconButton(
+    // 空层 Backdrop：返回键位于页头，其后是纯色背景，用 surface 色呈现磨砂圆钮，
+    // 按压时由 InteractiveHighlight 提供果冻形变与高光
+    val backdrop = rememberLayerBackdrop()
+    LiquidButton(
         onClick = onBack,
-        modifier = Modifier.size(40.dp)
+        backdrop = backdrop,
+        modifier = Modifier.size(40.dp),
+        height = 40.dp,
+        contentPadding = PaddingValues(0.dp),
+        surfaceColor = colors.surfaceVariant.copy(alpha = 0.55f)
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "返回",
-            tint = colors.onSurface
+            tint = colors.onSurface,
+            modifier = Modifier.size(20.dp)
         )
     }
 }
