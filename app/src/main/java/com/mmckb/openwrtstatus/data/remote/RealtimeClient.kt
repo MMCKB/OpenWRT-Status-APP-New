@@ -69,6 +69,33 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         parseRows(res)
     }
 
+    /**
+     * 流量采样：不同固件的 getRealtimeStats 流量模式参数名不同（interface / device），
+     * 按回退链依次尝试并记住本固件接受的参数名（ubus 代码 2 = 参数不被接受）。
+     */
+    suspend fun trafficRows(config: RouterConfig, device: String): List<List<Double>> {
+        val tried = linkedSetOf<String>()
+        trafficParamName?.let { tried.add(it) }
+        tried.add("interface")
+        tried.add("device")
+        var lastError: Exception? = null
+        for (name in tried) {
+            try {
+                val rows = realtimeStats(
+                    config, "traffic",
+                    buildJsonObject { put(name, JsonPrimitive(device)) }
+                )
+                trafficParamName = name
+                return rows
+            } catch (e: RouterException) {
+                lastError = e
+            }
+        }
+        throw lastError ?: RouterException("流量数据获取失败。", "路由器不支持流量实时统计。")
+    }
+
+    private var trafficParamName: String? = null
+
     /** 本机无线信号/噪声（`iwinfo info`，dBm）。 */
     suspend fun wirelessInfo(
         config: RouterConfig,
@@ -89,52 +116,38 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         if (signal != null && noise != null) signal to noise else null
     }
 
-    /** 可选流量的设备列表（network.interface dump 里的 l3_device/device，去重，排除 lo）。 */
+    /** 可选流量的设备列表：network.device status 的全部设备（权威来源，排除 lo）。 */
     suspend fun interfaces(config: RouterConfig): List<String> = withContext(Dispatchers.IO) {
         val s = session(config)
         val res = try {
-            rpc.call(s.endpoint, s.sid, "network.interface", "dump", JsonObject(emptyMap()), config.allowInsecureTls)
+            rpc.call(s.endpoint, s.sid, "network.device", "status", JsonObject(emptyMap()), config.allowInsecureTls)
         } catch (e: Exception) {
             invalidate()
             val retry = session(config)
-            rpc.call(retry.endpoint, retry.sid, "network.interface", "dump", JsonObject(emptyMap()), config.allowInsecureTls)
+            rpc.call(retry.endpoint, retry.sid, "network.device", "status", JsonObject(emptyMap()), config.allowInsecureTls)
         }
-        val list = ((res as? JsonObject)?.get("interface") as? JsonArray) ?: JsonArray(emptyList())
         val out = linkedSetOf<String>()
-        for (el in list) {
-            val o = el as? JsonObject ?: continue
-            val dev = (o["l3_device"] ?: o["device"])?.let {
-                (it as? JsonPrimitive)?.takeIf { p -> p !is JsonNull }?.content
-            } ?: continue
-            if (dev.isNotBlank() && dev != "lo") out.add(dev)
+        (res as? JsonObject)?.forEach { (name, _) ->
+            if (name.isNotBlank() && name != "lo") out.add(name)
         }
         out.toList()
     }
 
-    /** 无线设备（wlan 接口）列表，用于信号页：取 network.wireless status 的接口 ifname。 */
+    /** 无线接口列表：iwinfo devices（权威来源；现代固件接口名为 phy0-ap0 等）。 */
     suspend fun radios(config: RouterConfig): List<String> = withContext(Dispatchers.IO) {
         val s = session(config)
         val res = try {
-            rpc.call(s.endpoint, s.sid, "network.wireless", "status", JsonObject(emptyMap()), config.allowInsecureTls)
+            rpc.call(s.endpoint, s.sid, "iwinfo", "devices", JsonObject(emptyMap()), config.allowInsecureTls)
         } catch (e: Exception) {
             invalidate()
             val retry = session(config)
-            rpc.call(retry.endpoint, retry.sid, "network.wireless", "status", JsonObject(emptyMap()), config.allowInsecureTls)
+            rpc.call(retry.endpoint, retry.sid, "iwinfo", "devices", JsonObject(emptyMap()), config.allowInsecureTls)
         }
-        val out = linkedSetOf<String>()
-        val root = res as? JsonObject
-        root?.forEach { (_, radioEl) ->
-            val radio = radioEl as? JsonObject ?: return@forEach
-            val ifaces = radio["interfaces"] as? JsonArray ?: JsonArray(emptyList())
-            for (el in ifaces) {
-                val o = el as? JsonObject ?: continue
-                val name = o["ifname"]?.let {
-                    (it as? JsonPrimitive)?.takeIf { p -> p !is JsonNull }?.content
-                }
-                if (!name.isNullOrBlank()) out.add(name)
-            }
+        val list = ((res as? JsonObject)?.get("devices") as? JsonArray) ?: JsonArray(emptyList())
+        list.mapNotNull { el ->
+            ((el as? JsonObject)?.get("name") as? JsonPrimitive)
+                ?.takeIf { it !is JsonNull }?.content?.takeIf { it.isNotBlank() }
         }
-        out.toList()
     }
 
     private fun parseRows(res: kotlinx.serialization.json.JsonElement): List<List<Double>> {

@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.remote.RealtimeClient
+import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
@@ -135,10 +137,12 @@ fun RealtimeScreen(
     // 无线信号本机累积历史（iwinfo info 只有当前值）
     val wirelessHistory = remember { mutableStateListOf<Pair<Float, Float>>() }
 
+    // 轮询失败告警去重：跨 effect 重启只告警一次，成功后复位
+    var hadError by remember { mutableStateOf(false) }
+
     // 轮询循环：页签或选择变化时重启
     LaunchedEffect(tab, selectedIface, selectedRadio, offline) {
         if (offline) return@LaunchedEffect
-        var hadError = false
         while (isActive) {
             try {
                 when (tab) {
@@ -165,10 +169,7 @@ fun RealtimeScreen(
                             errorText = null
                         } else {
                             val rows = withTimeout(RT_FETCH_TIMEOUT_MS) {
-                                client.realtimeStats(
-                                    config, "traffic",
-                                    buildJsonObject { put("interface", selectedIface) }
-                                )
+                                client.trafficRows(config, selectedIface)
                             }
                             val rx = rows.mapNotNull { it.getOrNull(1) }
                             val tx = rows.mapNotNull { it.getOrNull(2) }
@@ -363,7 +364,7 @@ private fun seriesColor(index: Int): Color = when (index % 4) {
     else -> Color(0xFFB04FC4)
 }
 
-/** 接口/无线设备选择卡片。 */
+/** 接口/无线设备选择卡片（芯片可点击切换）。 */
 @Composable
 private fun SelectorCard(
     label: String,
@@ -398,6 +399,7 @@ private fun SelectorCard(
                     .clip(RoundedCornerShape(999.dp))
                     .background(if (isSel) colors.primary else colors.surface)
                     .border(1.dp, if (isSel) colors.primary else colors.outline, RoundedCornerShape(999.dp))
+                    .clickable(enabled = !isSel) { onSelect(opt) }
                     .padding(horizontal = 10.dp, vertical = 3.dp)
             )
         }
