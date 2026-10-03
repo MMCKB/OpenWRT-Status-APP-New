@@ -37,9 +37,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -104,8 +101,6 @@ fun RealtimeScreen(
     val colors = LocalAppColors.current
     val client = remember { RealtimeClient() }
     val alertStack = rememberAlertStackState()
-    val density = LocalDensity.current
-    var alertTopPadding by remember { mutableStateOf(0.dp) }
 
     var tab by remember { mutableStateOf("load") }
     var loading by remember { mutableStateOf(true) }
@@ -249,14 +244,9 @@ fun RealtimeScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区（提示栈锚定其底部）
-            Column(
-                modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
-                    }
-                }
-            ) {
+            // 标题区
+            Column {
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.weight(1f))
@@ -282,17 +272,18 @@ fun RealtimeScreen(
             )
             Spacer(Modifier.height(10.dp))
 
-            if (loading) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
-                }
-            } else {
+            Box(modifier = Modifier.weight(1f)) {
+                if (loading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                    }
+                } else {
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -340,20 +331,19 @@ fun RealtimeScreen(
 
                     Spacer(Modifier.height(4.dp))
                 }
+                }
+                // 提示栈：钉在内容区顶部（标题与页签正下方），不依赖坐标测量
+                StackedAlertHost(
+                    state = alertStack,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 8.dp)
+                )
             }
         }
 
-        // 悬浮提示栈：锚定标题区底部；测量完成前不渲染
-        if (alertTopPadding > 0.dp) {
-            StackedAlertHost(
-                state = alertStack,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = alertTopPadding)
-            )
-        }
     }
 }
 
