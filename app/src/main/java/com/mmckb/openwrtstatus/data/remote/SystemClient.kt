@@ -370,7 +370,8 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             for ((sectionSpec, values) in sections) {
                 val createName = sectionSpec.takeIf { it.contains('!') }?.substringAfter('!')
                 val section = sectionSpec.substringBefore('!')
-                val deletions = values.filterKeys { it.isEmpty() }.keys
+                // 约定：值为空串 = 删除该选项（与 buildShellScript 的 SSH 路径语义一致）
+                val deletions = values.filterValues { it is String && it.isEmpty() }.keys
                 val writes = values.filterNot { it.value is String && (it.value as String).isEmpty() }
                 if (createName != null) {
                     runCatching {
