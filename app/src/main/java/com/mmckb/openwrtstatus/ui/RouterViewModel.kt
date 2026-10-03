@@ -17,6 +17,7 @@ import com.mmckb.openwrtstatus.data.repository.OpenWrtRepository
 import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.notify.AppNotifier
+import com.mmckb.openwrtstatus.ui.components.BackButtonFeel
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -97,6 +98,10 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val refreshMutex = Mutex()
 
     init {
+        // 返回键手感：进程启动时从本地设置载入（二级 Activity 同进程共享该单例）
+        BackButtonFeel.follow.value = settingsStore.backFeelFollow()
+        BackButtonFeel.jelly.value = settingsStore.backFeelJelly()
+        BackButtonFeel.frost.value = settingsStore.backFeelFrost()
         refresh()
         // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
         viewModelScope.launch {
@@ -286,6 +291,15 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     fun setTerminalInlineInput(enabled: Boolean) {
         settingsStore.saveTerminalInlineInput(enabled)
         _terminalInlineInput.value = enabled
+    }
+
+    /** 把当前手感参数（设置页滑杆实时写入 BackButtonFeel）持久化到本地。 */
+    fun persistBackFeel() {
+        settingsStore.saveBackFeel(
+            BackButtonFeel.follow.value,
+            BackButtonFeel.jelly.value,
+            BackButtonFeel.frost.value
+        )
     }
 
     /** 关于页图标连点 7 次后解锁隐藏的扩展信息，并立即读取一次。 */
