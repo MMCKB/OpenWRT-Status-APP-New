@@ -76,13 +76,21 @@ class ChannelAnalysisClient {
             "请在设备编辑页开启 SSH 后重试。"
         )
 
-    /** 采集全部 wlan 接口的 info/freqlist/scan（一次连接；扫描约需数秒）。 */
+    /** 采集全部无线接口的 info/freqlist/scan（两次连接；扫描约需数秒）。 */
     suspend fun load(ssh: SshConfig?): ChannelAnalysisData = withContext(Dispatchers.IO) {
         val s = requireSsh(ssh)
+        // 第一遍：权威设备列表（ubus iwinfo devices，兼容 phy0-ap0 等现代命名）
+        val devsRaw = SshExec.run(s, "ubus -S call iwinfo devices 2>/dev/null", 20_000)
+        val devs = parseDeviceNames(devsRaw)
         val script = buildString {
-            append("echo __DEVS__; ")
-            append("ls /sys/class/net 2>/dev/null | grep -E '^wlan[0-9]+\$'; ")
-            append("for d in \$(ls /sys/class/net 2>/dev/null | grep -E '^wlan[0-9]+\$'); do ")
+            if (devs.isEmpty()) {
+                // iwinfo devices 不可用时回退 /sys/class/net（wlan* 与 phy*-ap* 都算）
+                append("for d in \$(ls /sys/class/net 2>/dev/null | grep -E '^(wlan[0-9]+|phy[0-9]+-ap[0-9]+)\$'); do ")
+            } else {
+                append("for d in")
+                devs.forEach { append(" '$it'") }
+                append("; do ")
+            }
             append("echo \"__IF__:\$d\"; ")
             append("ubus -S call iwinfo info \"{\\\"device\\\":\\\"\$d\\\"}\" 2>/dev/null; ")
             append("echo \"__FREQ__:\$d\"; ")
@@ -92,15 +100,25 @@ class ChannelAnalysisClient {
             append("done")
         }
         val out = SshExec.run(s, script, 90_000)
-        parse(out)
+        parse(out, devs)
     }
 
-    /** 解析标记分段输出为按接口×频段分组的数据。 */
-    internal fun parse(out: String): ChannelAnalysisData {
+    /** 解析 `iwinfo devices` 的 JSON：{"devices":[{"name":"phy0-ap0"},…]}。 */
+    internal fun parseDeviceNames(body: String): List<String> = runCatching {
+        val o = json.parseToJsonElement(body.trim()) as? JsonObject ?: return@runCatching emptyList()
+        val arr = o["devices"] as? JsonArray ?: return@runCatching emptyList()
+        arr.mapNotNull { el ->
+            ((el as? JsonObject)?.get("name") as? JsonPrimitive)
+                ?.takeIf { it !is JsonNull }?.content?.takeIf { it.isNotBlank() }
+        }
+    }.getOrDefault(emptyList())
+
+    /** 解析标记分段输出为按接口×频段分组的数据（devs 为空时从输出回推）。 */
+    internal fun parse(out: String, devs: List<String> = emptyList()): ChannelAnalysisData {
         val marker = Regex("__(DEVS|IF|FREQ|SCAN)__:(\\S+)")
         val marks = marker.findAll(out).toList()
 
-        var devs = listOf<String>()
+        var knownDevs = devs
         val infos = mutableMapOf<String, JsonObject>()
         val freqs = mutableMapOf<String, JsonArray>()
         val scans = mutableMapOf<String, JsonArray>()
@@ -112,16 +130,19 @@ class ChannelAnalysisClient {
             val end = marks.getOrNull(i + 1)?.range?.first ?: out.length
             val body = out.substring(start, end).trim()
             when (type) {
-                "DEVS" -> devs = body.lineSequence().filter { it.isNotBlank() }.map { it.trim() }.toList()
+                "DEVS" -> if (knownDevs.isEmpty()) {
+                    knownDevs = body.lineSequence().filter { it.isNotBlank() }.map { it.trim() }.toList()
+                }
                 "IF" -> parseObj(body)?.let { infos[arg] = it }
                 "FREQ" -> freqs[arg] = parseArr(body)
                 "SCAN" -> scans[arg] = parseArr(body)
             }
         }
-        if (devs.isEmpty()) devs = (infos.keys + freqs.keys + scans.keys).distinct()
+        var all = knownDevs
+        if (all.isEmpty()) all = (infos.keys + freqs.keys + scans.keys).distinct()
 
         val bands = mutableListOf<ChannelBandData>()
-        for (dev in devs) {
+        for (dev in all) {
             val freqArr = freqs[dev] ?: JsonArray(emptyList())
             val localObj = infos[dev]
             val scanArr = scans[dev] ?: JsonArray(emptyList())
