@@ -1,8 +1,11 @@
 package com.mmckb.openwrtstatus.data.remote
 
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.ssh.SshExec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -151,6 +154,73 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 ?.takeIf { it !is JsonNull }?.content?.takeIf { it.isNotBlank() }
         }
     }
+
+    // ===== SSH 采集（部分固件的 rpcd 会话 ACL 拒绝 iwinfo/network.*，走 SSH 绕开） =====
+
+    /** 全部接口的收发字节数（/proc/net/dev，排除 lo）。 */
+    suspend fun trafficSamples(ssh: SshConfig): Map<String, Pair<Long, Long>> =
+        withContext(Dispatchers.IO) {
+            val out = runCatching { SshExec.run(ssh, "cat /proc/net/dev 2>/dev/null", 10_000) }
+                .getOrDefault("")
+            val map = linkedMapOf<String, Pair<Long, Long>>()
+            out.lineSequence().forEach { line ->
+                val idx = line.indexOf(':')
+                if (idx <= 0) return@forEach
+                val name = line.substring(0, idx).trim()
+                if (name.isEmpty() || name == "lo") return@forEach
+                val f = line.substring(idx + 1).trim().split(Regex("\\s+"))
+                if (f.size >= 9) {
+                    val rx = f[0].toLongOrNull() ?: return@forEach
+                    val tx = f[8].toLongOrNull() ?: return@forEach
+                    map[name] = rx to tx
+                }
+            }
+            map
+        }
+
+    /** 可选流量的接口列表（SSH 路径）。 */
+    suspend fun interfacesViaSsh(ssh: SshConfig): List<String> =
+        trafficSamples(ssh).keys.toList()
+
+    /** 无线接口列表（SSH：ubus iwinfo devices，回退 /sys/class/net）。 */
+    suspend fun radiosViaSsh(ssh: SshConfig): List<String> = withContext(Dispatchers.IO) {
+        val ubusOut = runCatching {
+            SshExec.run(ssh, "ubus -S call iwinfo devices 2>/dev/null", 10_000)
+        }.getOrDefault("")
+        val fromJson = runCatching {
+            (Json.parseToJsonElement(ubusOut.trim()).jsonObject["devices"] as? JsonArray)
+                ?.mapNotNull { el ->
+                    ((el as? JsonObject)?.get("name") as? JsonPrimitive)
+                        ?.takeIf { it !is JsonNull }?.content
+                }.orEmpty()
+        }.getOrDefault(emptyList())
+        if (fromJson.isNotEmpty()) return@withContext fromJson
+        runCatching {
+            SshExec.run(
+                ssh,
+                "ls /sys/class/net 2>/dev/null | grep -E '^(wlan[0-9]+|phy[0-9]+-ap[0-9]+)'",
+                10_000
+            )
+        }.getOrDefault("")
+            .lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+    }
+
+    /** 无线接口信号/噪声（SSH iwinfo info，dBm）。 */
+    suspend fun wirelessInfoViaSsh(ssh: SshConfig, device: String): Pair<Double, Double>? =
+        withContext(Dispatchers.IO) {
+            val out = runCatching {
+                SshExec.run(
+                    ssh,
+                    "ubus -S call iwinfo info '{\"device\":\"" + device + "\"}' 2>/dev/null",
+                    10_000
+                )
+            }.getOrDefault("")
+            val obj = runCatching { Json.parseToJsonElement(out.trim()).jsonObject }.getOrNull()
+                ?: return@withContext null
+            val signal = (obj["signal"] as? JsonPrimitive)?.doubleOrNull
+            val noise = (obj["noise"] as? JsonPrimitive)?.doubleOrNull
+            if (signal != null && noise != null) signal to noise else null
+        }
 
     private fun parseRows(res: kotlinx.serialization.json.JsonElement): List<List<Double>> {
         val arr = when (res) {

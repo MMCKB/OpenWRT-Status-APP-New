@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.screens.RealtimeScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
@@ -33,6 +34,12 @@ class RealtimeActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     RealtimeScreen(
                         config = config,
+                        ssh = if (config.sshEnabled) SshConfig(
+                            host = config.sshHost.ifBlank { config.ip },
+                            port = config.sshPort,
+                            username = config.sshUsername,
+                            password = config.sshPassword
+                        ) else null,
                         onBack = { finish() }
                     )
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))

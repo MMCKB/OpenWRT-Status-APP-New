@@ -331,6 +331,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     SecondaryPage.Realtime -> RealtimeScreen(
                         config = cfg,
+                        ssh = if (cfg.sshEnabled) ssh else null,
                         onBack = { secondary = null }
                     )
                     SecondaryPage.ChannelAnalysis -> ChannelAnalysisScreen(
@@ -541,7 +542,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     .height(statusBarHeight + 60.dp + fadeExtension)
                     .then(
                         if (Build.VERSION.SDK_INT >= 33) {
-                            // 真模糊：高斯 + 渐进遮罩（AGSL）——标题栏内全强度，延伸区内平滑渐隐
+                            // 真模糊：标题/副标题（IP 行）以上保持清晰，从 IP 行向下渐进模糊+着色
                             Modifier.drawPlainBackdrop(
                                 backdrop = backdrop,
                                 shape = { RectangleShape },
@@ -557,15 +558,16 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                         uniform float tintIntensity;
 
                                         half4 main(float2 coord) {
-                                            float fade = 1.0 - smoothstep(fadeStart, size.y, coord.y);
+                                            float b = smoothstep(fadeStart, size.y, coord.y);
                                             half4 src = content.eval(coord);
-                                            return mix(src, tint, tintIntensity) * fade;
+                                            return mix(src, tint, tintIntensity * b) * b;
                                         }
                                         """,
                                         "content"
                                     ) {
                                         setFloatUniform("size", size.width, size.height)
-                                        setFloatUniform("fadeStart", (statusBarHeight + 60.dp).toPx())
+                                        // 从首页 IP 副标题那一行开始模糊
+                                        setFloatUniform("fadeStart", (statusBarHeight + 55.dp).toPx())
                                         setColorUniform("tint", topBarColors.surface)
                                         setFloatUniform("tintIntensity", 0.6f)
                                     }
