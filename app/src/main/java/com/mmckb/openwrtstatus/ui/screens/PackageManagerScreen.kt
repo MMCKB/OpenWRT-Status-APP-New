@@ -164,7 +164,7 @@ fun PackageManagerScreen(
         storageLoading = true
         setMsg(null, false)
         scope.launch {
-            launch {
+            val installedJob = launch {
                 try {
                     installed = client.listInstalled(ssh)
                 } catch (e: Exception) {
@@ -192,6 +192,8 @@ fun PackageManagerScreen(
             }
             try {
                 val raw = client.listAvailable(ssh, emptySet())
+                // 可用列表的"已安装"标记依赖已安装结果：先等它就绪，避免竞态
+                installedJob.join()
                 val names = installed.orEmpty().map { it.name }.toSet()
                 available = raw.map { it.copy(installed = names.contains(it.name)) }
             } catch (e: Exception) {

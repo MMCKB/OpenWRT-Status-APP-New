@@ -62,6 +62,7 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         val res = try {
             rpc.call(s.endpoint, s.sid, "luci", "getRealtimeStats", params, config.allowInsecureTls)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             invalidate()
             val retry = session(config)
             rpc.call(retry.endpoint, retry.sid, "luci", "getRealtimeStats", params, config.allowInsecureTls)
@@ -106,6 +107,7 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         val res = try {
             rpc.call(s.endpoint, s.sid, "iwinfo", "info", params, config.allowInsecureTls)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             invalidate()
             val retry = session(config)
             rpc.call(retry.endpoint, retry.sid, "iwinfo", "info", params, config.allowInsecureTls)

@@ -510,7 +510,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     /** 无 SSH 后备：ubus 逐段 uci set/delete（staged）。空字符串值表示删除该选项。 */
     private suspend fun ubusWrite(config: RouterConfig, changes: Map<String, Map<String, Any>>, onPhase: (String) -> Unit) = withContext(Dispatchers.IO) {
         for ((section, values) in changes) {
-            val deletions = values.filterKeys { it.isEmpty() }.keys
+            // 约定：值为空串 = 删除该选项（与 buildShellScript 的 SSH 路径语义一致）
+            val deletions = values.filterValues { it is String && it.isEmpty() }.keys
             val writes = values.filterNot { it.value is String && (it.value as String).isEmpty() }
             if (writes.isNotEmpty()) {
                 call(
@@ -678,7 +679,8 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             },
             fast = true
         )
-        if (ssh == null) applyAndReload(config, onPhase)
+        // SSH 失败回退时暂存的删除同样需要应用，否则残留在 staged 区永不生效
+        applyAndReload(config, onPhase)
     }
 
     /** 路由器上的网络（/etc/config/network 的 interface 段名），供 WiFi 的「网络」选择。 */
