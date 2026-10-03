@@ -36,9 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -112,8 +109,6 @@ fun SystemScreen(
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val alertStack = rememberAlertStackState()
-    val density = LocalDensity.current
-    var alertTopPadding by remember { mutableStateOf(0.dp) }
     var tab by remember { mutableStateOf("general") }
 
     var data by remember { mutableStateOf<SystemData?>(null) }
@@ -354,14 +349,10 @@ fun SystemScreen(
                 onSelect = { tab = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onGloballyPositioned { coords ->
-                        alertTopPadding = with(density) {
-                            (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
-                        }
-                    }
             )
             Spacer(Modifier.height(10.dp))
 
+            Box(modifier = Modifier.weight(1f)) {
             if (loading) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
@@ -378,7 +369,7 @@ fun SystemScreen(
             } else {
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                         .padding(top = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -706,18 +697,20 @@ fun SystemScreen(
                     }
                 }
             }
-            }
-        }
-
-        // 悬浮提示栈：浮在内容上方（不推挤布局），位于方案选择器正下方
+            }
+        // 提示栈：钉在内容区顶部（选择器正下方），不依赖坐标测量
         StackedAlertHost(
             state = alertStack,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(top = alertTopPadding)
+                .padding(top = 8.dp)
         )
+
+        }
+        }
+
     }
 }
 
