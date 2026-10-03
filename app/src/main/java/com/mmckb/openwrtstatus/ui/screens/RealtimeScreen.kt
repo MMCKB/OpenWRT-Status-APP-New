@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.RealtimeClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
@@ -57,6 +58,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeout
+import kotlin.math.max
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -95,6 +97,7 @@ private val RT_TABS = listOf("load" to "负载", "traffic" to "流量", "conntra
 @Composable
 fun RealtimeScreen(
     config: RouterConfig,
+    ssh: SshConfig?,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -131,9 +134,20 @@ fun RealtimeScreen(
     var wirelessSeries by remember { mutableStateOf<List<RtSeries>>(emptyList()) }
     // 无线信号本机累积历史（iwinfo info 只有当前值）
     val wirelessHistory = remember { mutableStateListOf<Pair<Float, Float>>() }
+    // 流量本机累积速率历史（SSH 读 /proc/net/dev 计数差值）
+    val trafficHistory = remember { mutableStateListOf<Pair<Float, Float>>() }
+    var trafficPrev by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    var trafficPrevTime by remember { mutableStateOf(0L) }
 
     // 轮询失败告警去重：跨 effect 重启只告警一次，成功后复位
     var hadError by remember { mutableStateOf(false) }
+
+    // 切换接口：清空流量速率历史与上次采样基线
+    LaunchedEffect(selectedIface) {
+        trafficHistory.clear()
+        trafficPrev = null
+        trafficPrevTime = 0L
+    }
 
     // 轮询循环：页签或选择变化时重启
     LaunchedEffect(tab, selectedIface, selectedRadio, offline) {
@@ -160,18 +174,37 @@ fun RealtimeScreen(
                         }
                     }
                     "traffic" -> {
-                        if (selectedIface.isBlank()) {
-                            errorText = null
-                        } else {
-                            val rows = withTimeout(RT_FETCH_TIMEOUT_MS) {
-                                client.trafficRows(config, selectedIface)
-                            }
-                            val rx = rows.mapNotNull { it.getOrNull(1) }
-                            val tx = rows.mapNotNull { it.getOrNull(2) }
-                            trafficSeries = listOf(
-                                RtSeries("接收", seriesColor(0), rx.map { it.toFloat() }, RtUnit.Rate),
-                                RtSeries("发送", seriesColor(1), tx.map { it.toFloat() }, RtUnit.Rate)
+                        when {
+                            selectedIface.isBlank() -> errorText = null
+                            ssh == null -> throw RouterException(
+                                "流量监控需要 SSH 访问。",
+                                "请在设备编辑页开启 SSH 后重试。"
                             )
+                            else -> {
+                                val samples = withTimeout(RT_FETCH_TIMEOUT_MS) {
+                                    client.trafficSamples(ssh)
+                                }
+                                val bytes = samples[selectedIface]
+                                val now = System.currentTimeMillis()
+                                if (bytes != null) {
+                                    val prev = trafficPrev
+                                    val dt = if (trafficPrevTime > 0) (now - trafficPrevTime) / 1000.0 else 0.0
+                                    val rxRate = if (prev != null && dt > 0) {
+                                        max(0.0, (bytes.first - prev.first) / dt)
+                                    } else 0.0
+                                    val txRate = if (prev != null && dt > 0) {
+                                        max(0.0, (bytes.second - prev.second) / dt)
+                                    } else 0.0
+                                    trafficHistory.add(rxRate.toFloat() to txRate.toFloat())
+                                    while (trafficHistory.size > RT_MAX_POINTS) trafficHistory.removeAt(0)
+                                }
+                                trafficPrev = bytes
+                                trafficPrevTime = now
+                                trafficSeries = listOf(
+                                    RtSeries("接收", seriesColor(0), trafficHistory.map { it.first }, RtUnit.Rate),
+                                    RtSeries("发送", seriesColor(1), trafficHistory.map { it.second }, RtUnit.Rate)
+                                )
+                            }
                         }
                     }
                     "conntrack" -> {
@@ -188,20 +221,25 @@ fun RealtimeScreen(
                         }
                     }
                     "wireless" -> {
-                        if (selectedRadio.isBlank()) {
-                            errorText = null
-                        } else {
-                            val pair = withTimeout(RT_FETCH_TIMEOUT_MS) {
-                                client.wirelessInfo(config, selectedRadio)
-                            }
-                            if (pair != null) {
-                                wirelessHistory.add(pair.first.toFloat() to pair.second.toFloat())
-                                while (wirelessHistory.size > RT_MAX_POINTS) wirelessHistory.removeAt(0)
-                            }
-                            wirelessSeries = listOf(
-                                RtSeries("信号", seriesColor(0), wirelessHistory.map { it.first }, RtUnit.Dbm),
-                                RtSeries("噪声", seriesColor(1), wirelessHistory.map { it.second }, RtUnit.Dbm)
+                        when {
+                            selectedRadio.isBlank() -> errorText = null
+                            ssh == null -> throw RouterException(
+                                "无线监控需要 SSH 访问。",
+                                "请在设备编辑页开启 SSH 后重试。"
                             )
+                            else -> {
+                                val pair = withTimeout(RT_FETCH_TIMEOUT_MS) {
+                                    client.wirelessInfoViaSsh(ssh, selectedRadio)
+                                }
+                                if (pair != null) {
+                                    wirelessHistory.add(pair.first.toFloat() to pair.second.toFloat())
+                                    while (wirelessHistory.size > RT_MAX_POINTS) wirelessHistory.removeAt(0)
+                                }
+                                wirelessSeries = listOf(
+                                    RtSeries("信号", seriesColor(0), wirelessHistory.map { it.first }, RtUnit.Dbm),
+                                    RtSeries("噪声", seriesColor(1), wirelessHistory.map { it.second }, RtUnit.Dbm)
+                                )
+                            }
                         }
                     }
                 }
@@ -221,15 +259,29 @@ fun RealtimeScreen(
         }
     }
 
-    // 首次进入：拉取接口/无线设备列表
+    // 首次进入：拉取接口/无线设备列表（优先 SSH，部分固件 ubus 会话 ACL 不放行）
     LaunchedEffect(Unit) {
         try {
-            val ifs = withTimeout(RT_FETCH_TIMEOUT_MS) { client.interfaces(config) }
+            val ifs = if (ssh != null) {
+                runCatching { withTimeout(RT_FETCH_TIMEOUT_MS) { client.interfacesViaSsh(ssh) } }
+                    .getOrNull()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: withTimeout(RT_FETCH_TIMEOUT_MS) { client.interfaces(config) }
+            } else {
+                withTimeout(RT_FETCH_TIMEOUT_MS) { client.interfaces(config) }
+            }
             interfaces = ifs
             if (selectedIface.isBlank()) selectedIface = ifs.firstOrNull() ?: "eth0"
-            val rs = runCatching { withTimeout(RT_FETCH_TIMEOUT_MS) { client.radios(config) } }.getOrDefault(emptyList())
+            val rs = if (ssh != null) {
+                runCatching { withTimeout(RT_FETCH_TIMEOUT_MS) { client.radiosViaSsh(ssh) } }
+                    .getOrNull()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: runCatching { withTimeout(RT_FETCH_TIMEOUT_MS) { client.radios(config) } }.getOrDefault(emptyList())
+            } else {
+                runCatching { withTimeout(RT_FETCH_TIMEOUT_MS) { client.radios(config) } }.getOrDefault(emptyList())
+            }
             radios = rs
-            if (selectedRadio.isBlank()) selectedRadio = rs.firstOrNull() ?: "wlan0"
+            if (selectedRadio.isBlank()) selectedRadio = rs.firstOrNull() ?: ""
         } catch (e: Exception) {
             setAlert(AppAlertType.Error, "读取失败", rtErrText(e))
             loading = false

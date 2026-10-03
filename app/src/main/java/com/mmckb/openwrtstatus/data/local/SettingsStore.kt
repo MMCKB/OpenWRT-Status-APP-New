@@ -64,19 +64,6 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_HIDDEN_DIAG, unlocked).apply()
     }
 
-    /** 返回键手感：跟手度（0.01–0.15）/ 果冻幅度（0–2）/ 磨砂浓度（0–1）。 */
-    fun backFeelFollow(): Float = prefs.getFloat(KEY_BACKFEEL_FOLLOW, 0.05f)
-    fun backFeelJelly(): Float = prefs.getFloat(KEY_BACKFEEL_JELLY, 1f)
-    fun backFeelFrost(): Float = prefs.getFloat(KEY_BACKFEEL_FROST, 0.55f)
-
-    fun saveBackFeel(follow: Float, jelly: Float, frost: Float) {
-        prefs.edit()
-            .putFloat(KEY_BACKFEEL_FOLLOW, follow)
-            .putFloat(KEY_BACKFEEL_JELLY, jelly)
-            .putFloat(KEY_BACKFEEL_FROST, frost)
-            .apply()
-    }
-
     fun saveDevices(devices: List<RouterConfig>, activeId: String) {
         val array = JSONArray()
         devices.forEach { array.put(it.toJson()) }
@@ -145,8 +132,5 @@ class SettingsStore(context: Context) {
         private const val KEY_TOOLS_GRID = "tools_grid_enabled"
         private const val KEY_TERMINAL_INLINE = "terminal_inline_input"
         private const val KEY_HIDDEN_DIAG = "hidden_diag_unlocked"
-        private const val KEY_BACKFEEL_FOLLOW = "backfeel_follow"
-        private const val KEY_BACKFEEL_JELLY = "backfeel_jelly"
-        private const val KEY_BACKFEEL_FROST = "backfeel_frost"
     }
 }

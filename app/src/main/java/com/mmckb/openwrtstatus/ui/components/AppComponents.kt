@@ -43,7 +43,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -92,7 +91,6 @@ import com.mmckb.openwrtstatus.ui.glass.DampedDragAnimation
 import com.mmckb.openwrtstatus.ui.glass.InteractiveHighlight
 import com.mmckb.openwrtstatus.ui.glass.LiquidButton
 import com.mmckb.openwrtstatus.ui.glass.LiquidTab
-import kotlinx.coroutines.flow.MutableStateFlow
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
@@ -639,22 +637,9 @@ fun AppDialog(
 
 /** 统一的二级页返回按钮：系统返回箭头图标，替代各页各自的文字“返回”。 */
 
-/** 返回键手感参数（设置页可调，进程级生效、随设置持久化）。 */
-object BackButtonFeel {
-    /** 拖拽跟手增益（0.01–0.15）。 */
-    val follow = MutableStateFlow(0.05f)
-    /** 果冻幅度倍率（0–2，作用于鼓起与拉伸）。 */
-    val jelly = MutableStateFlow(1f)
-    /** 磨砂浓度（0–1，表面色透明度）。 */
-    val frost = MutableStateFlow(0.55f)
-}
-
 @Composable
 fun AppBackButton(onBack: () -> Unit) {
     val colors = LocalAppColors.current
-    val follow by BackButtonFeel.follow.collectAsState()
-    val jelly by BackButtonFeel.jelly.collectAsState()
-    val frost by BackButtonFeel.frost.collectAsState()
     // 空层 Backdrop：返回键位于页头，其后是纯色背景，用 surface 色呈现磨砂圆钮，
     // 按压时由 InteractiveHighlight 提供果冻形变与高光
     val backdrop = rememberLayerBackdrop()
@@ -664,9 +649,8 @@ fun AppBackButton(onBack: () -> Unit) {
         modifier = Modifier.size(40.dp),
         height = 40.dp,
         contentPadding = PaddingValues(0.dp),
-        surfaceColor = colors.surfaceVariant.copy(alpha = frost),
-        pressScaleDp = 4.dp * jelly,
-        dragFollowGain = follow
+        surfaceColor = colors.surfaceVariant.copy(alpha = 0.55f),
+        pressScaleDp = 0.4.dp,   // 果冻幅度 0.1x：几乎不可察觉的微妙形变
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
