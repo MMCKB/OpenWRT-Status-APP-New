@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import android.os.Build
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -55,7 +56,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.runtimeShaderEffect
 import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
 import com.mmckb.openwrtstatus.AdminActivity
@@ -524,13 +527,47 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
 
         @Composable
         fun MainTopBar(modifier: Modifier) {
+            val topBarColors = LocalAppColors.current
             AppTopBar(
                 modifier = modifier
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { RectangleShape },
-                        effects = { blur(18.dp.toPx()) },
-                        highlight = { Highlight(alpha = 0f) }
+                    .then(
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            // 真模糊：高斯 + 向下渐隐的渐进遮罩（AGSL），无硬边
+                            Modifier.drawPlainBackdrop(
+                                backdrop = backdrop,
+                                shape = { RectangleShape },
+                                effects = {
+                                    blur(20.dp.toPx())
+                                    runtimeShaderEffect(
+                                        "MainTopBarProgressive",
+                                        """
+                                        uniform shader content;
+                                        uniform float2 size;
+                                        layout(color) uniform half4 tint;
+                                        uniform float tintIntensity;
+
+                                        half4 main(float2 coord) {
+                                            float fade = smoothstep(size.y, size.y * 0.5, coord.y);
+                                            half4 src = content.eval(coord);
+                                            return mix(src, tint, tintIntensity) * fade;
+                                        }
+                                        """,
+                                        "content"
+                                    ) {
+                                        setFloatUniform("size", size.width, size.height)
+                                        setColorUniform("tint", topBarColors.surface)
+                                        setFloatUniform("tintIntensity", 0.6f)
+                                    }
+                                }
+                            )
+                        } else {
+                            Modifier.drawBackdrop(
+                                backdrop = backdrop,
+                                shape = { RectangleShape },
+                                effects = { blur(18.dp.toPx()) },
+                                highlight = { Highlight(alpha = 0f) }
+                            )
+                        }
                     ),
                 title = when (selectedTab) {
                     TAB_DASHBOARD -> "概览"
