@@ -67,7 +67,7 @@
 
 - 组件：`androidx.compose:compose-bom:2026.09.00`（ui / ui-graphics / material3 /
   material-icons-extended）、`androidx.activity:activity-compose:1.13.0`、
-  `androidx.core:core-ktx:1.19.0`、`androidx.lifecycle:lifecycle-*:2.11.0`
+  `androidx.core:core-ktx:1.19.1`、`androidx.lifecycle:lifecycle-*:2.11.0`
 - 来源：<https://developer.android.com/jetpack>
 
 ### Kotlin 及官方库 — Apache License 2.0

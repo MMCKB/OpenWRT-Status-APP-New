@@ -94,7 +94,7 @@ POST http://<地址>:<端口>/ubus
 
 ### 方式一：Android Studio（推荐）
 1. 用 Android Studio 打开本项目根目录。
-2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 9.7.1`。
+2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 9.8.0`。
 3. 点击 **Run** 或执行 `./gradlew :app:assembleDebug`。
 
 ### 方式二：命令行（已安装 Gradle）
@@ -105,9 +105,9 @@ gradle :app:assembleRelease      # 发布包（同一密钥签名）
 APK 产物位于 `app/build/outputs/apk/`。
 
 ### 环境要求
-- JDK 17 及以上（CI 使用 21）
+- JDK 17 及以上（CI 使用 25）
 - Android SDK（Platform android-37.2、Build-Tools 36+）
-- Gradle 9.7.1（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
+- Gradle 9.8.0（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
 
 ## 签名
 
@@ -134,8 +134,8 @@ APK 产物位于 `app/build/outputs/apk/`。
 
 推送代码到 `main` / `Dev` 分支，或手动在 **Actions → Build APK → Run workflow**，
 GitHub Actions 会自动：
-1. 配置 JDK 21 与 Android SDK（Platform android-37.2、Build-Tools 36.0.0）；
-2. 安装 Gradle 9.7.1 并构建 `assembleDebug` 与 `assembleRelease`（统一 MMCKB 密钥签名）；
+1. 配置 JDK 25 与 Android SDK（Platform android-37.2、Build-Tools 36.0.0）；
+2. 安装 Gradle 9.8.0 并构建 `assembleDebug` 与 `assembleRelease`（统一 MMCKB 密钥签名）；
 3. 分别上传 `openwrt-status-app-debug` 与 `openwrt-status-app-release` 产物。
 
 ## 技术栈
@@ -143,8 +143,8 @@ GitHub Actions 会自动：
 | 组件 | 版本（Dev 分支） |
 | --- | --- |
 | Kotlin | 2.4.20 |
-| Android Gradle Plugin | 9.4.0（AGP 9 内置 Kotlin 支持） |
-| Gradle | 9.7.1 |
+| Android Gradle Plugin | 9.4.1（AGP 9 内置 Kotlin 支持） |
+| Gradle | 9.8.0 |
 | Compose BOM | 2026.09.00（Compose 1.12.1） |
 | compileSdk / targetSdk / minSdk | 37.2 / 37 / 24 |
 | 液态玻璃 | `io.github.kyant0:backdrop:2.0.1` + `shapes:1.2.1` |
