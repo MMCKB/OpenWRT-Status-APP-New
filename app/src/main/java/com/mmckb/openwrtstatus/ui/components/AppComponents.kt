@@ -638,7 +638,7 @@ fun AppDialog(
 }
 
 /** 统一的二级页返回按钮：系统返回箭头图标，替代各页各自的文字“返回”。 */
-@Composable
+
 /** 返回键手感参数（设置页可调，进程级生效、随设置持久化）。 */
 object BackButtonFeel {
     /** 拖拽跟手增益（0.01–0.15）。 */
@@ -649,6 +649,7 @@ object BackButtonFeel {
     val frost = MutableStateFlow(0.55f)
 }
 
+@Composable
 fun AppBackButton(onBack: () -> Unit) {
     val colors = LocalAppColors.current
     val follow by BackButtonFeel.follow.collectAsState()
