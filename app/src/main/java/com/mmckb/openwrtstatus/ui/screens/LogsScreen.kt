@@ -277,7 +277,16 @@ fun LogsScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "日志",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                     AppIconButton(
                         onClick = {
                             val name = if (tab == "syslog") "syslog.txt" else "kernel.txt"
@@ -317,12 +326,6 @@ fun LogsScreen(
                         )
                     }
                 }
-                Text(
-                    "日志",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface
-                )
                 Text(
                     "系统日志与内核日志",
                     style = MaterialTheme.typography.bodySmall,

@@ -262,7 +262,16 @@ fun NftablesScreen(
                     } else {
                         AppBackButton(onBack = onBack)
                     }
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        if (showIptables) "iptables 规则概况" else "防火墙",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
                     AppIconButton(onClick = { load() }, enabled = !loading) {
                         Icon(
                             Icons.Filled.Refresh,
@@ -272,50 +281,35 @@ fun NftablesScreen(
                         )
                     }
                 }
-                // 标题行：回到顶部按钮叠加在右侧（固定行高，不因按钮出现/消失而变化）
-                Box(
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
+                    enter = fadeIn(tween(200)) + scaleIn(
+                        initialScale = 0.8f, animationSpec = tween(200)
+                    ),
+                    exit = fadeOut(tween(200)) + scaleOut(
+                        targetScale = 0.8f, animationSpec = tween(200)
+                    ),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 34.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(
-                        if (showIptables) "iptables 规则概况" else "防火墙",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = if (showIptables) showBackToTopIpt else showBackToTopNft,
-                        enter = fadeIn(tween(200)) + scaleIn(
-                            initialScale = 0.8f, animationSpec = tween(200)
-                        ),
-                        exit = fadeOut(tween(200)) + scaleOut(
-                            targetScale = 0.8f, animationSpec = tween(200)
-                        ),
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .clickable {
-                                scope.launch {
-                                    if (showIptables) iptListState.animateScrollToItem(0)
-                                    else nftListState.animateScrollToItem(0)
-                                }
+                        .clickable {
+                            scope.launch {
+                                if (showIptables) iptListState.animateScrollToItem(0)
+                                else nftListState.animateScrollToItem(0)
                             }
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(colors.surfaceVariant)
-                                .size(30.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.KeyboardArrowUp,
-                                contentDescription = "回到顶部",
-                                tint = colors.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
                         }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(colors.surfaceVariant)
+                            .size(30.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.KeyboardArrowUp,
+                            contentDescription = "回到顶部",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 Text(

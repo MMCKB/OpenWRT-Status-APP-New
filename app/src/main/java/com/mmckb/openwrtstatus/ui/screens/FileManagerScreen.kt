@@ -780,7 +780,16 @@ fun FileManagerScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppBackButton(onBack = onBack)
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "文件管理",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(
                     onClick = {
                         selectionMode = !selectionMode
@@ -792,14 +801,7 @@ fun FileManagerScreen(
                     onClick = { uploadLauncher.launch(arrayOf("*/*")) },
                     enabled = !busy
                 ) { Text("上传") }
-            }
-            Text(
-                "文件管理",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            // Breadcrumb: every segment is a tap target back up the tree; pencil jumps to a path.
+            }            // Breadcrumb: every segment is a tap target back up the tree; pencil jumps to a path.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
