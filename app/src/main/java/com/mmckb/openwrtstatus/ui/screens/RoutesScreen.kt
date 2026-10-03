@@ -295,7 +295,6 @@ fun RoutesScreen(
                     }
                 }
             }
-        }
 
             // 提示栈：钉在内容区顶部（标题正下方），不依赖坐标测量
             StackedAlertHost(
@@ -306,7 +305,9 @@ fun RoutesScreen(
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp)
             )
-        }    }
+            }
+        }
+    }
 }
 
 @Composable
