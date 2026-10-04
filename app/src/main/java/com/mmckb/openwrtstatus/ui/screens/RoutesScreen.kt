@@ -181,11 +181,10 @@ fun RoutesScreen(
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
             // 标题区（提示栈锚定返回键行底部；浏览后右侧出现回到顶部按钮）
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.alertAnchor(alertAnchor)
-                ) {
+            Column(
+                modifier = Modifier.alertAnchor(alertAnchor)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.width(10.dp))
                     Text(
