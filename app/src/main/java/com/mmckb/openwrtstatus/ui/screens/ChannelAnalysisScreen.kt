@@ -196,9 +196,9 @@ fun ChannelAnalysisScreen(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.onGloballyPositioned { coords ->
-                    // 返回键行底边 + 3dp 间隙 = 提示栈顶部锚点
+                    // 返回键行底边 + 24dp 间隙 = 提示栈顶部锚点
                     alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 19.dp
+                        (coords.positionInParent().y + coords.size.height).toDp() + 24.dp
                     }
                 }
             ) {
