@@ -41,7 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -130,6 +133,8 @@ fun FlashScreen(
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val alertStack = rememberAlertStackState()
+    val density = LocalDensity.current
+    var alertTopPadding by remember { mutableStateOf(0.dp) }
     var tab by remember { mutableStateOf("actions") }
 
     fun setAlert(type: AppAlertType, title: String, description: String? = null) {
@@ -436,8 +441,14 @@ fun FlashScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区
-            Column {
+            // 标题区（提示栈锚定其底部）
+            Column(
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
+                }
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.width(10.dp))
@@ -474,7 +485,6 @@ fun FlashScreen(
             )
             Spacer(Modifier.height(10.dp))
 
-            Box(modifier = Modifier.weight(1f)) {
             if (loading) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
@@ -485,7 +495,7 @@ fun FlashScreen(
             } else {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .weight(1f)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -637,16 +647,19 @@ fun FlashScreen(
                 // 背景延伸到手势条区域，最后一张卡片垫在 inset 之上
                 Spacer(Modifier.navigationBarsPadding().height(6.dp))
             }
-            // 提示栈：钉在内容区顶部（标题正下方），不依赖坐标测量
+        }
+
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于标题区正下方；
+        // 首帧布局测量完成前不显示，避免提示盖住标题
+        if (alertTopPadding > 0.dp) {
             StackedAlertHost(
                 state = alertStack,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp)
+                    .padding(top = alertTopPadding)
             )
-            }
         }
 
         selectState?.let { sel ->
