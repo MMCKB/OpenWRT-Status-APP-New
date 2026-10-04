@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
@@ -53,6 +55,9 @@ import kotlinx.coroutines.launch
 
 /** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
 private val LAYER_PEEK = 12.dp
+
+/** 单张提示卡片的统一最小高度：有无描述文字均一致（字体放大时允许自然增高）。 */
+private val CARD_MIN_HEIGHT = 64.dp
 
 /** 提示类型：成功（绿）/ 警告与进行中（黄）/ 错误（红）。 */
 enum class AppAlertType { Info, Success, Warning, Error }
@@ -216,9 +221,10 @@ fun StackedAlertHost(
 }
 
 /**
- * 单条提示卡片（横幅版加高：16dp 垂直内边距、20dp 图标）：
- * 纯色实底三色——绿 = 成功、黄 = 警告/进行中、红 = 错误；边缘为同色系更深的描边，
- * 图标与标题用对应的深色调，深浅色模式一致。
+ * 单条提示卡片：所有卡片统一尺寸——宽度随宿主铺满（内容区同宽），
+ * 高度固定 64dp（min 高度，有无描述文字一致；系统字体放大时自然增高不裁切）。
+ * 标题与描述均单行省略；纯色实底三色——绿 = 成功、黄 = 警告/进行中、红 = 错误；
+ * 边缘为同色系更深的描边，图标与标题用对应的深色调，深浅色模式一致。
  */
 @Composable
 private fun StackedAlertCard(item: AlertItem) {
@@ -232,11 +238,12 @@ private fun StackedAlertCard(item: AlertItem) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = CARD_MIN_HEIGHT)
             .clip(RoundedCornerShape(10.dp))
             .background(background)
             .border(1.dp, borderColor, RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.Top
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = when (item.type) {
@@ -255,14 +262,18 @@ private fun StackedAlertCard(item: AlertItem) {
                 item.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = accent
+                color = accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (!item.description.isNullOrBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     item.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = accent.copy(alpha = 0.85f)
+                    color = accent.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
