@@ -263,7 +263,7 @@ fun AppTopBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(60.dp)
+            .height(44.dp)
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -664,7 +664,7 @@ fun AppBackButton(onBack: () -> Unit) {
 /** Top inset consumed by the translucent blurred top bar: status bar + bar height + gap. */
 @Composable
 fun rememberTopBarPadding(): Dp =
-    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp + 12.dp
+    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 44.dp + 12.dp
 
 /**
  * Interpolator mandated by the Material predictive back spec (0.1, 0.1, 0, 1) - matches
