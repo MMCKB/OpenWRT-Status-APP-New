@@ -328,7 +328,15 @@ fun SystemScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    // 返回键行底边 + 3dp 间隙 = 提示栈顶部锚点
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 19.dp
+                    }
+                }
+            ) {
                 AppBackButton(onBack = onBack)
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -354,11 +362,6 @@ fun SystemScreen(
                 onSelect = { tab = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onGloballyPositioned { coords ->
-                        alertTopPadding = with(density) {
-                            (coords.positionInParent().y + coords.size.height).toDp() + 16.dp
-                        }
-                    }
             )
             Spacer(Modifier.height(10.dp))
 
