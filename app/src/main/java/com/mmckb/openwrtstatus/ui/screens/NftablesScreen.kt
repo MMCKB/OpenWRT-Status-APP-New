@@ -240,11 +240,12 @@ fun NftablesScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
-            Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            // 标题区（提示栈锚定返回键行底部；浏览后右侧出现回到顶部按钮）
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.alertAnchor(alertAnchor)
+                ) {
                     if (showIptables) {
                         IconButton(onClick = { showIptables = false }) {
                             Icon(

@@ -439,10 +439,8 @@ fun FlashScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区（提示栈锚定其底部）
-            Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
-            ) {
+            // 标题区（提示栈锚定返回键行底部）
+            Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.width(10.dp))
@@ -743,7 +741,10 @@ fun FlashScreen(
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.alertAnchor(alertAnchor)
+                ) {
                         Text(
                             "保留配置",
                             style = MaterialTheme.typography.bodyMedium,

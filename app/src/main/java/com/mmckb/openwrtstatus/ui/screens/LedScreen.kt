@@ -328,11 +328,12 @@ fun LedScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区（提示栈锚定其底部）
-            Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            // 标题区（提示栈锚定返回键行底部）
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.alertAnchor(alertAnchor)
+                ) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.width(10.dp))
                     Text(
