@@ -39,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -108,6 +111,8 @@ fun StartupScreen(
     var busy by remember { mutableStateOf(false) }
     var data by remember { mutableStateOf<StartupData?>(null) }
     val alertStack = rememberAlertStackState()
+    val density = LocalDensity.current
+    var alertTopPadding by remember { mutableStateOf(0.dp) }
     var tab by remember { mutableStateOf("init") }
     var rcLocalEdit by remember { mutableStateOf<String?>(null) }
 
@@ -206,8 +211,14 @@ fun StartupScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 12.dp)
         ) {
-            // 标题区
-            Column {
+            // 标题区（提示栈锚定其底部；positionInParent 已含状态栏 inset）
+            Column(
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                    }
+                }
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.width(10.dp))
@@ -244,7 +255,6 @@ fun StartupScreen(
             )
             Spacer(Modifier.height(10.dp))
 
-            Box(modifier = Modifier.weight(1f)) {
             if (loading) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
@@ -254,7 +264,7 @@ fun StartupScreen(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     if (tab == "init") {
@@ -313,18 +323,21 @@ fun StartupScreen(
                     }
                 }
             }
-        // 提示栈：钉在内容区顶部（标题正下方），不依赖坐标测量
-        StackedAlertHost(
-            state = alertStack,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp)
-        )
+        }
+
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于标题区正下方；
+        // 首帧布局测量完成前不显示，避免提示盖住标题
+        if (alertTopPadding > 0.dp) {
+            StackedAlertHost(
+                state = alertStack,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = alertTopPadding)
+            )
         }
     }
-}
 }
 
 private fun flashErrTextStatic(e: Exception): String = when {
