@@ -45,8 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +62,9 @@ import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
-import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
+import com.mmckb.openwrtstatus.ui.components.StackedAlertOverlay
+import com.mmckb.openwrtstatus.ui.components.alertAnchor
+import com.mmckb.openwrtstatus.ui.components.rememberAlertAnchorState
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
@@ -114,8 +114,8 @@ fun RoutesScreen(
     var loading by remember { mutableStateOf(true) }
     var data by remember { mutableStateOf<RoutingData?>(null) }
     val alertStack = rememberAlertStackState()
+    val alertAnchor = rememberAlertAnchorState()
     val density = androidx.compose.ui.platform.LocalDensity.current
-    var alertTopPadding by remember { mutableStateOf(0.dp) }
     var tab by remember { mutableStateOf("ipv4") }
 
     fun setAlert(type: AppAlertType, title: String, description: String? = null) {
@@ -182,11 +182,7 @@ fun RoutesScreen(
         ) {
             // 标题区（提示栈锚定其底部；浏览后右侧出现回到顶部按钮）
             Column(
-                modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 24.dp
-                    }
-                }
+                modifier = Modifier.alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -307,18 +303,8 @@ fun RoutesScreen(
             }
         }
 
-        // 悬浮提示栈：浮在内容上方（不推挤布局），位于标题区正下方；
-        // 首帧布局测量完成前不显示，避免提示盖住标题
-        if (alertTopPadding > 0.dp) {
-        StackedAlertHost(
-            state = alertStack,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = alertTopPadding)
-        )
-        }
+        // 悬浮提示栈：锚定返回键行下方（间隙/首帧 gate 统一在 StackedAlerts 组件内）
+        StackedAlertOverlay(alertStack, alertAnchor)
     }
 }
 
