@@ -49,7 +49,9 @@ import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
-import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
+import com.mmckb.openwrtstatus.ui.components.StackedAlertOverlay
+import com.mmckb.openwrtstatus.ui.components.alertAnchor
+import com.mmckb.openwrtstatus.ui.components.rememberAlertAnchorState
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
@@ -104,6 +106,7 @@ fun RealtimeScreen(
     val colors = LocalAppColors.current
     val client = remember { RealtimeClient() }
     val alertStack = rememberAlertStackState()
+    val alertAnchor = rememberAlertAnchorState()
 
     var tab by remember { mutableStateOf("load") }
     var loading by remember { mutableStateOf(true) }
@@ -296,28 +299,28 @@ fun RealtimeScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区
-            Column {
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AppBackButton(onBack = onBack)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "实时监控",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            // 标题区（提示栈锚定返回键行底部，与其他页面一致）
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.alertAnchor(alertAnchor)
+            ) {
+                AppBackButton(onBack = onBack)
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    "负载 · 流量 · 连接 · 无线信号",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant
+                    "实时监控",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
             }
+            Text(
+                "负载 · 流量 · 连接 · 无线信号",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant
+            )
             Spacer(Modifier.height(10.dp))
             SmoothOptionSwitcher(
                 options = RT_TABS,
@@ -387,18 +390,11 @@ fun RealtimeScreen(
                     Spacer(Modifier.height(4.dp))
                 }
                 }
-                // 提示栈：钉在内容区顶部（标题与页签正下方），不依赖坐标测量
-                StackedAlertHost(
-                    state = alertStack,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 8.dp)
-                )
             }
         }
 
+        // 悬浮提示栈：锚定返回键行下方（与其他页面一致）
+        StackedAlertOverlay(alertStack, alertAnchor)
     }
 }
 
