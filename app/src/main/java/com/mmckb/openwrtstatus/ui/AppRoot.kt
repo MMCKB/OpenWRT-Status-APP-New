@@ -533,13 +533,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         @Composable
         fun MainTopBar(modifier: Modifier) {
             val topBarColors = LocalAppColors.current
-            // 模糊效果区域 = 状态栏 + 60dp 标题栏 + 30dp 渐隐延伸区
+            // 模糊效果区域 = 状态栏 + 44dp 标题栏 + 30dp 渐隐延伸区
             val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val fadeExtension = 30.dp
             Box(
                 modifier
                     .fillMaxWidth()
-                    .height(statusBarHeight + 60.dp + fadeExtension)
+                    .height(statusBarHeight + 44.dp + fadeExtension)
                     .then(
                         if (Build.VERSION.SDK_INT >= 33) {
                             // 真模糊：高斯 + 渐进遮罩（AGSL）——顶栏全强度，延伸区内平滑渐隐
@@ -566,7 +566,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                         "content"
                                     ) {
                                         setFloatUniform("size", size.width, size.height)
-                                        setFloatUniform("fadeStart", (statusBarHeight + 60.dp).toPx())
+                                        setFloatUniform("fadeStart", (statusBarHeight + 44.dp).toPx())
                                         setColorUniform("tint", topBarColors.surface)
                                         setFloatUniform("tintIntensity", 0.6f)
                                     }
