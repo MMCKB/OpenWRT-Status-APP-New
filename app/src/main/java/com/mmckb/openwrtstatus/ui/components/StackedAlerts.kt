@@ -60,10 +60,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
-private val LAYER_PEEK = 12.dp
+private val LAYER_PEEK = 16.dp
 
 /** 单张提示卡片的统一最小高度：有无描述文字均一致（字体放大时允许自然增高）。 */
-private val CARD_MIN_HEIGHT = 64.dp
+private val CARD_MIN_HEIGHT = 65.dp
 
 /** 提示类型：成功（绿）/ 警告与进行中（黄）/ 错误（红）。 */
 enum class AppAlertType { Info, Success, Warning, Error }
@@ -127,7 +127,7 @@ class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
         const val MAX_LAYERS = 3
 
         /** 相邻两层错开的露出高度：下层卡片在上层下方露出的边缘宽度。 */
-        val LAYER_PEEK: Dp = 12.dp
+        val LAYER_PEEK: Dp = 16.dp
 
         /** 消失链各步停留：第 3 层 → 第 2 层 → 第 1 层，逐层加快。 */
         val DISMISS_STEPS = longArrayOf(2500L, 1600L, 1000L)
@@ -164,7 +164,7 @@ class AlertAnchorState(private val density: Density) {
 
     companion object {
         /** 锚点元素底边与提示栈顶部的间隙。 */
-        val ANCHOR_GAP: Dp = 24.dp
+        val ANCHOR_GAP: Dp = 32.dp
     }
 }
 
