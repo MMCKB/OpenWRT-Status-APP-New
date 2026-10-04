@@ -712,15 +712,18 @@ fun SystemScreen(
             }
         }
 
-        // 悬浮提示栈：浮在内容上方（不推挤布局），位于方案选择器正下方
-        StackedAlertHost(
-            state = alertStack,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = alertTopPadding)
-        )
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于返回键行正下方；
+        // 首帧布局测量完成前不显示，避免提示盖住标题
+        if (alertTopPadding > 0.dp) {
+            StackedAlertHost(
+                state = alertStack,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = alertTopPadding)
+            )
+        }
     }
 }
 

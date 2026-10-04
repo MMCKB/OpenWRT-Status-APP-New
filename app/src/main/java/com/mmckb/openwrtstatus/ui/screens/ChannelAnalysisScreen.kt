@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,6 +116,8 @@ fun ChannelAnalysisScreen(
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val alertStack = rememberAlertStackState()
+    val density = LocalDensity.current
+    var alertTopPadding by remember { mutableStateOf(0.dp) }
 
     var data by remember { mutableStateOf<ChannelAnalysisClient.ChannelAnalysisData?>(null) }
     var tab by remember { mutableStateOf(0) }
@@ -187,35 +191,40 @@ fun ChannelAnalysisScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区
-            Column {
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AppBackButton(onBack = onBack)
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "信道分析",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    AppIconButton(onClick = { load() }, enabled = !busy) {
-                        Text(
-                            "⟳",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = colors.onSurface
-                        )
+            // 标题区（提示栈锚定返回键行底部，与其他页面一致）
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    // 返回键行底边 + 3dp 间隙 = 提示栈顶部锚点
+                    alertTopPadding = with(density) {
+                        (coords.positionInParent().y + coords.size.height).toDp() + 19.dp
                     }
                 }
+            ) {
+                AppBackButton(onBack = onBack)
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    "邻近无线网络的信道占用与信号分布",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant
+                    "信道分析",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                AppIconButton(onClick = { load() }, enabled = !busy) {
+                    Text(
+                        "⟳",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = colors.onSurface
+                    )
+                }
             }
+            Text(
+                "邻近无线网络的信道占用与信号分布",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant
+            )
             Spacer(Modifier.height(10.dp))
             if (bands.isNotEmpty()) {
                 SmoothOptionSwitcher(
@@ -264,18 +273,21 @@ fun ChannelAnalysisScreen(
                 }
                 Spacer(Modifier.navigationBarsPadding().height(6.dp))
             }
-            // 提示栈：钉在内容区顶部（标题与页签正下方），不依赖坐标测量
+            }
+        }
+
+        // 悬浮提示栈：浮在内容上方（不推挤布局），位于返回键行正下方；
+        // 首帧布局测量完成前不显示，避免提示盖住标题
+        if (alertTopPadding > 0.dp) {
             StackedAlertHost(
                 state = alertStack,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp)
+                    .padding(top = alertTopPadding)
             )
-            }
         }
-
     }
 }
 
