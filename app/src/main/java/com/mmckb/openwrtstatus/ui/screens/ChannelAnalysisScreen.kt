@@ -190,35 +190,36 @@ fun ChannelAnalysisScreen(
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
-            // 标题区（提示栈锚定返回键行底部，与其他页面一致）
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            // 标题区（提示栈锚定其底部，含描述行）
+            Column(
                 modifier = Modifier.alertAnchor(alertAnchor)
             ) {
-                AppBackButton(onBack = onBack)
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "信道分析",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurface,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                AppIconButton(onClick = { load() }, enabled = !busy) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppBackButton(onBack = onBack)
+                    Spacer(Modifier.width(10.dp))
                     Text(
-                        "⟳",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = colors.onSurface
+                        "信道分析",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
+                    AppIconButton(onClick = { load() }, enabled = !busy) {
+                        Text(
+                            "⟳",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = colors.onSurface
+                        )
+                    }
                 }
+                Text(
+                    "邻近无线网络的信道占用与信号分布",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
             }
-            Text(
-                "邻近无线网络的信道占用与信号分布",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.onSurfaceVariant
-            )
             Spacer(Modifier.height(10.dp))
             if (bands.isNotEmpty()) {
                 SmoothOptionSwitcher(
