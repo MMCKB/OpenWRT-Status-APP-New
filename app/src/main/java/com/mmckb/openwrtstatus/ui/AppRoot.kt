@@ -533,9 +533,9 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         @Composable
         fun MainTopBar(modifier: Modifier) {
             val topBarColors = LocalAppColors.current
-            // 模糊效果区域 = 状态栏 + 44dp 标题栏 + 30dp 渐隐延伸区
+            // 模糊效果区域 = 状态栏 + 44dp 标题栏 + 15dp 渐隐延伸区
             val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            val fadeExtension = 30.dp
+            val fadeExtension = 15.dp
             Box(
                 modifier
                     .fillMaxWidth()
