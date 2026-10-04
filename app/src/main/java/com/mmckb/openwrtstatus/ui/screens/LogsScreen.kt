@@ -271,7 +271,7 @@ fun LogsScreen(
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
                     alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                        (coords.positionInParent().y + coords.size.height).toDp() + 16.dp
                     }
                 }
             ) {

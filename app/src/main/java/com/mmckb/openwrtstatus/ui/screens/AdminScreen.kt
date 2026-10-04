@@ -487,7 +487,7 @@ fun AdminScreen(
                     .onGloballyPositioned { coords ->
                         // 记录选择器底边在页面中的位置：提示栈浮层的顶部锚点
                         alertTopPadding = with(density) {
-                            (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
+                            (coords.positionInParent().y + coords.size.height).toDp() + 16.dp
                         }
                     }
             )
