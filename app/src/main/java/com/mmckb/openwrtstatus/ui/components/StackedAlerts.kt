@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,8 +46,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
@@ -135,6 +140,65 @@ class AlertStackState(private val scope: kotlinx.coroutines.CoroutineScope) {
 fun rememberAlertStackState(): AlertStackState {
     val scope = rememberCoroutineScope()
     return remember { AlertStackState(scope) }
+}
+
+/**
+ * 提示栈锚点状态：测量锚点元素（返回键行/标题区）底边在父级中的位置，
+ * 得出提示栈顶部内边距（含 [Companion.ANCHOR_GAP] 间隙）。
+ *
+ * 几何约定（唯一规则）：挂 [alertAnchor] 的元素须与 [StackedAlertOverlay] 所在的
+ * 内容 Box 共享同一坐标原点——即锚点是该 Box 的直接子级（或与 Box 同起点的容器
+ * 的直接子级），错位会导致提示偏移。
+ */
+class AlertAnchorState(private val density: Density) {
+
+    var topPadding by mutableStateOf(0.dp)
+        private set
+
+    internal fun measure(coords: LayoutCoordinates) {
+        topPadding = with(density) {
+            (coords.positionInParent().y + coords.size.height).toDp() + ANCHOR_GAP
+        }
+    }
+
+    companion object {
+        /** 锚点元素底边与提示栈顶部的间隙。 */
+        val ANCHOR_GAP: Dp = 24.dp
+    }
+}
+
+/** 创建并持有 [AlertAnchorState]（内部捕获 LocalDensity，随重组自动更新）。 */
+@Composable
+fun rememberAlertAnchorState(): AlertAnchorState {
+    val density = LocalDensity.current
+    return remember(density) { AlertAnchorState(density) }
+}
+
+/** 挂在锚点元素（返回键行/标题区）上：测量其底边位置作为提示栈顶部锚点。 */
+fun Modifier.alertAnchor(state: AlertAnchorState): Modifier =
+    onGloballyPositioned(state::measure)
+
+/**
+ * 提示栈统一出口：在内容 Box 的末尾调用一次即可。
+ * 位于锚点元素正下方（间隙 [AlertAnchorState.Companion.ANCHOR_GAP]），浮在内容上方
+ * 不推挤布局；首帧布局测量完成前不显示，避免提示盖住标题。
+ */
+@Composable
+fun BoxScope.StackedAlertOverlay(
+    state: AlertStackState,
+    anchor: AlertAnchorState,
+    modifier: Modifier = Modifier
+) {
+    if (anchor.topPadding > 0.dp) {
+        StackedAlertHost(
+            state = state,
+            modifier = modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = anchor.topPadding)
+        )
+    }
 }
 
 /**
