@@ -18,9 +18,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
@@ -56,16 +53,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import android.os.Build
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.core.content.ContextCompat
@@ -535,17 +531,18 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             }
         }
 
-        fun closeAddSheet() {
+        fun closeAddSheet(releaseVelocity: Float = 0f) {
             // 已在收起（收起动画活跃）时忽略新的收起请求：动画从当前位置继续，
             // 不重播——这是「动画没播完时多次侧滑重复播放」的防重入关键。
             if (addSheetCloseJob?.isActive == true) return
             addSheetReboundJob?.cancel()
-            val remain = addSheetProgress.value.coerceIn(0f, 1f)
             addSheetCloseJob = rootScope.launch {
-                // 时长按剩余距离等比缩短：从中间接管收起时不拖沓也不跳变
+                // 弹簧从当前进度与释放速度继续收拢（临界阻尼）：松手即顺势、交接不断速；
+                // 按钮触发的收起初速度为 0，同样平滑落位。
                 addSheetProgress.animateTo(
                     0f,
-                    tween((560f * remain).toInt().coerceIn(120, 560), easing = addSheetEasing)
+                    spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
+                    initialVelocity = releaseVelocity.coerceIn(-3f, 0f)
                 )
                 addSheetOpen = false
                 addSheetFabRect = null
@@ -882,18 +879,31 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             // 面板颜色 = 页面本色；表单内容随展开进度淡入。手绘预测性返回见面板内的 handler。
             if (addSheetOpen) {
                 val fab = addSheetFabRect ?: Rect.Zero
-                val p = addSheetProgress.value
-                val left = lerp(fab.left, 0f, p)
-                val top = lerp(fab.top, 0f, p)
-                val width = lerp(fab.width, constraints.maxWidth.toFloat(), p)
-                val height = lerp(fab.height, constraints.maxHeight.toFloat(), p)
-                val corner = lerp(fab.height / 2f, 0f, p)
-                val density = LocalDensity.current
+                // 缩放生长（graphicsLayer）：面板固定全屏，进度只在绘制层读取——动画帧内
+                // 零重组、零重测量；从按钮中心 scale 展开，圆角同步收平，表单按整屏布局
+                // 一次后随层缩放（iOS 式缩放呈现）。
+                val screenW = constraints.maxWidth.toFloat()
+                val screenH = constraints.maxHeight.toFloat()
+                val originX = ((fab.left + fab.right) / 2f / screenW).coerceIn(0f, 1f)
+                val originY = ((fab.top + fab.bottom) / 2f / screenH).coerceIn(0f, 1f)
+                val startScaleX = (fab.width / screenW).coerceIn(0.02f, 1f)
+                val startScaleY = (fab.height / screenH).coerceIn(0.02f, 1f)
+                val startCorner = fab.height / 2f
                 Box(
                     Modifier
-                        .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
-                        .size(with(density) { width.toDp() }, with(density) { height.toDp() })
-                        .clip(RoundedCornerShape(with(density) { corner.toDp() }))
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = addSheetProgress.value.coerceIn(0f, 1f)
+                            val sx = lerp(startScaleX, 1f, p)
+                            val sy = lerp(startScaleY, 1f, p)
+                            scaleX = sx
+                            scaleY = sy
+                            transformOrigin = TransformOrigin(originX, originY)
+                            // 层内圆角按缩放反向补偿：视觉上从按钮胶囊半径收平到直角
+                            val visualCorner = lerp(startCorner, 0f, p)
+                            shape = RoundedCornerShape((visualCorner / minOf(sx, sy)).toDp())
+                            clip = true
+                        }
                         .background(colors.background)
                 ) {
                     DeviceEditScreen(
@@ -908,16 +918,20 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onDelete = { },
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = p.coerceIn(0f, 1f) }
+                            .graphicsLayer { alpha = addSheetProgress.value.coerceIn(0f, 1f) }
                     )
                 }
 
                 // 手绘预测性返回：跟手把面板缩向按钮位置——进度从手势开始时的
                 // 当前值相对跟踪（多次侧滑不回弹全屏、不重播收起动画），提交后
                 // 从当前位置继续收起；只有未提交的取消才回弹全屏。
+                // 松手速度逐事件估计（指数平滑），提交/回弹都带初速度——交接不断速。
                 androidx.activity.compose.PredictiveBackHandler { events ->
                     var base = Float.NaN
                     var p0 = 0f
+                    var lastMs = 0L
+                    var lastP = 0f
+                    var releaseV = 0f
                     try {
                         events.collect { ev ->
                             // 手势接管：停掉进行中的收起/回弹动画（逐帧零动画竞争）
@@ -925,20 +939,32 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                             addSheetCloseJob = null
                             addSheetReboundJob?.cancel()
                             addSheetReboundJob = null
+                            val nowMs = android.os.SystemClock.elapsedRealtime()
                             val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
                                 .transform(ev.progress).coerceIn(0f, 1f)
                             if (base.isNaN()) {
                                 base = addSheetProgress.value
                                 p0 = p
                             }
-                            addSheetProgress.snapTo((base - (p - p0)).coerceIn(0f, 1f))
+                            val target = (base - (p - p0)).coerceIn(0f, 1f)
+                            if (lastMs > 0L) {
+                                val instV = (target - lastP) / (nowMs - lastMs).coerceAtLeast(1L) * 1000f
+                                releaseV = if (releaseV == 0f) instV else releaseV + (instV - releaseV) * 0.45f
+                            }
+                            lastMs = nowMs
+                            lastP = target
+                            addSheetProgress.snapTo(target)
                         }
-                        closeAddSheet()
+                        closeAddSheet(releaseV.coerceIn(-3f, 0f))
                     } catch (_: java.util.concurrent.CancellationException) {
                         // 收起动画进行中被新手势打断时不回弹（新手势会接管进度）
                         if (addSheetCloseJob?.isActive != true) {
                             addSheetReboundJob = rootScope.launch {
-                                addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
+                                addSheetProgress.animateTo(
+                                    1f,
+                                    spring(stiffness = Spring.StiffnessMediumLow),
+                                    initialVelocity = releaseV.coerceIn(-3f, 3f)
+                                )
                             }
                         }
                     }
