@@ -58,15 +58,15 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
 internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
 
     override fun check(host: String, port: Int, key: HostKey): Int {
-        val fingerprint = key.fingerprint
+        val fingerprint = key.fingerPrint
         val known = SshHostKeys.fingerprint(hostPort)
         return when {
             known == null -> {
                 SshHostKeys.remember(hostPort, fingerprint)
-                OK
+                HostKeyRepository.OK
             }
-            fingerprint == known -> OK
-            else -> NOT_INCLUDED
+            fingerprint == known -> HostKeyRepository.OK
+            else -> HostKeyRepository.NOT_INCLUDED
         }
     }
 
@@ -74,12 +74,13 @@ internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepo
     override fun getName(): String = "OpenWrtStatus"
     override fun remove(host: String, port: Int) {}
     override fun remove(host: String, type: String) {}
-    override fun getStatus(): Int = NOT_INCLUDED
+    override fun getStatus(): Int = HostKeyRepository.NOT_INCLUDED
 }
 
 /** 为 JSch 实例挂上 TOFU 主机密钥校验（配合 StrictHostKeyChecking=yes）。 */
-internal fun JSch.applyTofuHostKeyChecking(host: String, port: Int) {
+internal fun JSch.applyTofuHostKeyChecking(host: String, port: Int): JSch {
     hostKeyRepository = TofuHostKeyRepository("$host:$port")
+    return this
 }
 
 /** 主机密钥被拒（指纹与记录不符）时给出中文说明，其余异常原样透传。 */
