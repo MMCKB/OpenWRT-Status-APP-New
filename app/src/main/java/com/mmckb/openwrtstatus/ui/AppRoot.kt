@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
@@ -173,7 +174,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var addSheetOpen by remember { mutableStateOf(false) }
     val addSheetProgress = remember { Animatable(1f) }
     val addSheetEasing = CubicBezierEasing(0.72f, 0f, 0.24f, 1f)
-    var addSheetClosing by remember { mutableStateOf(false) }
+    // 收起/回弹动画挂 rootScope（不随手势回调被取消而中断）：
+    // 收起进行中再来侧滑，手势从当前进度相对接管，提交后从当前位置继续收起——
+    // 不回弹全屏、不重播收起动画（多次侧滑只连续推进）。
+    var addSheetCloseJob by remember { mutableStateOf<Job?>(null) }
+    var addSheetReboundJob by remember { mutableStateOf<Job?>(null) }
 
     val editLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -423,6 +428,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         // 把添加页移交内联渲染（竖屏全屏/横屏右栏），与其他二级页的旋转交接一致。
         LaunchedEffect(constraints.maxWidth, constraints.maxHeight) {
             if (addSheetOpen) {
+                addSheetCloseJob?.cancel()
+                addSheetReboundJob?.cancel()
                 addSheetOpen = false
                 addSheetFabRect = null
                 addSheetProgress.snapTo(1f)
@@ -518,6 +525,8 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 openEditor(RouterConfig(), isNew = true)
                 return
             }
+            addSheetCloseJob?.cancel()
+            addSheetReboundJob?.cancel()
             addSheetFabRect = bounds
             addSheetOpen = true
             rootScope.launch {
@@ -527,14 +536,19 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         }
 
         fun closeAddSheet() {
-            // 收起中忽略新的关闭请求（×/保存/预测性返回共用守卫：连续返回只触发一次动画）。
-            if (addSheetClosing) return
-            addSheetClosing = true
-            rootScope.launch {
-                addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
+            // 已在收起（收起动画活跃）时忽略新的收起请求：动画从当前位置继续，
+            // 不重播——这是「动画没播完时多次侧滑重复播放」的防重入关键。
+            if (addSheetCloseJob?.isActive == true) return
+            addSheetReboundJob?.cancel()
+            val remain = addSheetProgress.value.coerceIn(0f, 1f)
+            addSheetCloseJob = rootScope.launch {
+                // 时长按剩余距离等比缩短：从中间接管收起时不拖沓也不跳变
+                addSheetProgress.animateTo(
+                    0f,
+                    tween((560f * remain).toInt().coerceIn(120, 560), easing = addSheetEasing)
+                )
                 addSheetOpen = false
                 addSheetFabRect = null
-                addSheetClosing = false
             }
         }
 
@@ -898,19 +912,35 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                 }
 
-                // 手绘预测性返回：跟手把面板缩向按钮位置，提交后沿关闭动画收尾，取消回弹全屏。
+                // 手绘预测性返回：跟手把面板缩向按钮位置——进度从手势开始时的
+                // 当前值相对跟踪（多次侧滑不回弹全屏、不重播收起动画），提交后
+                // 从当前位置继续收起；只有未提交的取消才回弹全屏。
                 androidx.activity.compose.PredictiveBackHandler { events ->
+                    var base = Float.NaN
+                    var p0 = 0f
                     try {
                         events.collect { ev ->
+                            // 手势接管：停掉进行中的收起/回弹动画（逐帧零动画竞争）
+                            addSheetCloseJob?.cancel()
+                            addSheetCloseJob = null
+                            addSheetReboundJob?.cancel()
+                            addSheetReboundJob = null
                             val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
                                 .transform(ev.progress).coerceIn(0f, 1f)
-                            addSheetProgress.snapTo(1f - p)
+                            if (base.isNaN()) {
+                                base = addSheetProgress.value
+                                p0 = p
+                            }
+                            addSheetProgress.snapTo((base - (p - p0)).coerceIn(0f, 1f))
                         }
-                        addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
-                        addSheetOpen = false
-                        addSheetFabRect = null
+                        closeAddSheet()
                     } catch (_: java.util.concurrent.CancellationException) {
-                        addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
+                        // 收起动画进行中被新手势打断时不回弹（新手势会接管进度）
+                        if (addSheetCloseJob?.isActive != true) {
+                            addSheetReboundJob = rootScope.launch {
+                                addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
+                            }
+                        }
                     }
                 }
             }
