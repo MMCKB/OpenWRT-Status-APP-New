@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mmckb.openwrtstatus.data.local.SettingsStore
+import com.mmckb.openwrtstatus.data.local.SshHostKeys
 import com.mmckb.openwrtstatus.data.model.DashboardData
 import com.mmckb.openwrtstatus.data.model.HiddenDiagData
 import com.mmckb.openwrtstatus.data.model.HistorySample

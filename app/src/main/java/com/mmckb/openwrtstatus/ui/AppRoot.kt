@@ -513,7 +513,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         }
 
         // 添加面板：竖屏从设备页「添加」按钮展开到全屏；横屏保持原路径（右栏内联编辑器）。
-        fun openAddSheet(bounds: Rect) {
+        fun onAddClicked(bounds: Rect) {
             if (addSheetOpen) return
             if (isLandscape) {
                 openEditor(RouterConfig(), isNew = true)

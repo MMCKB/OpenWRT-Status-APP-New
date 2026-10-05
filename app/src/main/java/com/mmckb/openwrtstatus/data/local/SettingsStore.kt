@@ -2,13 +2,16 @@ package com.mmckb.openwrtstatus.data.local
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.core.ReplaceFileCorruptionHandler
 import androidx.datastore.migrations.SharedPreferencesMigration
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.mmckb.openwrtstatus.data.model.RouterConfig
@@ -32,8 +35,29 @@ private var dataStoreInstance: DataStore<Preferences>? = null
 private fun settingsDataStore(context: Context): DataStore<Preferences> =
     dataStoreInstance ?: synchronized(dataStoreLock) {
         dataStoreInstance ?: PreferenceDataStoreFactory.create(
-            corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
-            migrations = listOf(SharedPreferencesMigration(context, LEGACY_PREFS_NAME)),
+            migrations = listOf(
+                SharedPreferencesMigration(
+                    context = context,
+                    sharedPreferencesName = LEGACY_PREFS_NAME,
+                    migrate = { sharedPreferencesView, current ->
+                        // 旧 SharedPreferences 的全部键值平移进 DataStore（类型保持）
+                        val builder = current.toBuilder()
+                        sharedPreferencesView.asMap().forEach { (key, value) ->
+                            when (value) {
+                                is String -> builder[stringPreferencesKey(key)] = value
+                                is Int -> builder[intPreferencesKey(key)] = value
+                                is Boolean -> builder[booleanPreferencesKey(key)] = value
+                                is Long -> builder[longPreferencesKey(key)] = value
+                                is Float -> builder[floatPreferencesKey(key)] = value
+                                is Double -> builder[doublePreferencesKey(key)] = value
+                                is Set<*> -> builder[stringSetPreferencesKey(key)] =
+                                    value.filterIsInstance<String>().toSet()
+                            }
+                        }
+                        builder.build()
+                    }
+                )
+            ),
             produceFile = { File(context.filesDir, DATASTORE_FILE) }
         ).also { dataStoreInstance = it }
     }
