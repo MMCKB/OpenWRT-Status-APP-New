@@ -14,3 +14,5 @@
 # 其依赖不在 Android 类路径上，显式忽略（这些类运行时不会被调用）。
 -dontwarn com.sun.jna.**
 -dontwarn org.apache.logging.log4j.**
+-dontwarn org.newsclub.net.unix.**
+-dontwarn org.slf4j.**
