@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -902,11 +901,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                             scaleX = sx
                             scaleY = sy
                             transformOrigin = TransformOrigin(originX, originY)
-                            // 层内圆角按两轴缩放分别反向补偿：视觉上从按钮胶囊半径收平到直角
+                            // 层内圆角按缩放反向补偿：视觉上从按钮胶囊半径收平到直角
+                            // （方形按钮下 Android 圆角钳制后两轴都精确等于胶囊半径）
                             val visualCorner = lerp(startCorner, 0f, p)
-                            shape = RoundedCornerShape(
-                                CornerSize((visualCorner / sx).toDp(), (visualCorner / sy).toDp())
-                            )
+                            shape = RoundedCornerShape((visualCorner / minOf(sx, sy)).toDp())
                             clip = true
                         }
                         .background(colors.background)
