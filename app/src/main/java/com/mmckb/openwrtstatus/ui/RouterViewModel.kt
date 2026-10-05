@@ -33,21 +33,19 @@ private const val HISTORY_LIMIT = 60
  */
 class RouterViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val settingsStore = SettingsStore(application)
+    private val settingsStore = SettingsStore(application).also { SshHostKeys.init(it) }
     private val repository = OpenWrtRepository()
 
     /** Interactive SSH shell used by the terminal screen. */
     val terminal = SshTerminal()
 
-    private val initialDevices = settingsStore.loadDevices()
-
-    private val _devices = MutableStateFlow(initialDevices)
+    private val _devices = MutableStateFlow<List<RouterConfig>>(emptyList())
     val devices: StateFlow<List<RouterConfig>> = _devices
 
-    private val _activeId = MutableStateFlow(settingsStore.loadActiveId(initialDevices))
+    private val _activeId = MutableStateFlow("")
     val activeId: StateFlow<String> = _activeId
 
-    private val _config = MutableStateFlow(configFor(initialDevices, _activeId.value))
+    private val _config = MutableStateFlow(RouterConfig(id = SettingsStore.ID_LEGACY))
     val config: StateFlow<RouterConfig> = _config
 
     private fun configFor(devices: List<RouterConfig>, id: String): RouterConfig =
@@ -67,20 +65,19 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val _history = MutableStateFlow<List<HistorySample>>(emptyList())
     val history: StateFlow<List<HistorySample>> = _history
 
-    private val _connNotifyEnabled =
-        MutableStateFlow(settingsStore.isConnectionNotifyEnabled())
+    private val _connNotifyEnabled = MutableStateFlow(true)
     val connNotifyEnabled: StateFlow<Boolean> = _connNotifyEnabled
 
     /** 工具页排版：true = 两列磁贴，false = 列表卡片（默认）。 */
-    private val _toolsGridEnabled = MutableStateFlow(settingsStore.isToolsGridEnabled())
+    private val _toolsGridEnabled = MutableStateFlow(false)
     val toolsGridEnabled: StateFlow<Boolean> = _toolsGridEnabled
 
     /** 终端直接输入：true = 输出区底部内联输入（无独立输入框/发送键）。 */
-    private val _terminalInlineInput = MutableStateFlow(settingsStore.isTerminalInlineInput())
+    private val _terminalInlineInput = MutableStateFlow(false)
     val terminalInlineInput: StateFlow<Boolean> = _terminalInlineInput
 
     /** 隐藏的设备扩展信息（内存/存储/端口状态）：关于页图标连点 7 次解锁。 */
-    private val _hiddenDiagUnlocked = MutableStateFlow(settingsStore.isHiddenDiagUnlocked())
+    private val _hiddenDiagUnlocked = MutableStateFlow(false)
     val hiddenDiagUnlocked: StateFlow<Boolean> = _hiddenDiagUnlocked
 
     /** CPU 温度（°C）；设备无 thermal_zone 或未开 SSH 时为 null。 */
@@ -97,9 +94,22 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val refreshMutex = Mutex()
 
     init {
-        refresh()
-        // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
+        // 本地状态异步加载（DataStore）：设备/开关就绪后才首刷并启动轮询，
+        // 避免用默认配置发起请求；SSH 主机指纹（TOFU）同期载入内存。
         viewModelScope.launch {
+            val devices = settingsStore.loadDevices()
+            val activeId = settingsStore.loadActiveId(devices)
+            _devices.value = devices
+            _activeId.value = activeId
+            _config.value = configFor(devices, activeId)
+            _connNotifyEnabled.value = settingsStore.isConnectionNotifyEnabled()
+            _toolsGridEnabled.value = settingsStore.isToolsGridEnabled()
+            _terminalInlineInput.value = settingsStore.isTerminalInlineInput()
+            _hiddenDiagUnlocked.value = settingsStore.isHiddenDiagUnlocked()
+            SshHostKeys.load()
+
+            refresh()
+            // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
             while (true) {
                 delay(_config.value.refreshIntervalSec.coerceAtLeast(2) * 1000L)
                 refresh()
@@ -269,8 +279,8 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 开关实时网速 Live Update 通知；关闭时立即撤回常驻通知。 */
     fun setConnectionNotifyEnabled(enabled: Boolean) {
-        settingsStore.saveConnectionNotifyEnabled(enabled)
         _connNotifyEnabled.value = enabled
+        viewModelScope.launch { settingsStore.saveConnectionNotifyEnabled(enabled) }
         if (!enabled) {
             AppNotifier.cancel(getApplication(), AppNotifier.ID_CONN_STATUS)
         }
@@ -278,33 +288,42 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 工具页排版切换（设置页开关），持久化到本地。 */
     fun setToolsGridEnabled(enabled: Boolean) {
-        settingsStore.saveToolsGridEnabled(enabled)
         _toolsGridEnabled.value = enabled
+        viewModelScope.launch { settingsStore.saveToolsGridEnabled(enabled) }
     }
 
     /** 终端直接输入切换（设置页开关），持久化到本地。 */
     fun setTerminalInlineInput(enabled: Boolean) {
-        settingsStore.saveTerminalInlineInput(enabled)
         _terminalInlineInput.value = enabled
+        viewModelScope.launch { settingsStore.saveTerminalInlineInput(enabled) }
     }
 
     /** 关于页图标连点 7 次后解锁隐藏的扩展信息，并立即读取一次。 */
     fun unlockHiddenDiag() {
-        settingsStore.saveHiddenDiagUnlocked(true)
         _hiddenDiagUnlocked.value = true
+        viewModelScope.launch { settingsStore.saveHiddenDiagUnlocked(true) }
         refreshHiddenDiag()
     }
 
     /**
-     * 重读解锁状态：关于页是独立 Activity（独立 ViewModelStore），只能经
-     * SharedPreferences 传递；从关于页返回主界面时由 aboutLauncher 回调调用。
+     * 重读解锁状态：关于页是独立 Activity（独立 ViewModelStore），从关于页返回
+     * 主界面时由 aboutLauncher 回调调用。
      */
     fun refreshHiddenDiagUnlocked() {
-        val unlocked = settingsStore.isHiddenDiagUnlocked()
-        if (unlocked != _hiddenDiagUnlocked.value) {
-            _hiddenDiagUnlocked.value = unlocked
-            if (unlocked) refreshHiddenDiag()
+        viewModelScope.launch {
+            val unlocked = settingsStore.isHiddenDiagUnlocked()
+            if (unlocked != _hiddenDiagUnlocked.value) {
+                _hiddenDiagUnlocked.value = unlocked
+                if (unlocked) refreshHiddenDiag()
+            }
         }
+    }
+
+    /** 通知运行时权限是否已向用户请求过（首次进主界面只请求一次）。 */
+    suspend fun isNotifPermissionAsked(): Boolean = settingsStore.isNotifPermissionAsked()
+
+    fun markNotifPermissionAsked() {
+        viewModelScope.launch { settingsStore.saveNotifPermissionAsked() }
     }
 
     /** 当前设备的 SSH 配置；未开启 SSH 时返回 null。 */
@@ -446,7 +465,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun persist() {
-        settingsStore.saveDevices(_devices.value, _activeId.value)
+        viewModelScope.launch { settingsStore.saveDevices(_devices.value, _activeId.value) }
     }
 
     private fun resetSessionState() {

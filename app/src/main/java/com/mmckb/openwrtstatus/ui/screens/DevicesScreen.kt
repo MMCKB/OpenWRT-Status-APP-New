@@ -80,7 +80,7 @@ import kotlin.math.roundToInt
 fun DevicesScreen(
     viewModel: RouterViewModel,
     onOpenEditor: (RouterConfig, Boolean) -> Unit,
-    onAddExpanded: (Rect) -> Unit,
+    onAddClicked: (Rect) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val devices by viewModel.devices.collectAsStateWithLifecycle()
@@ -144,7 +144,7 @@ fun DevicesScreen(
         // 添加设备：右下角胶囊悬浮按钮。点击时把按钮的窗口坐标交给展开层，
         // 面板从按钮位置生长到全屏（动画与手绘预测性返回见 AppRoot 的添加面板）。
         Surface(
-            onClick = { onAddExpanded(fabBounds) },
+            onClick = { onAddClicked(fabBounds) },
             shape = AppShapes.pill,
             color = colors.primary,
             contentColor = colors.onPrimary,
