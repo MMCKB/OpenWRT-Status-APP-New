@@ -496,9 +496,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             }
         }
 
-        // 添加面板：从设备页「添加」按钮展开到全屏；关闭/保存沿原路缩回按钮位置。
+        // 添加面板：竖屏从设备页「添加」按钮展开到全屏；横屏保持原路径（右栏内联编辑器）。
         fun openAddSheet(bounds: Rect) {
             if (addSheetOpen) return
+            if (isLandscape) {
+                openEditor(RouterConfig(), isNew = true)
+                return
+            }
             addSheetFabRect = bounds
             addSheetOpen = true
             rootScope.launch {
