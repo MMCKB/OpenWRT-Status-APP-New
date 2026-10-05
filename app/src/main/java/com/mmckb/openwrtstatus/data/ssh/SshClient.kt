@@ -55,7 +55,7 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
  * 翻译为中文提示。回调是同步的：指纹读进程级内存缓存（SshHostKeys），首次记录写入
  * 同时异步落盘。
  */
-internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository() {
+internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
 
     override fun check(host: String, key: ByteArray): Int {
         val fingerprint = fingerprintOf(key)
@@ -71,6 +71,7 @@ internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepo
     }
 
     override fun add(key: HostKey, ui: UserInfo) {}
+    override fun remove(host: String, type: String) {}
     override fun remove(host: String, type: String, key: ByteArray) {}
     override fun getKnownHostsRepositoryID(): String = ""
     override fun getHostKey(): Array<HostKey> = emptyArray()
