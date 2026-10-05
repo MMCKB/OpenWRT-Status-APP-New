@@ -41,8 +41,8 @@ private fun settingsDataStore(context: Context): DataStore<Preferences> =
                     sharedPreferencesName = LEGACY_PREFS_NAME,
                     migrate = { sharedPreferencesView, current ->
                         // 旧 SharedPreferences 的全部键值平移进 DataStore（类型保持）
-                        val builder = current.toBuilder()
-                        sharedPreferencesView.asMap().forEach { (key, value) ->
+                        val builder = current.toMutablePreferences()
+                        sharedPreferencesView.getAll().forEach { (key, value) ->
                             when (value) {
                                 is String -> builder[stringPreferencesKey(key)] = value
                                 is Int -> builder[intPreferencesKey(key)] = value
@@ -54,7 +54,7 @@ private fun settingsDataStore(context: Context): DataStore<Preferences> =
                                     value.filterIsInstance<String>().toSet()
                             }
                         }
-                        builder.build()
+                        builder
                     }
                 )
             ),
