@@ -2,11 +2,14 @@ package com.mmckb.openwrtstatus.data.ssh
 
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelShell
+import com.jcraft.jsch.HostKey
+import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
+import com.mmckb.openwrtstatus.data.local.SshHostKeys
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +50,48 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
 }
 
 /**
+ * TOFU 主机密钥校验：首次连接记录服务器指纹（按 host:port 持久化于本地存储），
+ * 之后每次连接比对；不一致返回 NOT_INCLUDED，JSch 抛出的异常经 [hostKeyFriendly]
+ * 翻译为中文提示。回调是同步的：指纹读进程级内存缓存（SshHostKeys），首次记录写入
+ * 同时异步落盘。
+ */
+internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
+
+    override fun check(host: String, port: Int, key: HostKey): Int {
+        val fingerprint = key.fingerprint
+        val known = SshHostKeys.fingerprint(hostPort)
+        return when {
+            known == null -> {
+                SshHostKeys.remember(hostPort, fingerprint)
+                OK
+            }
+            fingerprint == known -> OK
+            else -> NOT_INCLUDED
+        }
+    }
+
+    override fun get(host: String): Array<HostKey> = emptyArray()
+    override fun getName(): String = "OpenWrtStatus"
+    override fun remove(host: String, port: Int) {}
+    override fun remove(host: String, type: String) {}
+    override fun getStatus(): Int = NOT_INCLUDED
+}
+
+/** 为 JSch 实例挂上 TOFU 主机密钥校验（配合 StrictHostKeyChecking=yes）。 */
+internal fun JSch.applyTofuHostKeyChecking(host: String, port: Int) {
+    hostKeyRepository = TofuHostKeyRepository("$host:$port")
+}
+
+/** 主机密钥被拒（指纹与记录不符）时给出中文说明，其余异常原样透传。 */
+internal fun hostKeyFriendly(e: JSchException): JSchException =
+    if (e.message?.contains("reject", ignoreCase = true) == true ||
+        e.message?.contains("hostkey", ignoreCase = true) == true
+    ) JSchException(
+        "路由器 SSH 指纹与首次连接记录不一致，可能存在中间人风险。" +
+            "若确认路由器重装或更换过，请在系统设置中清除本应用数据后重新信任。"
+    ) else e
+
+/**
  * Interactive SSH shell backed by JSch (`com.github.mwiede:jsch`, the maintained fork that
  * keeps the `com.jcraft.jsch` API).
  *
@@ -80,11 +125,11 @@ class SshTerminal {
         buffer.clear()
         _output.value = ""
         try {
-            val jsch = JSch()
+            val jsch = JSch().applyTofuHostKeyChecking(config.host, config.port)
             val newSession = jsch.getSession(config.username, config.host, config.port)
             newSession.setPassword(config.password)
             newSession.setConfig(Properties().apply {
-                put("StrictHostKeyChecking", "no")
+                put("StrictHostKeyChecking", "yes")
                 put("PreferredAuthentications", "publickey,keyboard-interactive,password")
             })
             newSession.userInfo = PasswordUserInfo(config.password)
@@ -103,7 +148,7 @@ class SshTerminal {
             startReader(shell.inputStream)
         } catch (e: Exception) {
             closeQuietly()
-            _state.value = State.Failed(readableError(e))
+            _state.value = State.Failed(readableError(if (e is JSchException) hostKeyFriendly(e) else e))
         }
     }
 
@@ -190,17 +235,21 @@ object SshExec {
 
     suspend fun run(config: SshConfig, command: String, timeoutMs: Int = 10_000): String =
         withContext(Dispatchers.IO) {
-            val jsch = JSch()
+            val jsch = JSch().applyTofuHostKeyChecking(config.host, config.port)
             val session = jsch.getSession(config.username, config.host, config.port)
             try {
                 session.setPassword(config.password)
                 session.setConfig(Properties().apply {
-                    put("StrictHostKeyChecking", "no")
+                    put("StrictHostKeyChecking", "yes")
                     put("PreferredAuthentications", "publickey,keyboard-interactive,password")
                 })
                 session.userInfo = PasswordUserInfo(config.password)
                 session.timeout = timeoutMs
-                session.connect(timeoutMs)
+                try {
+                    session.connect(timeoutMs)
+                } catch (e: JSchException) {
+                    throw hostKeyFriendly(e)
+                }
 
                 val channel = session.openChannel("exec") as ChannelExec
                 channel.setCommand(command)

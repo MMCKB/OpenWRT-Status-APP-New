@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 11 及以下的自动备份规则（与 data_extraction_rules 等价）：
+    设备配置（含路由器密码）与 SSH 指纹不进入云备份。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="openwrt_status_prefs.xml" />
+    <exclude domain="file" path="datastore/" />
+</full-backup-content>

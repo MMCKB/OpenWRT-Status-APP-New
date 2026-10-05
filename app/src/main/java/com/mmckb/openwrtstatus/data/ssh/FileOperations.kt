@@ -432,16 +432,20 @@ object SshFiles {
 
     /** Creates and connects a session with password / keyboard-interactive auth. */
     private fun openSession(config: SshConfig, timeoutMs: Int): Session {
-        val jsch = JSch()
+        val jsch = JSch().applyTofuHostKeyChecking(config.host, config.port)
         val session = jsch.getSession(config.username, config.host, config.port)
         session.setPassword(config.password)
         session.setConfig(Properties().apply {
-            put("StrictHostKeyChecking", "no")
+            put("StrictHostKeyChecking", "yes")
             put("PreferredAuthentications", "publickey,keyboard-interactive,password")
         })
         session.userInfo = PasswordUserInfo(config.password)
         session.timeout = timeoutMs
-        session.connect(timeoutMs)
+        try {
+            session.connect(timeoutMs)
+        } catch (e: JSchException) {
+            throw hostKeyFriendly(e)
+        }
         return session
     }
 

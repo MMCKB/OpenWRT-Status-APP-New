@@ -1,6 +1,10 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import androidx.activity.ComponentActivity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -26,8 +29,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mmckb.openwrtstatus.notify.AppNotifier
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
@@ -49,6 +53,9 @@ fun SettingsScreen(
     val toolsGrid by viewModel.toolsGridEnabled.collectAsStateWithLifecycle()
     val terminalInline by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val notifyPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     Column(
         modifier = modifier
@@ -81,8 +88,13 @@ fun SettingsScreen(
                     checked = connNotify,
                     onCheckedChange = { enabled ->
                         viewModel.setConnectionNotifyEnabled(enabled)
-                        if (enabled) (context as? ComponentActivity)?.let {
-                            AppNotifier.requestPermission(it)
+                        if (enabled &&
+                            Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(
+                                context, Manifest.permission.POST_NOTIFICATIONS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     }
                 )

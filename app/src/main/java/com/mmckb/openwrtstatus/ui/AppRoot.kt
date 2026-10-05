@@ -1,5 +1,6 @@
 package com.mmckb.openwrtstatus.ui
 
+import android.Manifest
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,12 +21,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,15 +56,19 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import android.os.Build
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -171,6 +174,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var addSheetOpen by remember { mutableStateOf(false) }
     val addSheetProgress = remember { Animatable(1f) }
     val addSheetEasing = CubicBezierEasing(0.72f, 0f, 0.24f, 1f)
+    var addSheetClosing by remember { mutableStateOf(false) }
 
     val editLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -524,10 +528,14 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         }
 
         fun closeAddSheet() {
+            // 收起中忽略新的关闭请求（×/保存/预测性返回共用守卫：连续返回只触发一次动画）。
+            if (addSheetClosing) return
+            addSheetClosing = true
             rootScope.launch {
                 addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
                 addSheetOpen = false
                 addSheetFabRect = null
+                addSheetClosing = false
             }
         }
 
@@ -542,7 +550,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     TAB_DEVICES -> DevicesScreen(
                         viewModel = viewModel,
                         onOpenEditor = ::openEditor,
-                        onAddExpanded = ::openAddSheet,
+                        onAddClicked = ::onAddClicked,
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_TERMINAL -> TerminalScreen(
@@ -861,19 +869,30 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             // 面板颜色 = 页面本色；表单内容随展开进度淡入。手绘预测性返回见面板内的 handler。
             if (addSheetOpen) {
                 val fab = addSheetFabRect ?: Rect.Zero
-                val p = addSheetProgress.value
-                val left = lerp(fab.left, 0f, p)
-                val top = lerp(fab.top, 0f, p)
-                val width = lerp(fab.width, constraints.maxWidth.toFloat(), p)
-                val height = lerp(fab.height, constraints.maxHeight.toFloat(), p)
-                val corner = lerp(fab.height / 2f, 0f, p)
                 val density = LocalDensity.current
                 Box(
                     Modifier
-                        .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
-                        .size(with(density) { width.toDp() }, with(density) { height.toDp() })
-                        .clip(RoundedCornerShape(with(density) { corner.toDp() }))
-                        .background(colors.background)
+                        .fillMaxSize()
+                        .layout { measurable, constraints ->
+                            val p = addSheetProgress.value.coerceIn(0f, 1f)
+                            val w = lerp(fab.width, constraints.maxWidth.toFloat(), p).roundToInt()
+                            val h = lerp(fab.height, constraints.maxHeight.toFloat(), p).roundToInt()
+                            val l = lerp(fab.left, 0f, p).roundToInt()
+                            val t = lerp(fab.top, 0f, p).roundToInt()
+                            val placeable = measurable.measure(Constraints.fixed(w, h))
+                            layout(w, h) { placeable.placeRelative(l, t) }
+                        }
+                        .drawBehind {
+                            val p = addSheetProgress.value.coerceIn(0f, 1f)
+                            // 收尾 35% 行程面板底色渐变为按钮色：落点即蓝色按钮，无白闪
+                            val mix = (1f - p / 0.35f).coerceIn(0f, 1f)
+                            drawRect(androidx.compose.ui.graphics.lerp(colors.background, colors.primary, mix))
+                        }
+                        .graphicsLayer {
+                            val p = addSheetProgress.value.coerceIn(0f, 1f)
+                            shape = RoundedCornerShape(with(density) { lerp(fab.height / 2f, 0f, p).toDp() })
+                            clip = true
+                        }
                 ) {
                     DeviceEditScreen(
                         initial = RouterConfig(),
@@ -887,23 +906,27 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onDelete = { },
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = p.coerceIn(0f, 1f) }
+                            .graphicsLayer { alpha = addSheetProgress.value.coerceIn(0f, 1f) }
                     )
                 }
 
                 // 手绘预测性返回：跟手把面板缩向按钮位置，提交后沿关闭动画收尾，取消回弹全屏。
                 androidx.activity.compose.PredictiveBackHandler { events ->
-                    try {
-                        events.collect { ev ->
-                            val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
-                                .transform(ev.progress).coerceIn(0f, 1f)
-                            addSheetProgress.snapTo(1f - p)
+                    if (!addSheetClosing) {
+                        try {
+                            events.collect { ev ->
+                                val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+                                    .transform(ev.progress).coerceIn(0f, 1f)
+                                addSheetProgress.snapTo(1f - p)
+                            }
+                            addSheetClosing = true
+                            addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
+                            addSheetOpen = false
+                            addSheetFabRect = null
+                            addSheetClosing = false
+                        } catch (_: kotlin.coroutines.cancellation.CancellationException) {
+                            addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                         }
-                        addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
-                        addSheetOpen = false
-                        addSheetFabRect = null
-                    } catch (_: kotlin.coroutines.cancellation.CancellationException) {
-                        addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                     }
                 }
             }
