@@ -57,12 +57,10 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
  */
 internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
 
-    // 预分配空数组：不用 emptyArray<HostKey>()——其 reified 内联走
-    // ArrayIntrinsics.newArray 类型标记路径，R8 混淆下曾触发 getClass() NPE
-    private val noKeys: Array<HostKey> =
-        java.lang.reflect.Array.newInstance(HostKey::class.java, 0) as Array<HostKey>
-
-    override fun check(host: String, key: ByteArray): Int {
+    // jsch 会以 null 参数回调（getHostKey(chost, null) 等），参数必须可空，
+    // 否则 Kotlin 入口处的隐式非空检查在 R8 包上抛 NPE
+    override fun check(host: String?, key: ByteArray?): Int {
+        if (key == null) return HostKeyRepository.NOT_INCLUDED
         val fingerprint = fingerprintOf(key)
         val known = SshHostKeys.fingerprint(hostPort)
         return when {
@@ -75,12 +73,12 @@ internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepo
         }
     }
 
-    override fun add(key: HostKey, ui: UserInfo) {}
-    override fun remove(host: String, type: String) {}
-    override fun remove(host: String, type: String, key: ByteArray) {}
+    override fun add(key: HostKey?, ui: UserInfo?) {}
+    override fun remove(host: String?, type: String?) {}
+    override fun remove(host: String?, type: String?, key: ByteArray?) {}
     override fun getKnownHostsRepositoryID(): String = ""
-    override fun getHostKey(): Array<HostKey> = noKeys
-    override fun getHostKey(host: String, type: String): Array<HostKey> = noKeys
+    override fun getHostKey(): Array<HostKey> = emptyArray()
+    override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
 
     /** 标准 SSH MD5 指纹：冒号分隔的十六进制（TOFU 比对只需自洽）。 */
     private fun fingerprintOf(key: ByteArray): String =
@@ -143,6 +141,9 @@ class SshTerminal {
             newSession.setConfig(Properties().apply {
                 put("StrictHostKeyChecking", "yes")
                 put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+                // 本应用不保存已知主机密钥：跳过 send_kexinit 的密钥类型重排，
+                // 避免其对 TofuHostKeyRepository 的 getHostKey(chost, null) 回调
+                put("prefer_known_host_key_types", "no")
             })
             newSession.userInfo = PasswordUserInfo(config.password)
             newSession.timeout = CONNECT_TIMEOUT_MS
@@ -255,6 +256,8 @@ object SshExec {
                 session.setConfig(Properties().apply {
                     put("StrictHostKeyChecking", "yes")
                     put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+                    // 同 SshTerminal：跳过 send_kexinit 的已知主机密钥类型重排
+                    put("prefer_known_host_key_types", "no")
                 })
                 session.userInfo = PasswordUserInfo(config.password)
                 session.timeout = timeoutMs
