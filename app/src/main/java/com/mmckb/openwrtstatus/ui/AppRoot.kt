@@ -898,7 +898,9 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                 }
 
-                // 手绘预测性返回：跟手把面板缩向按钮位置，提交后沿关闭动画收尾，取消回弹全屏。
+                // 手绘预测性返回：跟手把面板缩向按钮位置；提交后收起（独立 scope，
+                // 新手势打断收起时不会取消动画、也不会把面板弹回全屏——连续侧滑
+                // 只会以最后一次手势为准，动画状态始终只有一份）。
                 androidx.activity.compose.PredictiveBackHandler { events ->
                     try {
                         events.collect { ev ->
@@ -906,12 +908,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                                 .transform(ev.progress).coerceIn(0f, 1f)
                             addSheetProgress.snapTo(1f - p)
                         }
-                        addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
-                        addSheetOpen = false
-                        addSheetFabRect = null
+                        rootScope.launch {
+                            addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
+                            addSheetOpen = false
+                            addSheetFabRect = null
+                        }
                     } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
-                        // 手势取消或被新手势打断都会走到这里：回弹放独立 scope——
-                        // 本回调协程可能已被系统取消，不能在其中直接 suspend
+                        // 手势取消（未提交）：从当前位置弹回全屏
                         rootScope.launch {
                             addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                         }
