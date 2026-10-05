@@ -57,6 +57,11 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
  */
 internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
 
+    // 预分配空数组：不用 emptyArray<HostKey>()——其 reified 内联走
+    // ArrayIntrinsics.newArray 类型标记路径，R8 混淆下曾触发 getClass() NPE
+    private val noKeys: Array<HostKey> =
+        java.lang.reflect.Array.newInstance(HostKey::class.java, 0) as Array<HostKey>
+
     override fun check(host: String, key: ByteArray): Int {
         val fingerprint = fingerprintOf(key)
         val known = SshHostKeys.fingerprint(hostPort)
@@ -74,8 +79,8 @@ internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepo
     override fun remove(host: String, type: String) {}
     override fun remove(host: String, type: String, key: ByteArray) {}
     override fun getKnownHostsRepositoryID(): String = ""
-    override fun getHostKey(): Array<HostKey> = emptyArray()
-    override fun getHostKey(host: String, type: String): Array<HostKey> = emptyArray()
+    override fun getHostKey(): Array<HostKey> = noKeys
+    override fun getHostKey(host: String, type: String): Array<HostKey> = noKeys
 
     /** 标准 SSH MD5 指纹：冒号分隔的十六进制（TOFU 比对只需自洽）。 */
     private fun fingerprintOf(key: ByteArray): String =
