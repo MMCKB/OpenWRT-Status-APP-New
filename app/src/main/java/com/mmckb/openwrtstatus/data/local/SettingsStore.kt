@@ -1,12 +1,16 @@
 package com.mmckb.openwrtstatus.data.local
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.migrations.SharedPreferencesMigration
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,18 +18,25 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 private const val LEGACY_PREFS_NAME = "openwrt_status_prefs"
+private const val DATASTORE_FILE = "datastore/openwrt_status_prefs.preferences_pb"
+private val dataStoreLock = Any()
 
-// 进程级 DataStore 单例：首次访问自动把旧 SharedPreferences 的全部键迁移进来
-// （设备列表/开关原样保留，迁移成功后旧文件被清除），后续读写均走 DataStore。
-private val Context.settingsDataStore by preferencesDataStore(
-    name = LEGACY_PREFS_NAME,
-    produceMigrations = { context ->
-        listOf(androidx.datastore.migrations.SharedPreferencesMigration(context, LEGACY_PREFS_NAME))
+@Volatile
+private var dataStoreInstance: DataStore<Preferences>? = null
+
+/** 进程级 DataStore 单例：首次访问自动把旧 SharedPreferences 的键迁移进来（设备数据不丢）。 */
+private fun settingsDataStore(context: Context): DataStore<Preferences> =
+    dataStoreInstance ?: synchronized(dataStoreLock) {
+        dataStoreInstance ?: PreferenceDataStoreFactory.create(
+            corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+            migrations = listOf(SharedPreferencesMigration(context, LEGACY_PREFS_NAME)),
+            produceFile = { File(context.filesDir, DATASTORE_FILE) }
+        ).also { dataStoreInstance = it }
     }
-)
 
 /**
  * Persists the device list (multi-router support), the active device id, feature
@@ -35,7 +46,7 @@ private val Context.settingsDataStore by preferencesDataStore(
  */
 class SettingsStore(private val context: Context) {
 
-    private val data = context.settingsDataStore
+    private val data = settingsDataStore(context)
 
     suspend fun loadDevices(): List<RouterConfig> {
         val prefs = currentPrefs()
