@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
@@ -56,16 +59,12 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import android.os.Build
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.core.content.ContextCompat
@@ -869,30 +868,19 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             // 面板颜色 = 页面本色；表单内容随展开进度淡入。手绘预测性返回见面板内的 handler。
             if (addSheetOpen) {
                 val fab = addSheetFabRect ?: Rect.Zero
+                val p = addSheetProgress.value
+                val left = lerp(fab.left, 0f, p)
+                val top = lerp(fab.top, 0f, p)
+                val width = lerp(fab.width, constraints.maxWidth.toFloat(), p)
+                val height = lerp(fab.height, constraints.maxHeight.toFloat(), p)
+                val corner = lerp(fab.height / 2f, 0f, p)
                 val density = LocalDensity.current
                 Box(
                     Modifier
-                        .fillMaxSize()
-                        .layout { measurable, constraints ->
-                            val p = addSheetProgress.value.coerceIn(0f, 1f)
-                            val w = lerp(fab.width, constraints.maxWidth.toFloat(), p).roundToInt()
-                            val h = lerp(fab.height, constraints.maxHeight.toFloat(), p).roundToInt()
-                            val l = lerp(fab.left, 0f, p).roundToInt()
-                            val t = lerp(fab.top, 0f, p).roundToInt()
-                            val placeable = measurable.measure(Constraints.fixed(w, h))
-                            layout(w, h) { placeable.placeRelative(l, t) }
-                        }
-                        .drawBehind {
-                            val p = addSheetProgress.value.coerceIn(0f, 1f)
-                            // 收尾 35% 行程面板底色渐变为按钮色：落点即蓝色按钮，无白闪
-                            val mix = (1f - p / 0.35f).coerceIn(0f, 1f)
-                            drawRect(androidx.compose.ui.graphics.lerp(colors.background, colors.primary, mix))
-                        }
-                        .graphicsLayer {
-                            val p = addSheetProgress.value.coerceIn(0f, 1f)
-                            shape = RoundedCornerShape(with(density) { lerp(fab.height / 2f, 0f, p).toDp() })
-                            clip = true
-                        }
+                        .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+                        .size(with(density) { width.toDp() }, with(density) { height.toDp() })
+                        .clip(RoundedCornerShape(with(density) { corner.toDp() }))
+                        .background(colors.background)
                 ) {
                     DeviceEditScreen(
                         initial = RouterConfig(),
@@ -906,7 +894,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onDelete = { },
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = addSheetProgress.value.coerceIn(0f, 1f) }
+                            .graphicsLayer { alpha = p.coerceIn(0f, 1f) }
                     )
                 }
 
