@@ -154,6 +154,7 @@ class SshTerminal {
             append("已连接 ${config.username}@${config.host}:${config.port}\n")
             startReader(shell.inputStream)
         } catch (e: Exception) {
+            android.util.Log.e("SshTerminal", "SSH connect failed", e)
             closeQuietly()
             _state.value = State.Failed(readableError(if (e is JSchException) hostKeyFriendly(e) else e))
         }
