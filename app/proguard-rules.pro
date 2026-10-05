@@ -10,3 +10,7 @@
 -dontwarn com.jcraft.jsch.jgss.**
 -dontwarn com.jcraft.jsch.jbcrypt.**
 -dontwarn com.jcraft.jsch.jzlib.**
+# 整包保留会带出仅桌面端使用的类：PageantConnector（Windows JNA）与 Log4j2Logger，
+# 其依赖不在 Android 类路径上，显式忽略（这些类运行时不会被调用）。
+-dontwarn com.sun.jna.**
+-dontwarn org.apache.logging.log4j.**
