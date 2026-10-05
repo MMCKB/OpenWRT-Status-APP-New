@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -880,12 +881,14 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             if (addSheetOpen) {
                 val fab = addSheetFabRect ?: Rect.Zero
                 // 缩放生长（graphicsLayer）：面板固定全屏，进度只在绘制层读取——动画帧内
-                // 零重组、零重测量；从按钮中心 scale 展开，圆角同步收平，表单按整屏布局
-                // 一次后随层缩放（iOS 式缩放呈现）。
+                // 零重组、零重测量；表单按整屏布局一次后随层缩放（iOS 式缩放呈现）。
                 val screenW = constraints.maxWidth.toFloat()
                 val screenH = constraints.maxHeight.toFloat()
-                val originX = ((fab.left + fab.right) / 2f / screenW).coerceIn(0f, 1f)
-                val originY = ((fab.top + fab.bottom) / 2f / screenH).coerceIn(0f, 1f)
+                // 缩放锚点按边界反解（不是按钮中心）：非中心缩放时缩放矩形并不以锚点为
+                // 中心，只有锚点取 fabLeft/(屏宽-按钮宽) 才能让 p=0 的缩放矩形恰好等于
+                // 按钮矩形——面板严格从按钮位置生长，几何与旧裁剪式完全一致。
+                val originX = (fab.left / (screenW - fab.width).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                val originY = (fab.top / (screenH - fab.height).coerceAtLeast(1f)).coerceIn(0f, 1f)
                 val startScaleX = (fab.width / screenW).coerceIn(0.02f, 1f)
                 val startScaleY = (fab.height / screenH).coerceIn(0.02f, 1f)
                 val startCorner = fab.height / 2f
@@ -899,9 +902,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                             scaleX = sx
                             scaleY = sy
                             transformOrigin = TransformOrigin(originX, originY)
-                            // 层内圆角按缩放反向补偿：视觉上从按钮胶囊半径收平到直角
+                            // 层内圆角按两轴缩放分别反向补偿：视觉上从按钮胶囊半径收平到直角
                             val visualCorner = lerp(startCorner, 0f, p)
-                            shape = RoundedCornerShape((visualCorner / minOf(sx, sy)).toDp())
+                            shape = RoundedCornerShape(
+                                CornerSize((visualCorner / sx).toDp(), (visualCorner / sy).toDp())
+                            )
                             clip = true
                         }
                         .background(colors.background)
