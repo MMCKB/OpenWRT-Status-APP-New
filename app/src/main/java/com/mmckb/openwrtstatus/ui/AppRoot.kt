@@ -6,8 +6,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -18,10 +20,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,14 +52,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import android.os.Build
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -153,6 +162,14 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     // 旋转跨越两种布局时页面跟随：横屏 -> 竖屏保持内联渲染（全屏），竖屏 Activity 转到
     // 横屏时自行退出并把页面交回右栏（见各二级 Activity 的旋转交接）。
     var secondary by remember { mutableStateOf<SecondaryPage?>(null) }
+
+    // 添加设备展开层：设备页右下角「添加」按钮 → 面板从按钮位置生长到全屏（两种朝向都盖住整窗）。
+    // 预测性返回手绘为沿原路缩回按钮位置，与关闭动画一致。
+    val rootScope = rememberCoroutineScope()
+    var addSheetFabRect by remember { mutableStateOf(Rect.Zero) }
+    var addSheetOpen by remember { mutableStateOf(false) }
+    val addSheetProgress = remember { Animatable(1f) }
+    val addSheetEasing = CubicBezierEasing(0.72f, 0f, 0.24f, 1f)
 
     val editLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -479,6 +496,25 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             }
         }
 
+        // 添加面板：从设备页「添加」按钮展开到全屏；关闭/保存沿原路缩回按钮位置。
+        fun openAddSheet(bounds: Rect) {
+            if (addSheetOpen) return
+            addSheetFabRect = bounds
+            addSheetOpen = true
+            rootScope.launch {
+                addSheetProgress.snapTo(0f)
+                addSheetProgress.animateTo(1f, tween(560, easing = addSheetEasing))
+            }
+        }
+
+        fun closeAddSheet() {
+            rootScope.launch {
+                addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
+                addSheetOpen = false
+                addSheetFabRect = null
+            }
+        }
+
         @Composable
         fun MainPage(modifier: Modifier) {
             Box(modifier.layerBackdrop(backdrop)) {
@@ -490,6 +526,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     TAB_DEVICES -> DevicesScreen(
                         viewModel = viewModel,
                         onOpenEditor = ::openEditor,
+                        onAddExpanded = ::openAddSheet,
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_TERMINAL -> TerminalScreen(
@@ -800,6 +837,57 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                             Modifier.align(Alignment.CenterEnd),
                             slideFromTop = false
                         )
+                    }
+                }
+            }
+
+            // 添加设备展开层：从设备页「添加」按钮位置生长到全屏（两种朝向都盖住整窗）。
+            // 面板颜色 = 页面本色；表单内容随展开进度淡入。手绘预测性返回见面板内的 handler。
+            if (addSheetOpen) {
+                val fab = addSheetFabRect ?: Rect.Zero
+                val p = addSheetProgress.value
+                val left = lerp(fab.left, 0f, p)
+                val top = lerp(fab.top, 0f, p)
+                val width = lerp(fab.width, constraints.maxWidth.toFloat(), p)
+                val height = lerp(fab.height, constraints.maxHeight.toFloat(), p)
+                val corner = lerp(fab.height / 2f, 0f, p)
+                val density = LocalDensity.current
+                Box(
+                    Modifier
+                        .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+                        .size(with(density) { width.toDp() }, with(density) { height.toDp() })
+                        .clip(RoundedCornerShape(with(density) { corner.toDp() }))
+                        .background(colors.background)
+                ) {
+                    DeviceEditScreen(
+                        initial = RouterConfig(),
+                        isNew = true,
+                        existingNames = devices.map { it.displayName },
+                        onCancel = { closeAddSheet() },
+                        onSave = { saved ->
+                            viewModel.addDevice(saved)
+                            closeAddSheet()
+                        },
+                        onDelete = { },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = p.coerceIn(0f, 1f) }
+                    )
+                }
+
+                // 手绘预测性返回：跟手把面板缩向按钮位置，提交后沿关闭动画收尾，取消回弹全屏。
+                androidx.activity.compose.PredictiveBackHandler { events ->
+                    try {
+                        events.collect { ev ->
+                            val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+                                .transform(ev.progress).coerceIn(0f, 1f)
+                            addSheetProgress.snapTo(1f - p)
+                        }
+                        addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
+                        addSheetOpen = false
+                        addSheetFabRect = null
+                    } catch (_: kotlinx.coroutines.cancellation.CancellationException) {
+                        addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                     }
                 }
             }

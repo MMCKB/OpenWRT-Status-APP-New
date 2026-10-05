@@ -45,11 +45,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,18 +72,22 @@ import kotlin.math.roundToInt
  * 设备管理：每台设备一张独立卡片——左侧路由器图标，名称在上、地址与账号在下，
  * 当前设备右上角带「当前」胶囊并以 1px 蓝色描边区分（其余灰色描边）。
  * 卡片从右往左滑露出黄色「编辑」与红色「删除」。点击卡片切换当前设备。
- * 编辑/添加跳转独立的 DeviceEditActivity，结果经 ActivityResult 回传后落库。
+ * 编辑跳转独立的 DeviceEditActivity（结果经 ActivityResult 回传后落库）；
+ * 添加走右下角按钮的全屏展开面板：面板从按钮位置生长到全屏（AppRoot 内动画），
+ * 预测性返回手绘为沿原路缩回按钮位置。
  */
 @Composable
 fun DevicesScreen(
     viewModel: RouterViewModel,
     onOpenEditor: (RouterConfig, Boolean) -> Unit,
+    onAddExpanded: (Rect) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val activeId by viewModel.activeId.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<RouterConfig?>(null) }
     var openSwipe by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var fabBounds by remember { mutableStateOf(Rect.Zero) }
 
     fun launchEditor(device: RouterConfig, isNew: Boolean) {
         onOpenEditor(device, isNew)
@@ -134,9 +141,10 @@ fun DevicesScreen(
             }
         }
 
-        // 添加设备：右下角椭圆悬浮按钮。
+        // 添加设备：右下角胶囊悬浮按钮。点击时把按钮的窗口坐标交给展开层，
+        // 面板从按钮位置生长到全屏（动画与手绘预测性返回见 AppRoot 的添加面板）。
         Surface(
-            onClick = { launchEditor(RouterConfig(), isNew = true) },
+            onClick = { onAddExpanded(fabBounds) },
             shape = AppShapes.pill,
             color = colors.primary,
             contentColor = colors.onPrimary,
@@ -145,6 +153,7 @@ fun DevicesScreen(
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
                 .padding(end = 16.dp, bottom = 96.dp)
+                .onGloballyPositioned { fabBounds = it.boundsInWindow() }
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
