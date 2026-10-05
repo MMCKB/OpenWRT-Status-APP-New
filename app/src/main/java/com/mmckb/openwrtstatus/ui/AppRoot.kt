@@ -166,7 +166,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     // 添加设备展开层：设备页右下角「添加」按钮 → 面板从按钮位置生长到全屏（两种朝向都盖住整窗）。
     // 预测性返回手绘为沿原路缩回按钮位置，与关闭动画一致。
     val rootScope = rememberCoroutineScope()
-    var addSheetFabRect by remember { mutableStateOf(Rect.Zero) }
+    var addSheetFabRect by remember { mutableStateOf<Rect?>(Rect.Zero) }
     var addSheetOpen by remember { mutableStateOf(false) }
     val addSheetProgress = remember { Animatable(1f) }
     val addSheetEasing = CubicBezierEasing(0.72f, 0f, 0.24f, 1f)
@@ -886,7 +886,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
                         addSheetOpen = false
                         addSheetFabRect = null
-                    } catch (_: kotlinx.coroutines.cancellation.CancellationException) {
+                    } catch (_: kotlin.coroutines.cancellation.CancellationException) {
                         addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                     }
                 }
