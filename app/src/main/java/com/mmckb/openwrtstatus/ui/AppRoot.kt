@@ -909,7 +909,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         addSheetProgress.animateTo(0f, tween(560, easing = addSheetEasing))
                         addSheetOpen = false
                         addSheetFabRect = null
-                    } catch (_: kotlinx.coroutines.cancellation.CancellationException) {
+                    } catch (_: java.util.concurrent.CancellationException) {
                         addSheetProgress.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow))
                     }
                 }
