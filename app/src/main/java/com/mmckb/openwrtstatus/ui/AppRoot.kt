@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ExperimentalComposeApi
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -414,6 +415,17 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         // 二级页打开时拦截系统返回（原先横屏下系统返回会直接退出应用）；各页面内部的
         // 逐级返回/弹层处理组合在后、优先级更高，不冲突。
         BackHandler(enabled = secondary != null) { secondary = null }
+
+        // 旋转/窗口尺寸变化：添加面板锚定的按钮坐标随窗口失效——按双轨惯例关闭面板，
+        // 把添加页移交内联渲染（竖屏全屏/横屏右栏），与其他二级页的旋转交接一致。
+        LaunchedEffect(constraints.maxWidth, constraints.maxHeight) {
+            if (addSheetOpen) {
+                addSheetOpen = false
+                addSheetFabRect = null
+                addSheetProgress.snapTo(1f)
+                secondary = SecondaryPage.DeviceEditor(RouterConfig(), isNew = true)
+            }
+        }
 
         fun openSecondary(page: SecondaryPage) {
             if (isLandscape) {
