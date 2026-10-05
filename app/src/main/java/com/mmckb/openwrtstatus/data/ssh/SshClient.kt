@@ -55,10 +55,10 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
  * 翻译为中文提示。回调是同步的：指纹读进程级内存缓存（SshHostKeys），首次记录写入
  * 同时异步落盘。
  */
-internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
+internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository() {
 
-    override fun check(host: String, port: Int, key: HostKey): Int {
-        val fingerprint = key.fingerPrint
+    override fun check(host: String, key: ByteArray): Int {
+        val fingerprint = fingerprintOf(key)
         val known = SshHostKeys.fingerprint(hostPort)
         return when {
             known == null -> {
@@ -70,11 +70,16 @@ internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepo
         }
     }
 
-    override fun get(host: String): Array<HostKey> = emptyArray()
-    override fun getName(): String = "OpenWrtStatus"
-    override fun remove(host: String, port: Int) {}
-    override fun remove(host: String, type: String) {}
-    override fun getStatus(): Int = HostKeyRepository.NOT_INCLUDED
+    override fun add(key: HostKey, ui: UserInfo) {}
+    override fun remove(host: String, type: String, key: ByteArray) {}
+    override fun getKnownHostsRepositoryID(): String = ""
+    override fun getHostKey(): Array<HostKey> = emptyArray()
+    override fun getHostKey(host: String, type: String): Array<HostKey> = emptyArray()
+
+    /** 标准 SSH MD5 指纹：冒号分隔的十六进制（TOFU 比对只需自洽）。 */
+    private fun fingerprintOf(key: ByteArray): String =
+        java.security.MessageDigest.getInstance("MD5").digest(key)
+            .joinToString(":") { String.format("%02x", it) }
 }
 
 /** 为 JSch 实例挂上 TOFU 主机密钥校验（配合 StrictHostKeyChecking=yes）。 */
