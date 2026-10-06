@@ -77,6 +77,10 @@ fun ThemeSettingsScreen(
                 selected = prefs.mode.storeValue,
                 onSelect = { ThemePrefs.setMode(AppThemeMode.fromStoreValue(it)) }
             )
+            // 浅色模式下 AMOLED 卡隐藏，本卡是页尾：卡片延伸进手势区，控件垫在 inset 之上
+            if (prefs.mode == AppThemeMode.LIGHT) {
+                Spacer(Modifier.navigationBarsPadding().height(6.dp))
+            }
         }
 
         // AMOLED 纯黑只在非浅色模式下有意义（浅色下无效果），按需展开。
@@ -108,10 +112,9 @@ fun ThemeSettingsScreen(
                         onCheckedChange = { ThemePrefs.setAmoled(it) }
                     )
                 }
+                // 可见时本卡是页尾：卡片延伸进手势条区域，开关垫在 inset 之上
+                Spacer(Modifier.navigationBarsPadding().height(6.dp))
             }
         }
-
-        // 卡片背景延伸到手势条区域，最后一张卡片垫在 inset 之上
-        Spacer(Modifier.navigationBarsPadding().height(6.dp))
     }
 }
