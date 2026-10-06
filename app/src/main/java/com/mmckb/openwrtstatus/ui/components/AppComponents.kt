@@ -7,7 +7,6 @@ import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -94,6 +93,7 @@ import com.mmckb.openwrtstatus.ui.glass.LiquidTab
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import com.mmckb.openwrtstatus.ui.theme.LocalDarkTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -324,7 +324,8 @@ fun FloatingTabBar(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    val isLight = !isSystemInDarkTheme()
+    // 明暗按 App 主题判定（主题设置可脱离系统外观），不能读系统日夜模式。
+    val isLight = !LocalDarkTheme.current
     val containerColor = if (isLight) {
         Color(0xFFFAFAFA).copy(alpha = 0.42f)
     } else {

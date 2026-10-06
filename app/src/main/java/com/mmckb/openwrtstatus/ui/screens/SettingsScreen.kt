@@ -39,14 +39,16 @@ import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /**
- * Settings offers the realtime speed-notification toggle and a single "关于" entry;
- * the version, repository and license details live behind the latter.
+ * Settings offers the realtime speed-notification toggle, a "主题设置" entry (dark/light
+ * mode and AMOLED) and a single "关于" entry; the version, repository and license details
+ * live behind the latter.
  */
 @Composable
 fun SettingsScreen(
     viewModel: RouterViewModel,
     onOpenAbout: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenThemeSettings: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val connNotify by viewModel.connNotifyEnabled.collectAsStateWithLifecycle()
@@ -145,6 +147,28 @@ fun SettingsScreen(
                 AppSwitch(
                     checked = terminalInline,
                     onCheckedChange = { viewModel.setTerminalInlineInput(it) }
+                )
+            }
+        }
+        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenThemeSettings)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "主题设置",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "深浅色模式与 AMOLED 纯黑",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant
                 )
             }
         }

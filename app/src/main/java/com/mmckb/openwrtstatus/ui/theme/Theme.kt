@@ -7,9 +7,16 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import com.mmckb.openwrtstatus.data.local.AppThemeMode
+import com.mmckb.openwrtstatus.data.local.ThemePrefs
 
 /**
  * Application-specific color palette.
@@ -33,6 +40,12 @@ data class AppColors(
 )
 
 val LocalAppColors = staticCompositionLocalOf { lightAppColors() }
+
+/**
+ * App 主题当前是否为深色（含主题设置的模式覆盖，与系统外观解耦）。
+ * 玻璃层等按明暗取色的地方用它在模式覆盖时也能取对色。
+ */
+val LocalDarkTheme = staticCompositionLocalOf { false }
 
 fun lightAppColors() = AppColors(
     background = Color(0xFFFFFFFF),
@@ -62,6 +75,24 @@ fun darkAppColors() = AppColors(
     outline = Color(0xFF33383F)
 )
 
+/**
+ * AMOLED 纯黑（深色模式的变体，主题设置页开关）：背景与卡片压成纯黑，
+ * 中性面按灰阶逐级抬升，文字与强调色沿用深色板——OLED 屏省电，夜间观感更沉。
+ */
+fun amoledDarkAppColors() = AppColors(
+    background = Color(0xFF000000),
+    surface = Color(0xFF050505),
+    surfaceVariant = Color(0xFF121212),
+    onSurface = Color(0xFFE6E8EB),
+    onSurfaceVariant = Color(0xFFA0A6AD),
+    primary = Color(0xFF90CAF9),
+    onPrimary = Color(0xFF0A2540),
+    accent = Color(0xFF0091FF),
+    success = Color(0xFF66BB6A),
+    error = Color(0xFFEF5350),
+    outline = Color(0xFF262626)
+)
+
 /** Shape tokens for the custom design system. */
 object AppShapes {
     /** Large container card used as the primary layout unit. */
@@ -71,21 +102,49 @@ object AppShapes {
     val pill = RoundedCornerShape(999.dp)
 }
 
+/**
+ * App 主题入口：深浅色模式与 AMOLED 由主题设置（进程级 [ThemePrefs]）决定，
+ * 所有 Activity 都无参调用本函数，任一页面改设置即全部即时换色。
+ * 系统栏图标明暗同步跟随 App 主题（运行时切换由 SideEffect 更新，
+ * 冷启动首帧由 setupEdgeToEdge 的预载保证）。
+ */
 @Composable
-fun OpenWrtStatusTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
-) {
-    val materialColorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val appColors = if (darkTheme) darkAppColors() else lightAppColors()
+fun OpenWrtStatusTheme(content: @Composable () -> Unit) {
+    val prefs by ThemePrefs.state.collectAsState()
+    val darkTheme = when (prefs.mode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
+    val appColors = when {
+        !darkTheme -> lightAppColors()
+        prefs.amoled -> amoledDarkAppColors()
+        else -> darkAppColors()
+    }
+    val materialColorScheme = when {
+        !darkTheme -> LightColorScheme
+        prefs.amoled -> AmoledColorScheme
+        else -> DarkColorScheme
+    }
 
     MaterialTheme(
         colorScheme = materialColorScheme
     ) {
         CompositionLocalProvider(
             LocalAppColors provides appColors,
+            LocalDarkTheme provides darkTheme,
             content = content
         )
+    }
+
+    // 模式覆盖与系统外观不一致时，系统栏图标需按 App 主题重设
+    //（setupEdgeToEdge 只在 onCreate 设一次，运行时切换在这里补）。
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = !darkTheme
+        controller.isAppearanceLightNavigationBars = !darkTheme
     }
 }
 
@@ -100,4 +159,14 @@ private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF90CAF9),
     secondary = Color(0xFF80CBC4),
     tertiary = Color(0xFFCE93D8)
+)
+
+private val AmoledColorScheme = darkColorScheme(
+    primary = Color(0xFF90CAF9),
+    secondary = Color(0xFF80CBC4),
+    tertiary = Color(0xFFCE93D8),
+    background = Color(0xFF000000),
+    surface = Color(0xFF000000),
+    surfaceVariant = Color(0xFF121212),
+    outline = Color(0xFF262626)
 )

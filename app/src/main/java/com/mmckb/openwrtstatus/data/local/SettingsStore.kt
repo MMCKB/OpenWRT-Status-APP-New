@@ -17,12 +17,28 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+
+/** App 深浅色模式（主题设置页三选一；默认跟随系统）。 */
+enum class AppThemeMode(val storeValue: String) {
+    SYSTEM("system"),
+    LIGHT("light"),
+    DARK("dark");
+
+    companion object {
+        fun fromStoreValue(value: String): AppThemeMode =
+            entries.firstOrNull { it.storeValue == value } ?: SYSTEM
+    }
+}
 
 private const val LEGACY_PREFS_NAME = "openwrt_status_prefs"
 private const val DATASTORE_FILE = "datastore/openwrt_status_prefs.preferences_pb"
@@ -119,6 +135,23 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveHiddenDiagUnlocked(unlocked: Boolean) {
         data.edit { it[KEY_HIDDEN_DIAG] = unlocked }
+    }
+
+    /** App 深浅色模式（主题设置页），默认跟随系统。 */
+    suspend fun themeMode(): AppThemeMode {
+        val stored = currentPrefs()[KEY_THEME_MODE] ?: return AppThemeMode.SYSTEM
+        return AppThemeMode.fromStoreValue(stored)
+    }
+
+    suspend fun saveThemeMode(mode: AppThemeMode) {
+        data.edit { it[KEY_THEME_MODE] = mode.storeValue }
+    }
+
+    /** AMOLED 纯黑：深色模式下把背景与中性面压成纯黑（默认关闭）。 */
+    suspend fun isAmoledDark(): Boolean = currentPrefs()[KEY_AMOLED] ?: false
+
+    suspend fun saveAmoledDark(enabled: Boolean) {
+        data.edit { it[KEY_AMOLED] = enabled }
     }
 
     suspend fun saveDevices(devices: List<RouterConfig>, activeId: String) {
@@ -219,6 +252,8 @@ class SettingsStore(private val context: Context) {
         private val KEY_HIDDEN_DIAG = booleanPreferencesKey("hidden_diag_unlocked")
         private val KEY_NOTIF_ASKED = booleanPreferencesKey("notif_permission_asked")
         private val KEY_SSH_KEYS = stringPreferencesKey("ssh_host_keys")
+        private val KEY_THEME_MODE = stringPreferencesKey("app_theme_mode")
+        private val KEY_AMOLED = booleanPreferencesKey("app_theme_amoled")
     }
 }
 
@@ -250,5 +285,75 @@ object SshHostKeys {
     fun remember(hostPort: String, fingerprint: String) {
         keys[hostPort] = fingerprint
         writeScope.launch { store?.saveSshHostKey(hostPort, fingerprint) }
+    }
+}
+
+/**
+ * 主题设置的进程级状态（深浅色模式 + AMOLED 纯黑）。
+ *
+ * 全部 16 个 Activity 的 `OpenWrtStatusTheme` 都从这里读当前主题——任一页面修改，
+ * 所有存活的 Activity 即时重组换色（StateFlow 热流，跨 Activity 生效）。
+ *
+ * 预热时机：各 Activity onCreate 里的 `setupEdgeToEdge()` 调用 [ensureLoaded]，
+ * 首个 Activity 在 setContent 前同步读一次 DataStore（runBlocking + 超时兜底），
+ * 保证首帧即用户所选主题；进程内后续调用直接命中内存值。
+ */
+object ThemePrefs {
+
+    data class State(
+        val mode: AppThemeMode = AppThemeMode.SYSTEM,
+        val amoled: Boolean = false
+    )
+
+    private val _state = MutableStateFlow(State())
+    val state: StateFlow<State> = _state
+
+    @Volatile
+    private var store: SettingsStore? = null
+
+    @Volatile
+    private var loaded = false
+
+    private val writeScope = CoroutineScope(Dispatchers.IO)
+
+    fun init(store: SettingsStore) {
+        if (this.store == null) this.store = store
+    }
+
+    /** 从 DataStore 读入内存（幂等；进程内通常只在预热时执行一次）。 */
+    suspend fun load() {
+        val s = store ?: return
+        _state.value = State(mode = s.themeMode(), amoled = s.isAmoledDark())
+        loaded = true
+    }
+
+    /**
+     * 同步预热（主线程 onCreate 调用）：DataStore 首读很快（文件很小），超时兜底防
+     * 极端磁盘慢——此时先按默认主题渲染并异步补读，避免卡住首帧。
+     */
+    fun ensureLoaded(context: Context) {
+        init(SettingsStore(context.applicationContext))
+        if (loaded) return
+        runBlocking { withTimeoutOrNull(400) { load() } }
+        if (!loaded) {
+            writeScope.launch { runCatching { load() } }
+        }
+    }
+
+    /** 当前生效的深色状态（同步读内存；跟随系统时按传入的系统判定）。 */
+    fun isDarkTheme(systemDark: Boolean): Boolean = when (_state.value.mode) {
+        AppThemeMode.SYSTEM -> systemDark
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
+
+    fun setMode(mode: AppThemeMode) {
+        _state.value = _state.value.copy(mode = mode)
+        writeScope.launch { store?.saveThemeMode(mode) }
+    }
+
+    fun setAmoled(enabled: Boolean) {
+        _state.value = _state.value.copy(amoled = enabled)
+        writeScope.launch { store?.saveAmoledDark(enabled) }
     }
 }
