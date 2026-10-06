@@ -89,6 +89,7 @@ import com.mmckb.openwrtstatus.StartupActivity
 import com.mmckb.openwrtstatus.RoutesActivity
 import com.mmckb.openwrtstatus.FlashActivity
 import com.mmckb.openwrtstatus.SystemActivity
+import com.mmckb.openwrtstatus.ThemeSettingsActivity
 import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
@@ -114,6 +115,7 @@ import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
 import com.mmckb.openwrtstatus.ui.screens.FlashScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.SystemScreen
+import com.mmckb.openwrtstatus.ui.screens.ThemeSettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalOutputPane
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
@@ -142,6 +144,7 @@ private sealed interface SecondaryPage {
     data object Flash : SecondaryPage
     data object Startup : SecondaryPage
     data object About : SecondaryPage
+    data object ThemeSettings : SecondaryPage
     data object Realtime : SecondaryPage
     data object ChannelAnalysis : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
@@ -225,6 +228,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         viewModel.refreshHiddenDiagUnlocked()
         if (result.data?.getBooleanExtra(AboutActivity.EXTRA_OPEN_INLINE, false) == true) {
             secondary = SecondaryPage.About
+        }
+    }
+    val themeSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(ThemeSettingsActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.ThemeSettings
         }
     }
     val systemLauncher = rememberLauncherForActivityResult(
@@ -335,6 +345,9 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null },
                         hiddenDiagUnlocked = viewModel.hiddenDiagUnlocked.collectAsState().value,
                         onUnlockHiddenDiag = { viewModel.unlockHiddenDiag() }
+                    )
+                    SecondaryPage.ThemeSettings -> ThemeSettingsScreen(
+                        onBack = { secondary = null }
                     )
                     SecondaryPage.Wireless -> WirelessScreen(
                         config = cfg,
@@ -448,6 +461,9 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     SecondaryPage.About -> aboutLauncher.launch(
                         Intent(context, AboutActivity::class.java)
+                    )
+                    SecondaryPage.ThemeSettings -> themeSettingsLauncher.launch(
+                        Intent(context, ThemeSettingsActivity::class.java)
                     )
                     SecondaryPage.Wireless -> wirelessLauncher.launch(
                         Intent(context, WirelessActivity::class.java)
@@ -595,6 +611,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     else -> SettingsScreen(
                         viewModel = viewModel,
                         onOpenAbout = { openSecondary(SecondaryPage.About) },
+                        onOpenThemeSettings = { openSecondary(SecondaryPage.ThemeSettings) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

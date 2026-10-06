@@ -40,6 +40,12 @@
             android:theme="@style/Theme.OpenWrtStatus" />
 
         <activity
+            android:name=".ThemeSettingsActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus" />
+
+        <activity
             android:name=".FileManagerActivity"
             android:exported="false"
             android:label="@string/app_name"
