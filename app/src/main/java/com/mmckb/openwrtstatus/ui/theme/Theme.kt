@@ -1,6 +1,9 @@
 package com.mmckb.openwrtstatus.ui.theme
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -11,6 +14,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -105,8 +109,13 @@ object AppShapes {
 /**
  * App 主题入口：深浅色模式与 AMOLED 由主题设置（进程级 [ThemePrefs]）决定，
  * 所有 Activity 都无参调用本函数，任一页面改设置即全部即时换色。
- * 系统栏图标明暗同步跟随 App 主题（运行时切换由 SideEffect 更新，
- * 冷启动首帧由 setupEdgeToEdge 的预载保证）。
+ *
+ * 页面底色（含状态栏与手势区背后）由主题层统一绘制：竖屏二级 Activity 页此前
+ * 依赖只在 onCreate 设置一次的窗口背景，主题运行时切换时底色不跟随、且与
+ * 主题实际背景色有色差（纯黑 vs 深色板）；主题层绘制后底色始终正确并即时
+ * 跟随切换，与 AppRoot 内联页的自绘背景行为一致（同色叠加，视觉不变）。
+ * 窗口背景仅在冷启动首帧（Compose 绘制前）可见，由 setupEdgeToEdge 按主题设置。
+ * 系统栏图标明暗同步跟随 App 主题（运行时切换由 SideEffect 更新）。
  */
 @Composable
 fun OpenWrtStatusTheme(content: @Composable () -> Unit) {
@@ -127,14 +136,16 @@ fun OpenWrtStatusTheme(content: @Composable () -> Unit) {
         else -> DarkColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = materialColorScheme
-    ) {
-        CompositionLocalProvider(
-            LocalAppColors provides appColors,
-            LocalDarkTheme provides darkTheme,
-            content = content
-        )
+    Box(Modifier.fillMaxSize().background(appColors.background)) {
+        MaterialTheme(
+            colorScheme = materialColorScheme
+        ) {
+            CompositionLocalProvider(
+                LocalAppColors provides appColors,
+                LocalDarkTheme provides darkTheme,
+                content = content
+            )
+        }
     }
 
     // 模式覆盖与系统外观不一致时，系统栏图标需按 App 主题重设
