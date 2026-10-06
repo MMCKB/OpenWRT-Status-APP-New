@@ -179,10 +179,9 @@ fun AboutScreen(
                     )
                 }
             }
+            // 本卡为页尾：卡片本体延伸进手势条区域（覆盖手势区），内容垫在 inset 之上
+            Spacer(Modifier.navigationBarsPadding().height(6.dp))
         }
-
-        // 卡片背景延伸到手势条区域，最后一张卡片垫在 inset 之上
-        Spacer(Modifier.navigationBarsPadding().height(6.dp))
     }
 }
 
