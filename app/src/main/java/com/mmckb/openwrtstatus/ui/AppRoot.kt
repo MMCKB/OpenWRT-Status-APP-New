@@ -85,6 +85,7 @@ import com.mmckb.openwrtstatus.ui.screens.ChannelAnalysisScreen
 import com.mmckb.openwrtstatus.LogsActivity
 import com.mmckb.openwrtstatus.NftablesActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
+import com.mmckb.openwrtstatus.ProcessesActivity
 import com.mmckb.openwrtstatus.StartupActivity
 import com.mmckb.openwrtstatus.RoutesActivity
 import com.mmckb.openwrtstatus.FlashActivity
@@ -110,6 +111,7 @@ import com.mmckb.openwrtstatus.ui.screens.LedScreen
 import com.mmckb.openwrtstatus.ui.screens.LogsScreen
 import com.mmckb.openwrtstatus.ui.screens.NftablesScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
+import com.mmckb.openwrtstatus.ui.screens.ProcessesScreen
 import com.mmckb.openwrtstatus.ui.screens.StartupScreen
 import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
 import com.mmckb.openwrtstatus.ui.screens.FlashScreen
@@ -141,6 +143,7 @@ private sealed interface SecondaryPage {
     data object Routes : SecondaryPage
     data object Nftables : SecondaryPage
     data object Logs : SecondaryPage
+    data object Processes : SecondaryPage
     data object Flash : SecondaryPage
     data object Startup : SecondaryPage
     data object About : SecondaryPage
@@ -300,6 +303,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Logs
         }
     }
+    val processesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(ProcessesActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Processes
+        }
+    }
     val flashLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -390,6 +400,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.Logs -> LogsScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Processes -> ProcessesScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -497,6 +512,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, LogsActivity::class.java)
                             .putExtra(LogsActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.Processes -> processesLauncher.launch(
+                        Intent(context, ProcessesActivity::class.java)
+                            .putExtra(ProcessesActivity.EXTRA_CONFIG, config)
+                    )
                     SecondaryPage.Flash -> flashLauncher.launch(
                         Intent(context, FlashActivity::class.java)
                             .putExtra(FlashActivity.EXTRA_CONFIG, config)
@@ -598,6 +617,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
                         onOpenFirewall = { openSecondary(SecondaryPage.Nftables) },
                         onOpenLogs = { openSecondary(SecondaryPage.Logs) },
+                        onOpenProcesses = { openSecondary(SecondaryPage.Processes) },
                         onOpenFlash = { openSecondary(SecondaryPage.Flash) },
                         onOpenStartup = { openSecondary(SecondaryPage.Startup) },
                         onOpenRealtime = { openSecondary(SecondaryPage.Realtime) },

@@ -80,6 +80,13 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".ProcessesActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OpenWrtStatus"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".RoutesActivity"
             android:exported="false"
             android:label="@string/app_name"

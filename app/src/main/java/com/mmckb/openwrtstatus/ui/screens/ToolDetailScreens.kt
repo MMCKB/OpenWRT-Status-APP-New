@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WifiTethering
@@ -80,6 +81,7 @@ fun ToolScreen(
     onOpenRoutes: () -> Unit,
     onOpenFirewall: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenProcesses: () -> Unit,
     onOpenFlash: () -> Unit,
     onOpenStartup: () -> Unit,
     onOpenRealtime: () -> Unit,
@@ -158,32 +160,35 @@ fun ToolScreen(
                     Modifier.weight(1f).fillMaxHeight(), onOpenLogs
                 )
                 ToolTile(
-                    Icons.Filled.Backup, "备份与更新", "备份 · 恢复 · 刷机",
-                    Modifier.weight(1f).fillMaxHeight(), onOpenFlash
+                    Icons.Filled.Memory, "系统进程", "进程 · 挂起 · 终止",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenProcesses
                 )
             }
             Row(
                 modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                ToolTile(
+                    Icons.Filled.Backup, "备份与更新", "备份 · 恢复 · 刷机",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFlash
+                )
                 ToolTile(
                     Icons.Filled.PlayCircle, "启动项", "开机自启 · rc.local",
                     Modifier.weight(1f).fillMaxHeight(), onOpenStartup
                 )
-                ToolTile(
-                    Icons.Filled.Speed, "实时监控", "负载 · 流量 · 连接",
-                    Modifier.weight(1f).fillMaxHeight(), onOpenRealtime
-                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ToolTile(
+                    Icons.Filled.Speed, "实时监控", "负载 · 流量 · 连接",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenRealtime
+                )
+                ToolTile(
                     Icons.Filled.WifiTethering, "信道分析", "信道占用 · 邻近网络",
                     Modifier.weight(1f).fillMaxHeight(), onOpenChannelAnalysis
                 )
-                Spacer(Modifier.weight(1f))
             }
         } else {
             ToolEntryCard(
@@ -221,6 +226,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Description, "日志",
                 "系统日志（logread）与内核日志（dmesg），支持复制", onOpenLogs
+            )
+            ToolEntryCard(
+                Icons.Filled.Memory, "系统进程",
+                "运行中的系统进程，支持挂起、关闭与强制关闭", onOpenProcesses
             )
             ToolEntryCard(
                 Icons.Filled.PlayCircle, "启动项",
