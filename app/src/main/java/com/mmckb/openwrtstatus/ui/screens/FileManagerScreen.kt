@@ -1307,7 +1307,13 @@ fun FileManagerScreen(
         val fraction = if (t.total > 0) (t.sent.toFloat() / t.total).coerceIn(0f, 1f) else 0f
         Dialog(
             onDismissRequest = {},
-            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+            // 边到边（同 AppDialog）：不加 decorFitsSystemWindows=false 时，
+            // 弹窗期间顶部状态栏与底部手势区会变成不透明色块。
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                decorFitsSystemWindows = false
+            )
         ) {
             Surface(
                 shape = AppShapes.card,
