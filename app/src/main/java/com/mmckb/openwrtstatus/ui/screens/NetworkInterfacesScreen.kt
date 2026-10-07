@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.IfaceDetail
+import com.mmckb.openwrtstatus.data.remote.IfaceUci
 import com.mmckb.openwrtstatus.data.remote.NetworkInterfacesClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
@@ -338,7 +339,7 @@ fun NetworkInterfacesScreen(
         deleteTarget?.let { target ->
             AppDialog(
                 title = "删除接口",
-                message = "确定删除「" + target.name + "」吗？该接口的配置将一并移除。",
+                message = "确定删除「" + target.section + "」吗？该接口的配置将一并移除。",
                 confirmLabel = "删除",
                 confirmColor = colors.error,
                 onConfirm = {
@@ -471,7 +472,7 @@ private fun IfaceEditDialog(
     var dhcpLimit by remember { mutableStateOf(initial?.dhcpLimit ?: "150") }
     var dhcpLeasetime by remember { mutableStateOf(initial?.dhcpLeasetime ?: "12h") }
     AppDialog(
-        title = if (isNew) "添加接口" else "编辑接口 " + (initial?.name ?: ""),
+        title = if (isNew) "添加接口" else "接口 » " + (initial?.section ?: ""),
         confirmLabel = "保存",
         dismissLabel = "取消",
         confirmEnabled = !busy,
