@@ -2,6 +2,7 @@ package com.mmckb.openwrtstatus.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +52,7 @@ import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
@@ -124,6 +127,33 @@ fun NetworkInterfacesScreen(
         return true
     }
 
+    fun load() {
+        if (opJob?.isActive == true) return
+        if (!ensureConnected()) {
+            loading = false
+            return
+        }
+        opJob = scope.launch {
+            loading = true
+            try {
+                ifaces = withTimeout(NIF_TIMEOUT_MS) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) { client.load(config) }
+                }
+                if (sshEnabled) {
+                    ucis = withContext(kotlinx.coroutines.Dispatchers.IO) { cfgClient.loadIfaceUcis(config) }
+                }
+                errorText = null
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    errorText = nifErrText(e)
+                    setAlert(AppAlertType.Error, "接口状态读取失败", nifErrText(e))
+                }
+            } finally {
+                loading = false
+            }
+        }
+    }
+
     fun doSave(section: String, isNew: Boolean, values: Map<String, String>, dns: List<String>, dhcp: Map<String, String>, onDone: () -> Unit) {
         val s = ssh ?: run {
             setAlert(AppAlertType.Error, "需要 SSH 访问", "接口编辑需要开启 SSH 后重试。")
@@ -168,33 +198,6 @@ fun NetworkInterfacesScreen(
                 if (e !is CancellationException) setAlert(AppAlertType.Error, "接口删除失败", nifErrText(e))
             } finally {
                 busy = false
-            }
-        }
-    }
-
-    fun load() {
-        if (opJob?.isActive == true) return
-        if (!ensureConnected()) {
-            loading = false
-            return
-        }
-        opJob = scope.launch {
-            loading = true
-            try {
-                ifaces = withTimeout(NIF_TIMEOUT_MS) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) { client.load(config) }
-                }
-                if (sshEnabled) {
-                    ucis = withContext(kotlinx.coroutines.Dispatchers.IO) { cfgClient.loadIfaceUcis(config) }
-                }
-                errorText = null
-            } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    errorText = nifErrText(e)
-                    setAlert(AppAlertType.Error, "接口状态读取失败", nifErrText(e))
-                }
-            } finally {
-                loading = false
             }
         }
     }
@@ -289,7 +292,7 @@ fun NetworkInterfacesScreen(
                             val u = ucis.firstOrNull { it.name == iface.name || it.device == iface.name }
                             IfaceCard(
                                 uci = u,
-                                live = iface,
+                                iface = iface,
                                 sshEnabled = sshEnabled,
                                 onEdit = if (u != null) ({ editSection = u.section }) else null,
                                 onDelete = if (u != null) ({ deleteTarget = u }) else null
