@@ -86,6 +86,7 @@ import com.mmckb.openwrtstatus.LogsActivity
 import com.mmckb.openwrtstatus.NftablesActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
 import com.mmckb.openwrtstatus.ProcessesActivity
+import com.mmckb.openwrtstatus.CrontabActivity
 import com.mmckb.openwrtstatus.StartupActivity
 import com.mmckb.openwrtstatus.RoutesActivity
 import com.mmckb.openwrtstatus.FlashActivity
@@ -112,6 +113,7 @@ import com.mmckb.openwrtstatus.ui.screens.LogsScreen
 import com.mmckb.openwrtstatus.ui.screens.NftablesScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
 import com.mmckb.openwrtstatus.ui.screens.ProcessesScreen
+import com.mmckb.openwrtstatus.ui.screens.CrontabScreen
 import com.mmckb.openwrtstatus.ui.screens.StartupScreen
 import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
 import com.mmckb.openwrtstatus.ui.screens.FlashScreen
@@ -146,6 +148,7 @@ private sealed interface SecondaryPage {
     data object Processes : SecondaryPage
     data object Flash : SecondaryPage
     data object Startup : SecondaryPage
+    data object Crontab : SecondaryPage
     data object About : SecondaryPage
     data object ThemeSettings : SecondaryPage
     data object Realtime : SecondaryPage
@@ -317,6 +320,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             secondary = SecondaryPage.Flash
         }
     }
+    val crontabLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.data?.getBooleanExtra(CrontabActivity.EXTRA_OPEN_INLINE, false) == true) {
+            secondary = SecondaryPage.Crontab
+        }
+    }
     val startupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -410,6 +420,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onBack = { secondary = null }
                     )
                     SecondaryPage.Flash -> FlashScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Crontab -> CrontabScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -520,6 +535,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         Intent(context, FlashActivity::class.java)
                             .putExtra(FlashActivity.EXTRA_CONFIG, config)
                     )
+                    SecondaryPage.Crontab -> crontabLauncher.launch(
+                        Intent(context, CrontabActivity::class.java)
+                            .putExtra(CrontabActivity.EXTRA_CONFIG, config)
+                    )
                     SecondaryPage.Startup -> startupLauncher.launch(
                         Intent(context, StartupActivity::class.java)
                             .putExtra(StartupActivity.EXTRA_CONFIG, config)
@@ -620,6 +639,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onOpenProcesses = { openSecondary(SecondaryPage.Processes) },
                         onOpenFlash = { openSecondary(SecondaryPage.Flash) },
                         onOpenStartup = { openSecondary(SecondaryPage.Startup) },
+                        onOpenCrontab = { openSecondary(SecondaryPage.Crontab) },
                         onOpenRealtime = { openSecondary(SecondaryPage.Realtime) },
                         onOpenChannelAnalysis = { openSecondary(SecondaryPage.ChannelAnalysis) },
                         modifier = Modifier.fillMaxSize()

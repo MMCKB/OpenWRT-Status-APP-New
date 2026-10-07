@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material.icons.filled.Security
@@ -84,6 +85,7 @@ fun ToolScreen(
     onOpenProcesses: () -> Unit,
     onOpenFlash: () -> Unit,
     onOpenStartup: () -> Unit,
+    onOpenCrontab: () -> Unit,
     onOpenRealtime: () -> Unit,
     onOpenChannelAnalysis: () -> Unit,
     modifier: Modifier = Modifier
@@ -176,6 +178,10 @@ fun ToolScreen(
                     Icons.Filled.PlayCircle, "启动项", "开机自启 · rc.local",
                     Modifier.weight(1f).fillMaxHeight(), onOpenStartup
                 )
+                ToolTile(
+                    Icons.Filled.Schedule, "计划任务", "crontab 定时",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenCrontab
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
@@ -234,6 +240,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.PlayCircle, "启动项",
                 "启停/启禁 init 脚本与本地启动脚本编辑", onOpenStartup
+            )
+            ToolEntryCard(
+                Icons.Filled.Schedule, "计划任务",
+                "系统 crontab 定时任务编辑，保存后重载 cron", onOpenCrontab
             )
             ToolEntryCard(
                 Icons.Filled.Speed, "实时监控",
