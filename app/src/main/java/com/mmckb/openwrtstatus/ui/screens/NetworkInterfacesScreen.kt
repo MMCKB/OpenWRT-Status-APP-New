@@ -320,7 +320,7 @@ fun NetworkInterfacesScreen(
 
         editSection?.let { section ->
             val isNew = section.isBlank()
-            val uci = ucis.firstOrNull { it.section == section }
+            val uci: com.mmckb.openwrtstatus.data.remote.IfaceUci? = ucis.firstOrNull { it.section == section }
             IfaceEditDialog(
                 initial = uci,
                 isNew = isNew,
