@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -73,7 +74,7 @@ fun NetworkInterfacesScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    val scope = remember { androidx.compose.runtime.rememberCoroutineScope() }
+    val scope = rememberCoroutineScope()
     val client = remember { NetworkInterfacesClient() }
     val alertStack = rememberAlertStackState()
     val density = LocalDensity.current
