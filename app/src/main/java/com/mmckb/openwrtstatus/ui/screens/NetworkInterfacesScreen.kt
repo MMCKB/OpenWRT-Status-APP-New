@@ -11,16 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,28 +26,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
-import com.mmckb.openwrtstatus.data.model.SshConfig
-import com.mmckb.openwrtstatus.data.remote.CrontabClient
+import com.mmckb.openwrtstatus.data.remote.IfaceDetail
+import com.mmckb.openwrtstatus.data.remote.NetworkInterfacesClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
-import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
+import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -58,51 +56,32 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-private const val CRONTAB_TIMEOUT_MS = 20_000L
+private const val NIF_TIMEOUT_MS = 20_000L
 
-private fun crontabErrText(e: Exception): String = when {
+private fun nifErrText(e: Exception): String = when {
     e is TimeoutCancellationException -> "路由器连接中断或长时间无响应，请检查网络后重试。"
     e is CancellationException -> "连接已断开，操作已终止。"
     e is RouterException -> e.message ?: "请稍后重试。"
     else -> e.message ?: "请稍后重试。"
 }
 
-/**
- * 计划任务页（LuCI admin/system/crontab 的完整复刻）：
- *  - 读取 /etc/crontabs/root（SSH cat，与 LuCI fs.read 同源）；
- *  - 保存：trim、CRLF→LF、补尾换行后写回，chmod 0644 + /etc/init.d/cron reload
- *    （与 LuCI fs.write + cron reload 语义一致）。
- *  全部操作需要设备开启 SSH。
- */
+/** 网络-接口页（LuCI admin/network/interfaces 状态概览）：每个逻辑接口一张卡片。 */
 @Composable
-fun CrontabScreen(
+fun NetworkInterfacesScreen(
     config: RouterConfig,
-    sshEnabled: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    val scope = rememberCoroutineScope()
-    val client = remember { CrontabClient() }
-    val sshOrNull = remember(config) {
-        if (sshEnabled) {
-            SshConfig(
-                host = config.sshHost.ifBlank { config.ip },
-                port = config.sshPort,
-                username = config.sshUsername,
-                password = config.sshPassword
-            )
-        } else null
-    }
-
-    var loading by remember { mutableStateOf(true) }
-    var busy by remember { mutableStateOf(false) }
+    val scope = remember { androidx.compose.runtime.rememberCoroutineScope() }
+    val client = remember { NetworkInterfacesClient() }
     val alertStack = rememberAlertStackState()
     val density = LocalDensity.current
     var alertTopPadding by remember { mutableStateOf(0.dp) }
 
-    var content by remember { mutableStateOf("") }
-    var loadedOnce by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(true) }
+    var ifaces by remember { mutableStateOf<List<IfaceDetail>?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
 
     var opJob by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(Unit) {
@@ -132,37 +111,17 @@ fun CrontabScreen(
         opJob = scope.launch {
             loading = true
             try {
-                content = withTimeout(CRONTAB_TIMEOUT_MS) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) { client.load(config, sshOrNull) }
+                ifaces = withTimeout(NIF_TIMEOUT_MS) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) { client.load(config) }
                 }
+                errorText = null
             } catch (e: Exception) {
                 if (e !is CancellationException) {
-                    setAlert(AppAlertType.Error, "计划任务读取失败", crontabErrText(e))
+                    errorText = nifErrText(e)
+                    setAlert(AppAlertType.Error, "接口状态读取失败", nifErrText(e))
                 }
             } finally {
                 loading = false
-            }
-        }
-    }
-
-    fun save() {
-        if (opJob?.isActive == true) return
-        if (!ensureConnected()) return
-        opJob = scope.launch {
-            busy = true
-            try {
-                withTimeout(CRONTAB_TIMEOUT_MS) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        client.save(config, sshOrNull, content)
-                    }
-                }
-                setAlert(AppAlertType.Success, "已保存并重载 cron")
-            } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    setAlert(AppAlertType.Error, "计划任务保存失败", crontabErrText(e))
-                }
-            } finally {
-                busy = false
             }
         }
     }
@@ -181,7 +140,7 @@ fun CrontabScreen(
             Column(
                 modifier = Modifier.onGloballyPositioned { coords ->
                     alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 19.dp
+                        (coords.positionInParent().y + coords.size.height).toDp() + 8.dp
                     }
                 }
             ) {
@@ -189,7 +148,7 @@ fun CrontabScreen(
                     AppBackButton(onBack = onBack)
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "计划任务",
+                        "接口",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface,
@@ -197,7 +156,7 @@ fun CrontabScreen(
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    AppIconButton(onClick = { load() }, enabled = !loading && !busy) {
+                    AppIconButton(onClick = { load() }, enabled = !loading) {
                         Text(
                             "⟳",
                             style = MaterialTheme.typography.titleLarge,
@@ -206,7 +165,7 @@ fun CrontabScreen(
                     }
                 }
                 Text(
-                    "系统计划任务（crontab），保存后自动重载 cron",
+                    "逻辑接口的协议、地址与网关状态",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
@@ -221,46 +180,36 @@ fun CrontabScreen(
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
             } else {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(colors.surface)
-                            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            "这是系统计划任务（/etc/crontabs/root），定时任务在此定义。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant
-                        )
-                        AppTextField(
-                            value = content,
-                            onValueChange = { content = it },
-                            label = { Text("/etc/crontabs/root") },
-                            minLines = 12,
-                            maxLines = 24,
-                            enabled = !busy,
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                onClick = { save() },
-                                enabled = !busy,
-                                modifier = Modifier.weight(1f)
-                            ) { Text(if (busy) "正在保存…" else "保存并重载 cron") }
+                    val list = ifaces.orEmpty()
+                    if (list.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(colors.surface)
+                                    .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+                                    .padding(horizontal = 14.dp, vertical = 20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    errorText ?: "暂无接口数据，点击右上角刷新重试。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
                         }
                     }
-                    // 背景延伸到手势条区域
-                    Spacer(Modifier.navigationBarsPadding().height(6.dp))
+                    list.forEach { iface ->
+                        item {
+                            IfaceCard(iface)
+                        }
+                    }
+                    item { Spacer(Modifier.navigationBarsPadding().height(6.dp)) }
                 }
             }
         }
@@ -276,5 +225,72 @@ fun CrontabScreen(
                     .padding(top = alertTopPadding)
             )
         }
+    }
+}
+
+@Composable
+private fun IfaceCard(iface: IfaceDetail) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.outline, RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).background(if (iface.up) colors.success else colors.onSurfaceVariant, CircleShape))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                iface.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                iface.proto ?: "—",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (iface.up) colors.success else colors.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        DetailRow("设备", iface.device)
+        DetailRow(
+            "IPv4",
+            iface.ipv4.joinToString("、").ifBlank { "—" }
+        )
+        if (iface.ipv6.isNotEmpty()) DetailRow("IPv6", iface.ipv6.joinToString("、"))
+        DetailRow(
+            "网关",
+            iface.gateways.joinToString("、").ifBlank { "—" }
+        )
+        if (iface.dns.isNotEmpty()) DetailRow("DNS", iface.dns.joinToString("、"))
+        DetailRow("在线时长", formatUptime(iface.uptimeSeconds))
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    val colors = LocalAppColors.current
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant,
+            modifier = Modifier.width(84.dp)
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = FontFamily.Monospace,
+            color = colors.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
