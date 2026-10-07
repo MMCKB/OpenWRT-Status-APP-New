@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +46,8 @@ import com.mmckb.openwrtstatus.data.remote.NetworkInterfacesClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
@@ -78,6 +81,8 @@ fun NetworkInterfacesScreen(
     val scope = rememberCoroutineScope()
     val client = remember { NetworkInterfacesClient() }
     val alertStack = rememberAlertStackState()
+    var editSection by remember { mutableStateOf<String?>(null) } // null=关闭，""=新增
+    var deleteTarget by mutableStateOf<com.mmckb.openwrtstatus.data.remote.IfaceUci?>(null)
     val density = LocalDensity.current
     var alertTopPadding by remember { mutableStateOf(0.dp) }
 
@@ -102,6 +107,54 @@ fun NetworkInterfacesScreen(
             return false
         }
         return true
+    }
+
+    fun doSave(section: String, isNew: Boolean, values: Map<String, String>, dns: List<String>, dhcp: Map<String, String>, onDone: () -> Unit) {
+        val s = ssh ?: run {
+            setAlert(AppAlertType.Error, "需要 SSH 访问", "接口编辑需要开启 SSH 后重试。")
+            onDone()
+            return
+        }
+        opJob = scope.launch {
+            busy = true
+            try {
+                withTimeout(NIF_TIMEOUT_MS) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        cfgClient.saveIface(config, s, section, isNew, values, dns, dhcp)
+                    }
+                }
+                setAlert(AppAlertType.Success, "接口配置已保存并重载")
+                onDone()
+                load()
+            } catch (e: Exception) {
+                if (e !is CancellationException) setAlert(AppAlertType.Error, "接口配置保存失败", nifErrText(e))
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun doDelete(target: com.mmckb.openwrtstatus.data.remote.IfaceUci) {
+        val s = ssh ?: run {
+            setAlert(AppAlertType.Error, "需要 SSH 访问", "接口删除需要开启 SSH 后重试。")
+            return
+        }
+        opJob = scope.launch {
+            busy = true
+            try {
+                withTimeout(NIF_TIMEOUT_MS) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        cfgClient.deleteIface(config, s, target.section, target.name)
+                    }
+                }
+                setAlert(AppAlertType.Success, "接口已删除")
+                load()
+            } catch (e: Exception) {
+                if (e !is CancellationException) setAlert(AppAlertType.Error, "接口删除失败", nifErrText(e))
+            } finally {
+                busy = false
+            }
+        }
     }
 
     fun load() {
@@ -186,6 +239,13 @@ fun NetworkInterfacesScreen(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    item {
+                        Button(
+                            onClick = { editSection = "" },
+                            enabled = !busy && sshEnabled,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (sshEnabled) "＋ 添加接口" else "添加接口需要开启 SSH") }
+                    }
                     val list = ifaces.orEmpty()
                     if (list.isEmpty()) {
                         item {
@@ -208,7 +268,14 @@ fun NetworkInterfacesScreen(
                     }
                     list.forEach { iface ->
                         item {
-                            IfaceCard(iface)
+                            val u = ucis.firstOrNull { it.name == iface.name || it.device == iface.name }
+                            IfaceCard(
+                                uci = u,
+                                live = iface,
+                                sshEnabled = sshEnabled,
+                                onEdit = if (u != null) ({ editSection = u.section }) else null,
+                                onDelete = if (u != null) ({ deleteTarget = u }) else null
+                            )
                         }
                     }
                     item { Spacer(Modifier.navigationBarsPadding().height(6.dp)) }
@@ -227,11 +294,48 @@ fun NetworkInterfacesScreen(
                     .padding(top = alertTopPadding)
             )
         }
+
+        editSection?.let { section ->
+            val isNew = section.isBlank()
+            val uci = ucis.firstOrNull { it.section == section }
+            IfaceEditDialog(
+                initial = uci,
+                isNew = isNew,
+                sshEnabled = sshEnabled,
+                busy = busy,
+                onDismiss = { editSection = null },
+                onSave = { values, dns, dhcp ->
+                    doSave(section.ifBlank { "if_" + System.currentTimeMillis() / 1000 }, isNew, values, dns, dhcp) {
+                        editSection = null
+                    }
+                }
+            )
+        }
+
+        deleteTarget?.let { target ->
+            AppDialog(
+                title = "删除接口",
+                message = "确定删除「" + target.name + "」吗？该接口的配置将一并移除。",
+                confirmLabel = "删除",
+                confirmColor = colors.error,
+                onConfirm = {
+                    deleteTarget = null
+                    doDelete(target)
+                },
+                onDismiss = { deleteTarget = null }
+            )
+        }
     }
 }
 
 @Composable
-private fun IfaceCard(iface: IfaceDetail) {
+private fun IfaceCard(
+    uci: com.mmckb.openwrtstatus.data.remote.IfaceUci?,
+    iface: com.mmckb.openwrtstatus.data.remote.IfaceDetail,
+    sshEnabled: Boolean,
+    onEdit: (() -> Unit)?,
+    onDelete: (() -> Unit)?
+) {
     val colors = LocalAppColors.current
     Column(
         modifier = Modifier
@@ -273,6 +377,29 @@ private fun IfaceCard(iface: IfaceDetail) {
         )
         if (iface.dns.isNotEmpty()) DetailRow("DNS", iface.dns.joinToString("、"))
         DetailRow("在线时长", formatUptime(iface.uptimeSeconds))
+        if (sshEnabled && uci != null) {
+            HorizontalDivider(color = colors.outline)
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Text(
+                    "编辑",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onEdit?.invoke() }
+                        .padding(vertical = 4.dp)
+                )
+                Text(
+                    "删除",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.error,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onDelete?.invoke() }
+                        .padding(vertical = 4.dp)
+                )
+            }
+        }
     }
 }
 
@@ -294,5 +421,167 @@ private fun DetailRow(label: String, value: String) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+/** 接口编辑弹窗：协议/设备/地址/DNS + DHCP 服务器（static 时显示）。 */
+@Composable
+private fun IfaceEditDialog(
+    initial: com.mmckb.openwrtstatus.data.remote.IfaceUci?,
+    isNew: Boolean,
+    sshEnabled: Boolean,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (Map<String, String>, List<String>, Map<String, String>) -> Unit
+) {
+    val colors = LocalAppColors.current
+    var proto by remember { mutableStateOf(initial?.proto ?: "static") }
+    var device by remember { mutableStateOf(initial?.device ?: "") }
+    var ipaddr by remember { mutableStateOf(initial?.ipaddr ?: "") }
+    var netmask by remember { mutableStateOf(initial?.netmask ?: "255.255.255.0") }
+    var gateway by remember { mutableStateOf(initial?.gateway ?: "") }
+    var dnsText by remember { mutableStateOf(initial?.dns?.joinToString("\n") ?: "") }
+    var pppoeUser by remember { mutableStateOf(initial?.pppoeUser ?: "") }
+    var pppoePass by remember { mutableStateOf(initial?.pppoePass ?: "") }
+    var dhcpEnabled by remember { mutableStateOf(initial?.dhcpEnabled ?: true) }
+    var dhcpStart by remember { mutableStateOf(initial?.dhcpStart ?: "100") }
+    var dhcpLimit by remember { mutableStateOf(initial?.dhcpLimit ?: "150") }
+    var dhcpLeasetime by remember { mutableStateOf(initial?.dhcpLeasetime ?: "12h") }
+    AppDialog(
+        title = if (isNew) "添加接口" else "编辑接口 " + (initial?.name ?: ""),
+        confirmLabel = "保存",
+        dismissLabel = "取消",
+        confirmEnabled = !busy,
+        onConfirm = {
+            val values = mutableMapOf("proto" to proto, "device" to device)
+            if (proto == "static") {
+                values["ipaddr"] = ipaddr
+                values["netmask"] = netmask
+                if (gateway.isNotBlank()) values["gateway"] = gateway
+            }
+            if (proto == "pppoe") {
+                values["username"] = pppoeUser
+                values["password"] = pppoePass
+            }
+            val dnsList = dnsText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+            if (dnsList.isNotEmpty()) values["dns"] = dnsList.joinToString(" ")
+            val dhcp = if (proto == "static" && dhcpEnabled) mutableMapOf(
+                "start" to dhcpStart, "limit" to dhcpLimit, "leasetime" to dhcpLeasetime
+            ) else mutableMapOf<String, String>()
+            onSave(values, dnsList, dhcp)
+        },
+        onDismiss = onDismiss
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("协议", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("static" to "静态", "dhcp" to "DHCP", "none" to "不配置", "pppoe" to "PPPoE").forEach { (v, label) ->
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (proto == v) colors.onPrimary else colors.onSurface,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (proto == v) colors.primary else colors.surfaceVariant)
+                            .clickable { proto = v }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            AppTextField(
+                value = device,
+                onValueChange = { device = it },
+                label = { Text("设备（如 eth0、br-lan）") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (proto == "static") {
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = ipaddr,
+                    onValueChange = { ipaddr = it },
+                    label = { Text("IPv4 地址") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = netmask,
+                    onValueChange = { netmask = it },
+                    label = { Text("子网掩码") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = gateway,
+                    onValueChange = { gateway = it },
+                    label = { Text("网关（可选）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            AppTextField(
+                value = dnsText,
+                onValueChange = { dnsText = it },
+                label = { Text("DNS 服务器（每行一个）") },
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (proto == "pppoe") {
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = pppoeUser,
+                    onValueChange = { pppoeUser = it },
+                    label = { Text("PPPoE 用户名") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = pppoePass,
+                    onValueChange = { pppoePass = it },
+                    label = { Text("PPPoE 密码") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (proto == "static") {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("DHCP 服务器", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = dhcpEnabled, onCheckedChange = { dhcpEnabled = it })
+                }
+                if (dhcpEnabled) {
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(
+                        value = dhcpStart,
+                        onValueChange = { dhcpStart = it },
+                        label = { Text("起始地址（偏移，如 100）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(
+                        value = dhcpLimit,
+                        onValueChange = { dhcpLimit = it },
+                        label = { Text("可分配数量（如 150）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(
+                        value = dhcpLeasetime,
+                        onValueChange = { dhcpLeasetime = it },
+                        label = { Text("租期（如 12h）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
     }
 }
