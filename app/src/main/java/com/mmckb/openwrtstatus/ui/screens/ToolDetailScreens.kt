@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.SettingsEthernet
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.WifiTethering
@@ -85,6 +86,7 @@ fun ToolScreen(
     onOpenProcesses: () -> Unit,
     onOpenFlash: () -> Unit,
     onOpenStartup: () -> Unit,
+    onOpenNetworkInterfaces: () -> Unit,
     onOpenCrontab: () -> Unit,
     onOpenRealtime: () -> Unit,
     onOpenChannelAnalysis: () -> Unit,
@@ -178,9 +180,18 @@ fun ToolScreen(
                     Icons.Filled.PlayCircle, "启动项", "开机自启 · rc.local",
                     Modifier.weight(1f).fillMaxHeight(), onOpenStartup
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 ToolTile(
                     Icons.Filled.Schedule, "计划任务", "crontab 定时",
                     Modifier.weight(1f).fillMaxHeight(), onOpenCrontab
+                )
+                ToolTile(
+                    Icons.Filled.SettingsEthernet, "网络接口", "协议 · 地址 · 网关",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenNetworkInterfaces
                 )
             }
             Row(
@@ -244,6 +255,10 @@ fun ToolScreen(
             ToolEntryCard(
                 Icons.Filled.Schedule, "计划任务",
                 "系统 crontab 定时任务编辑，保存后重载 cron", onOpenCrontab
+            )
+            ToolEntryCard(
+                Icons.Filled.SettingsEthernet, "网络接口",
+                "逻辑接口的协议、地址、网关与在线时长", onOpenNetworkInterfaces
             )
             ToolEntryCard(
                 Icons.Filled.Speed, "实时监控",
