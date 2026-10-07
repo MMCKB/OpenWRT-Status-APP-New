@@ -75,7 +75,7 @@ class NetworkConfigClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     ) = withContext(Dispatchers.IO) {
         val sb = StringBuilder()
         if (isNew) {
-            sb.append("S=$(uci -q add network interface) && uci rename network.$S=").append(shq(section)).append(" && ")
+            sb.append("S=$(uci -q add network interface) && uci rename network.\$S=").append(shq(section)).append(" && ")
         }
         for ((k, v) in values) {
             val key = shq(k)
@@ -89,17 +89,17 @@ class NetworkConfigClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         // dhcp 段：找 .interface==section 的既有段；有值且不存在时新建；空值=删除字段
         sb.append("D=''; ")
             .append("for s in $(uci -q show dhcp | sed -n 's/^\\(.*\\)=dhcp$/\\1/p'); do ")
-            .append("[ \"$(uci -q get dhcp.$s.interface)\" = ").append(shq(section)).append(" ] && D=$s; done; ")
+            .append("[ \"$(uci -q get dhcp.\$s.interface)\" = ").append(shq(section)).append(" ] && D=\$s; done; ")
         if (dhcp.isNotEmpty()) {
-            sb.append("[ -z \"$D\" ] && { D=$(uci -q add dhcp dhcp); uci set dhcp.$D.interface=").append(shq(section)).append("; }; ")
+            sb.append("[ -z \"\$D\" ] && { D=$(uci -q add dhcp dhcp); uci set dhcp.\$D.interface=").append(shq(section)).append("; }; ")
             for ((k, v) in dhcp) {
                 val key = shq(k)
-                if (v.isEmpty()) sb.append("uci -q delete dhcp.$D.").append(key).append("; ")
-                else sb.append("uci set dhcp.$D.").append(key).append("='").append(v.replace("'", "'\\''")).append("'; ")
+                if (v.isEmpty()) sb.append("uci -q delete dhcp.\$D.").append(key).append("; ")
+                else sb.append("uci set dhcp.\$D.").append(key).append("='").append(v.replace("'", "'\\''")).append("'; ")
             }
-            sb.append("uci -q delete dhcp.$D.ignore; ")
+            sb.append("uci -q delete dhcp.\$D.ignore; ")
         } else {
-            sb.append("[ -n \"$D\" ] && uci -q set dhcp.$D.ignore='1'; ")
+            sb.append("[ -n \"\$D\" ] && uci -q set dhcp.\$D.ignore='1'; ")
         }
         sb.append("uci commit network; uci commit dhcp; ")
         sb.append("/etc/init.d/network reload >/dev/null 2>&1; ")
@@ -117,11 +117,11 @@ class NetworkConfigClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             val script = StringBuilder()
                 .append("uci -q delete network.").append(shq(section)).append("; ")
                 .append("for s in $(uci -q show dhcp | sed -n 's/^\\(.*\\)=dhcp$/\\1/p'); do ")
-                .append("[ \"$(uci -q get dhcp.$s.interface)\" = ").append(shq(ifname)).append(" ] && uci -q delete dhcp.$s; done; ")
+                .append("[ \"$(uci -q get dhcp.\$s.interface)\" = ").append(shq(ifname)).append(" ] && uci -q delete dhcp.\$s; done; ")
                 .append("uci commit network; uci commit dhcp; ")
                 .append("/etc/init.d/network reload >/dev/null 2>&1; ")
                 .append("echo __NIF_DEL_OK__")
-            val ok = SshExec.run(ssh, script, 30_000).contains("__NIF_DEL_OK__")
+            val ok = SshExec.run(ssh, script.toString(), 30_000).contains("__NIF_DEL_OK__")
             if (!ok) throw RouterException("删除失败：接口配置未能写入。", "请检查 SSH 连接后重试。")
         }
 
