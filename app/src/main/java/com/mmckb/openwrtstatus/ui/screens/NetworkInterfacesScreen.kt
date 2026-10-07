@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,6 +57,7 @@ import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
 import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
+import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
@@ -601,6 +603,230 @@ private fun IfaceEditDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+            }
+        }
+    }
+}
+/**
+ * 接口编辑弹窗（LuCI interfaces.js addModalOptions 的完整复刻，7 个页签）：
+ * 常规（协议/设备/禁用/开机启用）、高级（IPv6 管理/强制链路/默认网关/对端 DNS/自定义 DNS/网关跃点/MTU）、
+ * 防火墙（防火墙区域）、DHCP 服务器（忽略接口/动态分配/租期/强制/DHCP 选项）+ PPPoE 账密（pppoe 协议）。
+ */
+@Composable
+private fun IfaceEditDialog(
+    initial: IfaceUci?,
+    isNew: Boolean,
+    sshEnabled: Boolean,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (values: Map<String, String>, dns: List<String>, dhcp: Map<String, String>) -> Unit
+) {
+    val colors = LocalAppColors.current
+    var tab by remember { mutableStateOf("general") }
+    var proto by remember { mutableStateOf(initial?.proto ?: "static") }
+    var device by remember { mutableStateOf(initial?.device ?: "") }
+    var disabled by remember { mutableStateOf(initial?.let { !it.auto } ?: false) }
+    // 高级
+    var delegate by remember { mutableStateOf(initial?.let { true } ?: true) }
+    var forceLink by remember { mutableStateOf(false) }
+    var defaultroute by remember { mutableStateOf(initial?.defaultroute ?: true) }
+    var peerdns by remember { mutableStateOf(initial?.peerdns ?: true) }
+    var dnsText by remember { mutableStateOf(initial?.dns?.joinToString("\n") ?: "") }
+    var metric by remember { mutableStateOf(initial?.metric ?: "") }
+    var mtu by remember { mutableStateOf(initial?.mtu ?: "") }
+    // 静态地址
+    var ipaddr by remember { mutableStateOf(initial?.ipaddr ?: "") }
+    var netmask by remember { mutableStateOf(initial?.netmask ?: "255.255.255.0") }
+    var gateway by remember { mutableStateOf(initial?.gateway ?: "") }
+    // PPPoE
+    var pppoeUser by remember { mutableStateOf(initial?.pppoeUser ?: "") }
+    var pppoePass by remember { mutableStateOf(initial?.pppoePass ?: "") }
+    // DHCP 服务器
+    var dhcpEnabled by remember { mutableStateOf(initial?.dhcpIgnore?.not() ?: false) }
+    var dhcpDynamic by remember { mutableStateOf(initial?.dhcpDynamic ?: true) }
+    var dhcpLeasetime by remember { mutableStateOf(initial?.dhcpLeasetime ?: "12h") }
+    var dhcpForce by remember { mutableStateOf(initial?.dhcpForce ?: false) }
+    var dhcpStart by remember { mutableStateOf(initial?.dhcpStart ?: "100") }
+    var dhcpLimit by remember { mutableStateOf(initial?.dhcpLimit ?: "150") }
+    val isStatic = proto == "static"
+    val isPppoe = proto == "pppoe"
+    val hasPeerDns = proto in listOf("dhcp", "dhcpv6", "ppp", "pppoe", "pppoa", "pptp")
+    AppDialog(
+        title = if (isNew) "添加接口" else "接口 » " + (initial?.section ?: ""),
+        confirmLabel = "保存",
+        dismissLabel = "取消",
+        confirmEnabled = !busy,
+        onConfirm = {
+            val values = mutableMapOf(
+                "proto" to proto,
+                "auto" to if (disabled) "0" else "1",
+                "delegate" to if (delegate) "1" else "0",
+                "force_link" to if (forceLink) "1" else "0",
+                "defaultroute" to if (defaultroute) "1" else "0",
+                "peerdns" to if (hasPeerDns) (if (peerdns) "1" else "0") else "",
+                "metric" to metric,
+                "mtu" to mtu
+            )
+            if (device.isNotBlank()) values["device"] = device
+            if (isStatic) {
+                values["ipaddr"] = ipaddr
+                values["netmask"] = netmask
+                values["gateway"] = gateway
+            }
+            if (isPppoe) {
+                values["username"] = pppoeUser
+                values["password"] = pppoePass
+            }
+            val dnsList = dnsText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+            val dhcp = linkedMapOf("__enabled__" to if (dhcpEnabled) "1" else "0")
+            if (dhcpEnabled) {
+                dhcp["dynamicdhcp"] = if (dhcpDynamic) "1" else "0"
+                dhcp["leasetime"] = dhcpLeasetime
+                dhcp["force"] = if (dhcpForce) "1" else "0"
+                if (isStatic) {
+                    dhcp["start"] = dhcpStart
+                    dhcp["limit"] = dhcpLimit
+                }
+            }
+            onSave(values, dnsList, dhcp)
+        },
+        onDismiss = onDismiss
+    ) {
+        SmoothOptionSwitcher(
+            options = listOf(
+                "general" to "常规",
+                "advanced" to "高级",
+                "firewall" to "防火墙",
+                "dhcp" to "DHCP 服务器"
+            ),
+            selected = tab,
+            onSelect = { tab = it },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(10.dp))
+        Column(
+            modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (tab == "general") {
+                Text("协议", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("static" to "静态地址", "dhcp" to "DHCP 客户端", "none" to "不配置", "pppoe" to "PPPoE").forEach { (v, label) ->
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (proto == v) colors.onPrimary else colors.onSurface,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(if (proto == v) colors.primary else colors.surfaceVariant)
+                                .clickable { proto = v }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = device,
+                    onValueChange = { device = it },
+                    label = { Text("物理设备（如 eth0、br-lan；PPPoE 填基础网口）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("禁用此接口", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = disabled, onCheckedChange = { disabled = it })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("开机自动启用", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = !disabled, onCheckedChange = { disabled = !it })
+                }
+                if (isStatic) {
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(value = ipaddr, onValueChange = { ipaddr = it }, label = { Text("IPv4 地址") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(value = netmask, onValueChange = { netmask = it }, label = { Text("IPv4 子网掩码") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(value = gateway, onValueChange = { gateway = it }, label = { Text("IPv4 网关") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                if (isPppoe) {
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(value = pppoeUser, onValueChange = { pppoeUser = it }, label = { Text("PAP/CHAP 用户名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(
+                        value = pppoePass,
+                        onValueChange = { pppoePass = it },
+                        label = { Text("PAP/CHAP 密码") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+            if (tab == "advanced") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("使用内置 IPv6 管理", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = delegate, onCheckedChange = { delegate = it })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("强制链路（忽略载波状态）", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = forceLink, onCheckedChange = { forceLink = it })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("使用默认网关", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = defaultroute, onCheckedChange = { defaultroute = it })
+                }
+                if (hasPeerDns) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("使用对端通告的 DNS", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                        AppSwitch(checked = peerdns, onCheckedChange = { peerdns = it })
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                AppTextField(
+                    value = dnsText,
+                    onValueChange = { dnsText = it },
+                    label = { Text("自定义 DNS 服务器（每行一个）") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                );
+                Spacer(Modifier.height(4.dp))
+                AppTextField(value = metric, onValueChange = { metric = it }, label = { Text("网关跃点（metric，如 0）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(4.dp))
+                AppTextField(value = mtu, onValueChange = { mtu = it }, label = { Text("MTU（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+            if (tab == "firewall") {
+                Text(
+                    "防火墙区域在「防火墙」页的接口网络归属中配置；此处展示当前归属。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                );
+                Spacer(Modifier.height(6.dp))
+                DetailRow("当前区域", initial?.zone ?: "未指定")
+            }
+            if (tab == "dhcp") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("为此接口提供 DHCP 服务", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    AppSwitch(checked = dhcpEnabled, onCheckedChange = { dhcpEnabled = it })
+                }
+                if (dhcpEnabled) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("动态分配地址", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                        AppSwitch(checked = dhcpDynamic, onCheckedChange = { dhcpDynamic = it })
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    AppTextField(value = dhcpLeasetime, onValueChange = { dhcpLeasetime = it }, label = { Text("租期（如 12h，最短 2m）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("强制 DHCP（即使检测到其他服务器）", style = MaterialTheme.typography.bodyMedium, color = colors.onSurface, modifier = Modifier.weight(1f))
+                        AppSwitch(checked = dhcpForce, onCheckedChange = { dhcpForce = it })
+                    }
+                    if (isStatic) {
+                        Spacer(Modifier.height(4.dp))
+                        AppTextField(value = dhcpStart, onValueChange = { dhcpStart = it }, label = { Text("起始地址偏移（默认 100）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(4.dp))
+                        AppTextField(value = dhcpLimit, onValueChange = { dhcpLimit = it }, label = { Text("可分配数量（默认 150）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
                 }
             }
         }
