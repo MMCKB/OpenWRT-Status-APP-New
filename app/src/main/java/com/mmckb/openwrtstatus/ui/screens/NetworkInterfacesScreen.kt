@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -89,7 +91,6 @@ fun NetworkInterfacesScreen(
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val client = remember { NetworkInterfacesClient() }
-    val cfgClient = remember { NetworkConfigClient() }
     val alertStack = rememberAlertStackState()
     var editSection by remember { mutableStateOf<String?>(null) } // null=关闭，""=新增
     var deleteTarget by mutableStateOf<com.mmckb.openwrtstatus.data.remote.IfaceUci?>(null)
