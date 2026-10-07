@@ -46,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.IfaceDetail
-import com.mmckb.openwrtstatus.data.remote.NetworkConfigClient
 import com.mmckb.openwrtstatus.data.remote.NetworkInterfacesClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
@@ -138,12 +137,13 @@ fun NetworkInterfacesScreen(
         opJob = scope.launch {
             loading = true
             try {
-                ifaces = withTimeout(NIF_TIMEOUT_MS) {
-                    withContext(kotlinx.coroutines.Dispatchers.IO) { client.load(config) }
+                val (l, u) = withTimeout(NIF_TIMEOUT_MS) {
+                    withContext(kotlinx.coroutines.Dispatchers.IO) { client.loadAll(config) }
                 }
+                ifaces = l
+                ucis = u
                 if (sshEnabled) {
-                    ucis = withContext(kotlinx.coroutines.Dispatchers.IO) { cfgClient.loadIfaceUcis(config) }
-                }
+                    }
                 errorText = null
             } catch (e: Exception) {
                 if (e !is CancellationException) {
@@ -167,7 +167,7 @@ fun NetworkInterfacesScreen(
             try {
                 withTimeout(NIF_TIMEOUT_MS) {
                     withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        cfgClient.saveIface(config, s, section, isNew, values, dns, dhcp)
+                        client.saveIface(config, s, section, isNew, values, dns, dhcp)
                     }
                 }
                 setAlert(AppAlertType.Success, "接口配置已保存并重载")
@@ -191,7 +191,7 @@ fun NetworkInterfacesScreen(
             try {
                 withTimeout(NIF_TIMEOUT_MS) {
                     withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        cfgClient.deleteIface(config, s, target.section, target.name)
+                        client.deleteIface(config, s, target.section, target.name)
                     }
                 }
                 setAlert(AppAlertType.Success, "接口已删除")
