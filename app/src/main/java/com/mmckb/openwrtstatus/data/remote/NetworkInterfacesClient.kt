@@ -96,7 +96,7 @@ class NetworkInterfacesClient(private val rpc: UbusRpcClient = UbusRpcClient()) 
 
             val details = parseDetails(dump, devStatus, fwUci)
             val ucis = parseUcis(
-                valuesJson(netUci), valuesJson(dhcpUci), zoneMap(valuesJson(fwUci))
+                valuesJson(netUci), valuesJson(dhcpUci), zoneMapOf(fwUci)
             )
             details to ucis
         }
@@ -128,7 +128,7 @@ class NetworkInterfacesClient(private val rpc: UbusRpcClient = UbusRpcClient()) 
         }
         sb.append("D=''; ")
             .append("for s in $(uci -q show dhcp | sed -n 's/^\\(.*\\)=dhcp$/\\1/p'); do ")
-            .append("[ \"$(uci -q get dhcp.$s.interface)\" = ").append(shq(section)).append(" ] && D=$s; done; ")
+            .append("[ \"$(uci -q get dhcp.\$s.interface)\" = ").append(shq(section)).append(" ] && D=\$s; done; ")
         if (dhcp.containsKey("__enabled__")) {
             val enabled = dhcp["__enabled__"] == "1"
             if (enabled) {
@@ -157,7 +157,7 @@ class NetworkInterfacesClient(private val rpc: UbusRpcClient = UbusRpcClient()) 
             val script = StringBuilder()
                 .append("uci -q delete network.").append(shq(section)).append("; ")
                 .append("for s in $(uci -q show dhcp | sed -n 's/^\\(.*\\)=dhcp$/\\1/p'); do ")
-                .append("[ \"$(uci -q get dhcp.$s.interface)\" = ").append(shq(ifname)).append(" ] && uci -q delete dhcp.$s; done; ")
+                .append("[ \"$(uci -q get dhcp.\$s.interface)\" = ").append(shq(ifname)).append(" ] && uci -q delete dhcp.\$s; done; ")
                 .append("uci commit network; uci commit dhcp; ")
                 .append("/etc/init.d/network reload >/dev/null 2>&1; ")
                 .append("echo __NIF_DEL_OK__")

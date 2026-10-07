@@ -191,7 +191,7 @@ fun NetworkInterfacesScreen(
             try {
                 withTimeout(NIF_TIMEOUT_MS) {
                     withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        client.deleteIface(config, s, target.section, target.name)
+                        client.deleteIface(config, s, target.section, target.section)
                     }
                 }
                 setAlert(AppAlertType.Success, "接口已删除")
@@ -291,7 +291,7 @@ fun NetworkInterfacesScreen(
                     }
                     list.forEach { iface ->
                         item {
-                            val u = ucis.firstOrNull { it.name == iface.name || it.device == iface.name }
+                            val u = ucis.firstOrNull { it.section == iface.name || it.section == iface.device }
                             IfaceCard(
                                 uci = u,
                                 iface = iface,
