@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.buildJsonObject
 
 /** 一个接口的 UCI 配置（network 段 + 关联的 dhcp 段）。 */
 data class IfaceUci(
@@ -37,16 +39,24 @@ data class IfaceUci(
  *    （一条脚本内完成，先回显标记再重启服务）。
  *  全部编辑操作需要设备开启 SSH。
  */
-class NetworkConfigClient {
+class NetworkConfigClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     suspend fun loadIfaceUcis(config: RouterConfig): List<IfaceUci> = withContext(Dispatchers.IO) {
         val endpoint = rpc.buildEndpoint(config.ip, config.port, config.useHttps)
         val token = rpc.login(endpoint, config.username, config.password, config.allowInsecureTls, true)
         val net = runCatching {
-            rpc.call(endpoint, token, "uci", "get", json { put("config", JsonPrimitive("network")) }, config.allowInsecureTls, true)
+            rpc.call(
+                endpoint, token, "uci", "get",
+                buildJsonObject { put("config", JsonPrimitive("network")) },
+                config.allowInsecureTls, true
+            )
         }.getOrNull()
         val dhcp = runCatching {
-            rpc.call(endpoint, token, "uci", "get", json { put("config", JsonPrimitive("dhcp")) }, config.allowInsecureTls, true)
+            rpc.call(
+                endpoint, token, "uci", "get",
+                buildJsonObject { put("config", JsonPrimitive("dhcp")) },
+                config.allowInsecureTls, true
+            )
         }.getOrNull()
         parseIfaceUcis(
             net?.let { (it as? JsonObject)?.get("values")?.toString() } ?: "",
