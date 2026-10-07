@@ -161,7 +161,7 @@ class NetworkInterfacesClient(private val rpc: UbusRpcClient = UbusRpcClient()) 
                 .append("uci commit network; uci commit dhcp; ")
                 .append("/etc/init.d/network reload >/dev/null 2>&1; ")
                 .append("echo __NIF_DEL_OK__")
-            val ok = SshExec.run(ssh, script, 30_000).contains("__NIF_DEL_OK__")
+            val ok = SshExec.run(ssh, script.toString(), 30_000).contains("__NIF_DEL_OK__")
             if (!ok) throw RouterException("删除失败：接口配置未能写入。", "请检查 SSH 连接后重试。")
         }
 
@@ -180,17 +180,21 @@ class NetworkInterfacesClient(private val rpc: UbusRpcClient = UbusRpcClient()) 
             val fwUci = runCatching {
                 rpc.call(endpoint, token, "uci", "get", uciParams("firewall"), config.allowInsecureTls, true)
             }.getOrNull()
-            parseUcis(valuesJson(netUci), valuesJson(dhcpUci), parseZoneMap(valuesJson(fwUci)))
+            parseUcis(valuesJson(netUci), valuesJson(dhcpUci), zoneMapOf(fwUci))
         }
 
 
     // ---- 解析 ------------------------------------------------------------------
 
+    /** firewall uci values → network → zone 名映射。 */
+    private fun zoneMapOf(fwUci: kotlinx.serialization.json.JsonElement?): Map<String, String> =
+        parseZoneMap(valuesJson(fwUci))
+
     private fun parseDetails(dump: kotlinx.serialization.json.JsonElement?, devStatus: kotlinx.serialization.json.JsonElement?, fwUci: kotlinx.serialization.json.JsonElement?): List<IfaceDetail> {
         val root = (dump as? JsonObject) ?: return emptyList()
         val list = root["interface"] as? JsonArray ?: JsonArray(emptyList())
         val devs = (devStatus as? JsonObject) ?: JsonObject(emptyMap())
-        val zones = parseZoneMap(valuesJson(fwUci))
+        val zones = zoneMapOf(fwUci)
 
         return list.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
