@@ -436,6 +436,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     SecondaryPage.NetworkInterfaces -> NetworkInterfacesScreen(
                         config = cfg,
+                        sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
                     )
                     SecondaryPage.Crontab -> CrontabScreen(

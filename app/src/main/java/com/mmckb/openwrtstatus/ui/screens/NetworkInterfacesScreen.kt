@@ -41,7 +41,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.IfaceDetail
+import com.mmckb.openwrtstatus.data.remote.NetworkConfigClient
 import com.mmckb.openwrtstatus.data.remote.NetworkInterfacesClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
@@ -74,20 +76,33 @@ private fun nifErrText(e: Exception): String = when {
 @Composable
 fun NetworkInterfacesScreen(
     config: RouterConfig,
+    sshEnabled: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
     val scope = rememberCoroutineScope()
     val client = remember { NetworkInterfacesClient() }
+    val cfgClient = remember { NetworkConfigClient() }
     val alertStack = rememberAlertStackState()
     var editSection by remember { mutableStateOf<String?>(null) } // null=关闭，""=新增
     var deleteTarget by mutableStateOf<com.mmckb.openwrtstatus.data.remote.IfaceUci?>(null)
     val density = LocalDensity.current
     var alertTopPadding by remember { mutableStateOf(0.dp) }
 
+    val ssh = remember(config) {
+        if (sshEnabled) SshConfig(
+            host = config.sshHost.ifBlank { config.ip },
+            port = config.sshPort,
+            username = config.sshUsername,
+            password = config.sshPassword
+        ) else null
+    }
+
     var loading by remember { mutableStateOf(true) }
     var ifaces by remember { mutableStateOf<List<IfaceDetail>?>(null) }
+    var ucis by remember { mutableStateOf<List<com.mmckb.openwrtstatus.data.remote.IfaceUci>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     var opJob by remember { mutableStateOf<Job?>(null) }
@@ -168,6 +183,9 @@ fun NetworkInterfacesScreen(
             try {
                 ifaces = withTimeout(NIF_TIMEOUT_MS) {
                     withContext(kotlinx.coroutines.Dispatchers.IO) { client.load(config) }
+                }
+                if (sshEnabled) {
+                    ucis = withContext(kotlinx.coroutines.Dispatchers.IO) { cfgClient.loadIfaceUcis(config) }
                 }
                 errorText = null
             } catch (e: Exception) {

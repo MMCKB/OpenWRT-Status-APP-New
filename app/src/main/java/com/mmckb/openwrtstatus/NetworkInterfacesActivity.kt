@@ -33,6 +33,7 @@ class NetworkInterfacesActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     NetworkInterfacesScreen(
                         config = config,
+                        sshEnabled = config.sshEnabled,
                         onBack = { finish() }
                     )
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
