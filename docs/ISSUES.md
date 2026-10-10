@@ -149,6 +149,23 @@ extra 走一次 Binder 事务，短暂驻留在 system_server 的 Intent 记录�
 4. 直读 DataStore：新设备的 ip / port / username / password 全部为 `enc:v1:` 密文
    → 出向、回向、落库、解密四条链路都通了。
 
+**19 个二级页全量回归**（`am start` 逐个拉起，`deviceId` 用真实设备 id）
+
+19/19 全部正常，**零崩溃**。覆盖 About / ThemeSettings / Admin / ChannelAnalysis /
+Crontab / DeviceEdit / FileManager / Flash / Led / Logs / NetworkInterfaces / Nftables /
+PackageManager / Processes / Realtime / Routes / Startup / System / Wireless。
+
+**容错路径**（`rememberDeviceConfig` 的回落链）
+
+| 场景 | 结果 |
+| --- | --- |
+| 不带 `deviceId`（模拟进程被杀后重建） | ✅ 无崩溃，回落到活动设备并加载出真实无线数据 |
+| 传一个不存在的 `deviceId` | ✅ 无崩溃，同样回落到活动设备 |
+
+**Intent 记录实证**：拉起二级页后全量 `dumpsys activity` 中搜
+`192.168.2.1` / `sshPassword` / `password=` —— **命中 0 次**。
+Intent 记录里只显示 `WirelessActivity (has extras)`，看不到任何凭据。
+
 **残留风险**：`DeviceEditResult` 是进程内状态，若进程恰好在编辑页 `setResult` 之后、
 主界面回调之前被杀，这次保存会丢失。窗口仅毫秒级，可接受。
 
