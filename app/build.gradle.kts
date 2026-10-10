@@ -129,13 +129,13 @@ dependencies {
     implementation("io.github.kyant0:shapes:1.2.1")
 
     // SSH remote shell (maintained JSch fork, keeps the com.jcraft.jsch API)
-    implementation("com.github.mwiede:jsch:2.28.7")
+    implementation("com.github.mwiede:jsch:2.28.8")
 
     // WiFi 分享二维码生成（ZXing core，纯 Java 无传递依赖，Apache-2.0）
     implementation("com.google.zxing:core:3.5.4")
 
     // 本地设置存储（Jetpack DataStore，替代 SharedPreferences）
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
