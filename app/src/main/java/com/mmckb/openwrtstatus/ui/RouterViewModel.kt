@@ -103,6 +103,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
             _devices.value = devices
             _activeId.value = activeId
             _config.value = configFor(devices, activeId)
+            publishSnapshot()
             _connNotifyEnabled.value = settingsStore.isConnectionNotifyEnabled()
             _toolsGridEnabled.value = settingsStore.isToolsGridEnabled()
             _terminalInlineInput.value = settingsStore.isTerminalInlineInput()
@@ -465,7 +466,17 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         _config.value = configFor(_devices.value, _activeId.value)
     }
 
+    /**
+     * 发布设备快照给二级页（见 [DeviceSnapshot]）。二级页只收设备 id、按 id 取配置，
+     * 快照保证它们拿到的是与主界面同一时刻的内存状态，不依赖 DataStore 写入完成。
+     * 所有会改动设备列表或活动设备的路径都会走到 [persist]，因此在这里统一发布。
+     */
+    private fun publishSnapshot() {
+        DeviceSnapshot.publish(_devices.value, _activeId.value)
+    }
+
     private fun persist() {
+        publishSnapshot()
         viewModelScope.launch { settingsStore.saveDevices(_devices.value, _activeId.value) }
     }
 
