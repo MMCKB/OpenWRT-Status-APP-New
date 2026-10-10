@@ -1,6 +1,7 @@
 package com.mmckb.openwrtstatus.data.local
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.migrations.SharedPreferencesMigration
 import androidx.datastore.preferences.core.Preferences
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -83,24 +85,59 @@ private fun settingsDataStore(context: Context): DataStore<Preferences> =
  * toggles and SSH host key fingerprints (TOFU) in Jetpack DataStore.
  *
  * 全部读写为 suspend 函数，由调用方在自身作用域内执行（UI 线程不再做磁盘 I/O）。
+ *
+ * 敏感字段（路由器密码 / SSH 密码）经 [CredentialCipher] 加密后落盘，
+ * 其余字段保持明文以便排错；旧版本遗留的明文密码会在首次读取时自动加密回写。
  */
 class SettingsStore(private val context: Context) {
 
     private val data = settingsDataStore(context)
 
-    suspend fun loadDevices(): List<RouterConfig> {
+    /**
+     * 读取设备列表。
+     *
+     * 整个流程跑在 [Dispatchers.IO]：JSON 映射会调用 [CredentialCipher]，
+     * 而 Keystore 的首次取密钥/生成密钥是阻塞操作，不能在主线程做
+     * （[com.mmckb.openwrtstatus.ui.RouterViewModel] 的 init 协程默认就在 Main）。
+     */
+    suspend fun loadDevices(): List<RouterConfig> = withContext(Dispatchers.IO) {
         val prefs = currentPrefs()
         val raw = prefs[KEY_DEVICES]
         if (raw != null) {
-            return runCatching {
+            val parsed = runCatching {
                 val array = JSONArray(raw)
-                (0 until array.length()).map { deviceFromJson(array.getJSONObject(it)) }
-            }.getOrDefault(emptyList())
+                var hasPlaintext = false
+                val devices = (0 until array.length()).map { index ->
+                    val obj = array.getJSONObject(index)
+                    if (hasPlaintextSecret(obj)) hasPlaintext = true
+                    deviceFromJson(obj)
+                }
+                devices to hasPlaintext
+            }.getOrNull() ?: return@withContext emptyList()
+            val (devices, hasPlaintext) = parsed
+            // 旧版本以明文保存密码：读入后立即以密文回写，完成一次性迁移（失败则下次启动重试）。
+            if (hasPlaintext) {
+                val activeId = loadActiveId(devices)
+                runCatching { saveDevices(devices, activeId) }
+                    .onFailure { Log.w(TAG, "明文凭据迁移回写失败，下次启动会重试", it) }
+            }
+            return@withContext devices
         }
         if (prefs.contains(stringPreferencesKey("ip"))) {
-            return listOf(loadLegacy(prefs).copy(id = ID_LEGACY))
+            val legacy = loadLegacy(prefs).copy(id = ID_LEGACY)
+            // 旧单机配置迁入设备列表：loadLegacy 已解出密码，saveDevices 会重新加密。
+            // 落盘失败不阻断加载——本次仍以内存中的配置运行，下次启动重试。
+            runCatching {
+                saveDevices(listOf(legacy), ID_LEGACY)
+                // 旧的单机键已无用，清掉避免明文密码残留（loadLegacy 的读取发生在上一步之前）。
+                data.edit {
+                    it.remove(stringPreferencesKey("password"))
+                    it.remove(stringPreferencesKey("sshPassword"))
+                }
+            }.onFailure { Log.w(TAG, "旧单机配置迁移失败，下次启动会重试", it) }
+            return@withContext listOf(legacy)
         }
-        return emptyList()
+        emptyList()
     }
 
     /** Stored active id if still valid, otherwise the first device. */
@@ -154,12 +191,15 @@ class SettingsStore(private val context: Context) {
         data.edit { it[KEY_AMOLED] = enabled }
     }
 
+    /** 保存设备列表；与 [loadDevices] 一样整体跑在 IO——序列化会调用 Keystore 加密。 */
     suspend fun saveDevices(devices: List<RouterConfig>, activeId: String) {
-        val array = JSONArray()
-        devices.forEach { array.put(it.toJson()) }
-        data.edit {
-            it[KEY_DEVICES] = array.toString()
-            it[KEY_ACTIVE] = activeId
+        withContext(Dispatchers.IO) {
+            val array = JSONArray()
+            devices.forEach { array.put(it.toJson()) }
+            data.edit {
+                it[KEY_DEVICES] = array.toString()
+                it[KEY_ACTIVE] = activeId
+            }
         }
     }
 
@@ -196,7 +236,7 @@ class SettingsStore(private val context: Context) {
         ip = prefs[stringPreferencesKey("ip")] ?: "192.168.1.1",
         port = prefs[intPreferencesKey("port")] ?: 80,
         username = prefs[stringPreferencesKey("username")] ?: "root",
-        password = prefs[stringPreferencesKey("password")] ?: "",
+        password = CredentialCipher.decrypt(prefs[stringPreferencesKey("password")] ?: ""),
         useHttps = prefs[booleanPreferencesKey("useHttps")] ?: false,
         allowInsecureTls = prefs[booleanPreferencesKey("allowInsecureTls")] ?: false,
         refreshIntervalSec = (prefs[intPreferencesKey("refreshIntervalSec")] ?: 5).coerceIn(2, 60),
@@ -204,8 +244,16 @@ class SettingsStore(private val context: Context) {
         sshHost = prefs[stringPreferencesKey("sshHost")] ?: "",
         sshPort = (prefs[intPreferencesKey("sshPort")] ?: 22).coerceIn(1, 65535),
         sshUsername = prefs[stringPreferencesKey("sshUsername")] ?: "root",
-        sshPassword = prefs[stringPreferencesKey("sshPassword")] ?: ""
+        sshPassword = CredentialCipher.decrypt(prefs[stringPreferencesKey("sshPassword")] ?: "")
     )
+
+    /** 该 JSON 对象里是否还残留未加密的非空密码（用于触发一次性迁移回写）。 */
+    private fun hasPlaintextSecret(o: JSONObject): Boolean {
+        val password = o.optString("password")
+        val sshPassword = o.optString("sshPassword")
+        return (password.isNotEmpty() && !CredentialCipher.isEncrypted(password)) ||
+            (sshPassword.isNotEmpty() && !CredentialCipher.isEncrypted(sshPassword))
+    }
 
     private fun RouterConfig.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -213,7 +261,8 @@ class SettingsStore(private val context: Context) {
         put("ip", ip)
         put("port", port)
         put("username", username)
-        put("password", password)
+        // 敏感字段：加密后落盘（见 CredentialCipher）。
+        put("password", CredentialCipher.encrypt(password))
         put("useHttps", useHttps)
         put("allowInsecureTls", allowInsecureTls)
         put("refreshIntervalSec", refreshIntervalSec)
@@ -221,7 +270,7 @@ class SettingsStore(private val context: Context) {
         put("sshHost", sshHost)
         put("sshPort", sshPort)
         put("sshUsername", sshUsername)
-        put("sshPassword", sshPassword)
+        put("sshPassword", CredentialCipher.encrypt(sshPassword))
     }
 
     private fun deviceFromJson(o: JSONObject): RouterConfig = RouterConfig(
@@ -230,7 +279,8 @@ class SettingsStore(private val context: Context) {
         ip = o.optString("ip", "192.168.1.1"),
         port = o.optInt("port", 80),
         username = o.optString("username", "root"),
-        password = o.optString("password"),
+        // 无前缀的旧值会被 decrypt 原样返回，从而兼容明文遗留数据。
+        password = CredentialCipher.decrypt(o.optString("password")),
         useHttps = o.optBoolean("useHttps"),
         allowInsecureTls = o.optBoolean("allowInsecureTls"),
         refreshIntervalSec = o.optInt("refreshIntervalSec", 5).coerceIn(2, 60),
@@ -238,10 +288,11 @@ class SettingsStore(private val context: Context) {
         sshHost = o.optString("sshHost"),
         sshPort = o.optInt("sshPort", 22),
         sshUsername = o.optString("sshUsername", "root"),
-        sshPassword = o.optString("sshPassword")
+        sshPassword = CredentialCipher.decrypt(o.optString("sshPassword"))
     )
 
     companion object {
+        private const val TAG = "SettingsStore"
         const val ID_LEGACY = "device-legacy"
 
         private val KEY_DEVICES = stringPreferencesKey("devices_json")
