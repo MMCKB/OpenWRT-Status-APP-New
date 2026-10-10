@@ -88,7 +88,8 @@ private fun settingsDataStore(context: Context): DataStore<Preferences> =
  *
  * 设备连接信息中的**可识别字段**（地址、端口、用户名，以及 ubus/SSH 两套密码）经
  * [CredentialCipher] 加密后落盘——地址与用户名同样能定位到具体路由器，单独留着明文
- * 会让加密形同虚设。设备标签（[RouterConfig.name]）与几个功能开关保持明文以便排错；
+ * 会让加密形同虚设。SSH 主机指纹表同样整串加密（它的键就是「地址:端口」）。
+ * 设备标签（[RouterConfig.name]）与几个功能开关保持明文以便排错；
  * 旧版本遗留的明文字段会在首次读取时自动加密回写。
  */
 class SettingsStore(private val context: Context) {
@@ -216,22 +217,47 @@ class SettingsStore(private val context: Context) {
         data.edit { it[KEY_NOTIF_ASKED] = true }
     }
 
-    /** SSH 主机指纹（TOFU）：host:port -> 指纹。 */
+    /**
+     * SSH 主机指纹（TOFU）：host:port -> 指纹。
+     *
+     * 整串加密后落盘——这张表的**键就是「路由器地址:端口」**，明文存着会让
+     * [RouterConfig.ip] 的加密形同虚设（读文件照样能拿到路由器地址）。
+     * 指纹本身不是秘密，但没必要为了它把地址暴露出去。
+     * 旧版本留下的明文值会被透明读出，并一次性密文回写。
+     */
     suspend fun sshHostKeys(): Map<String, String> {
-        val prefs = currentPrefs()
-        val raw = prefs[KEY_SSH_KEYS] ?: return emptyMap()
-        return runCatching {
-            val o = JSONObject(raw)
-            o.keys().asSequence().associateWith { key -> o.optString(key) }
-        }.getOrDefault(emptyMap())
+        val raw = currentPrefs()[KEY_SSH_KEYS] ?: return emptyMap()
+        val parsed = parseHostKeys(CredentialCipher.decrypt(raw))
+        // 旧版本以明文保存（键里带地址）：读入后立即以密文回写，完成一次性迁移。
+        if (!CredentialCipher.isEncrypted(raw)) {
+            runCatching { writeHostKeys(parsed) }
+                .onFailure { Log.w(TAG, "SSH 指纹迁移回写失败，下次启动会重试", it) }
+        }
+        return parsed
     }
 
     suspend fun saveSshHostKey(hostPort: String, fingerprint: String) {
         data.edit { prefs ->
-            val o = JSONObject(prefs[KEY_SSH_KEYS] ?: "{}")
-            o.put(hostPort, fingerprint)
-            prefs[KEY_SSH_KEYS] = o.toString()
+            val current = parseHostKeys(CredentialCipher.decrypt(prefs[KEY_SSH_KEYS] ?: ""))
+            prefs[KEY_SSH_KEYS] = encodeHostKeys(current + (hostPort to fingerprint))
         }
+    }
+
+    private suspend fun writeHostKeys(keys: Map<String, String>) {
+        val encoded = encodeHostKeys(keys)
+        data.edit { it[KEY_SSH_KEYS] = encoded }
+    }
+
+    /** 空串或损坏的 JSON 都返回空表（旧值可能是明文，也可能是解不开的密文）。 */
+    private fun parseHostKeys(json: String): Map<String, String> = runCatching {
+        val o = JSONObject(json)
+        o.keys().asSequence().associateWith { key -> o.optString(key) }
+    }.getOrDefault(emptyMap())
+
+    private fun encodeHostKeys(keys: Map<String, String>): String {
+        val o = JSONObject()
+        keys.forEach { (hostPort, fingerprint) -> o.put(hostPort, fingerprint) }
+        return CredentialCipher.encrypt(o.toString())
     }
 
     private suspend fun currentPrefs(): Preferences =

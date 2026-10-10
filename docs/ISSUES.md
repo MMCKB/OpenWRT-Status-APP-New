@@ -49,6 +49,10 @@ DataStore 字符串。root 设备、`adb backup`、或任何能读到
   `port` / `sshPort` 是 Int，以十进制字符串加密存储，读取端 `decrypt` 后
   `toIntOrNull` 解析回 Int，并兼容旧版直接存的 JSON number。
   仅 `name`（用户自取标签）与几个功能开关保持明文以便排错。
+- **SSH 主机指纹表**（`ssh_host_keys`）整串加密。这张表的**键就是「地址:端口」**，
+  明文存着等于把 `ip` 的加密绕过去——第一轮只加密设备 JSON 时漏了这里，
+  真机验证时才发现的（见下方「真机验证」）。
+  指纹本身不是秘密，但没必要为了它暴露地址。
 - 迁移：`decrypt` 对无前缀的值原样返回（兼容旧明文），`loadDevices` 检测到明文后
   一次性密文回写；旧单机配置的 `password` / `sshPassword` 键在迁入设备列表后被删除，
   避免明文残留。
@@ -64,6 +68,22 @@ DataStore 字符串。root 设备、`adb backup`、或任何能读到
 - 密钥与 DataStore 文件同设备，属于「防离线读取」而非「防本机提权」。
   已被 `backup_rules.xml` / `data_extraction_rules.xml` 排除出云备份与设备迁移，
   因此不会出现「密文过设备、密钥不过去」的错配。
+
+**真机验证（Android 15 / API 35，root 直读 DataStore）**
+
+在 MuMu 模拟器上装了 CI 产出的 arm64 包，直读
+`files/datastore/openwrt_status_prefs.preferences_pb`，实测结果：
+
+| 待检字符串 | 结果 |
+| --- | --- |
+| 新增设备的密码 `TestPass123` | ✅ 未出现 |
+| 新增设备的地址 `192.168.1.1` | ✅ 未出现 |
+| 端口 `8888` | ✅ 未出现 |
+| 设备 JSON 里的 ip / port / username / password / sshPort / sshUsername / sshPassword | ✅ 全部为 `enc:v1:` 密文 |
+| 路由器地址 `192.168.2.1` | ❌ **曾出现**（在 `ssh_host_keys` 的键里）→ 已修复 |
+
+界面侧同时确认：设备卡片仍能正确显示 `192.168.2.1:8888 · root`，
+说明**加密 → 落盘 → 读回解密**整条链路可用。
 
 ---
 
@@ -90,6 +110,21 @@ extra 走一次 Binder 事务，短暂驻留在 system_server 的 Intent 记录�
   标签为空时会回落到地址，同样属于敏感信息。
 - **移除 `RouterConfig : java.io.Serializable`**：已无任何使用点，同时从根上堵住
   「顺手塞进 Intent」的可能。
+
+**真机验证（Android 15 / API 35）**
+
+在 MuMu 模拟器上按下面的路径实测，全程无崩溃：
+
+1. 主界面 → 工具 → **无线设置**（`WirelessActivity`）：正确加载出真实路由器的
+   radio0（信道 149 / 5 GHz）、radio1（信道 5 / 2.4 GHz）、SSID 与 BSSID
+   → 说明设备 id 传递成功、配置解密正确、连接可用。
+2. 设备页 → **添加** → 表单显示的是**空白默认值**（192.168.1.1 / 80 / 22），
+   **没有被填入当前设备的 192.168.2.1:8888**
+   → 说明 `fallbackToActive=false` 生效（这正是最容易写错的地方）。
+3. 填名 + 密码 → **保存**：页面正常返回，设备列表变为 2 台，新设备被设为当前设备，
+   地址显示正确。
+4. 直读 DataStore：新设备的 ip / port / username / password 全部为 `enc:v1:` 密文
+   → 出向、回向、落库、解密四条链路都通了。
 
 **残留风险**：`DeviceEditResult` 是进程内状态，若进程恰好在编辑页 `setResult` 之后、
 主界面回调之前被杀，这次保存会丢失。窗口仅毫秒级，可接受。
