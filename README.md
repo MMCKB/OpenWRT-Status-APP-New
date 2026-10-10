@@ -90,13 +90,23 @@ POST http://<地址>:<端口>/ubus
 应用默认通过 **HTTP** 明文访问路由器（局域网内常见），在 `AndroidManifest.xml`
 与 `res/xml/network_security_config.xml` 中显式允许明文流量并信任用户证书。
 若路由器使用 HTTPS 且为自签名证书，请在设备编辑页开启「忽略证书校验」。
-账号密码仅保存在本机，不会上传。
+
+账号密码仅保存在本机、不会上传，并且**不以明文落盘**：
+
+- 路由器密码与 SSH 密码在写入 DataStore 前用 **Android Keystore** 中的 AES-256-GCM
+  密钥加密（密钥不可导出、只存在于该设备的硬件密钥库中），存储形如 `enc:v1:<base64(iv‖ciphertext)>`；
+- 设备列表中的地址、端口、用户名等非敏感字段仍为明文，便于排错；
+- 从旧版本升级时，首次读取会自动把已有的明文密码加密回写，无需用户干预；
+- `res/xml/backup_rules.xml` 与 `data_extraction_rules.xml` 已把 DataStore 排除在
+  云备份与设备迁移之外，凭据不会离开设备；
+- 若密钥因系统原因失效，解密会失败并退化为「密码为空」，此时需在设备编辑页重新填写密码
+  （设备列表本身不受影响）。
 
 ## 本地构建
 
 ### 方式一：Android Studio（推荐）
 1. 用 Android Studio 打开本项目根目录。
-2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 9.8.0`。
+2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 9.8.1`。
 3. 点击 **Run** 或执行 `./gradlew :app:assembleDebug`。
 
 ### 方式二：命令行（已安装 Gradle）
@@ -109,7 +119,7 @@ APK 产物位于 `app/build/outputs/apk/`。
 ### 环境要求
 - JDK 17 及以上（CI 使用 25）
 - Android SDK（Platform android-37.2、Build-Tools 36+）
-- Gradle 9.8.0（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
+- Gradle 9.8.1（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
 
 ## 签名
 
@@ -137,21 +147,22 @@ APK 产物位于 `app/build/outputs/apk/`。
 推送代码到 `main` / `Dev` 分支，或手动在 **Actions → Build APK → Run workflow**，
 GitHub Actions 会自动：
 1. 配置 JDK 25 与 Android SDK（Platform android-37.2、Build-Tools 36.0.0）；
-2. 安装 Gradle 9.8.0 并构建 `assembleDebug` 与 `assembleRelease`（统一 MMCKB 密钥签名）；
+2. 安装 Gradle 9.8.1 并构建 `assembleDebug` 与 `assembleRelease`（统一 MMCKB 密钥签名）；
 3. 分别上传 `openwrt-status-app-debug` 与 `openwrt-status-app-release` 产物。
 
 ## 技术栈
 
 | 组件 | 版本（Dev 分支） |
 | --- | --- |
-| Kotlin | 2.4.20 |
+| Kotlin | 2.4.21 |
 | Android Gradle Plugin | 9.4.1（AGP 9 内置 Kotlin 支持） |
-| Gradle | 9.8.0 |
+| Gradle | 9.8.1 |
 | Compose BOM | 2026.09.00（Compose 1.12.1） |
 | compileSdk / targetSdk / minSdk | 37.2 / 37 / 24 |
 | 液态玻璃 | `io.github.kyant0:backdrop:2.0.1` + `shapes:1.2.1` |
-| SSH | `com.github.mwiede:jsch:2.28.7` |
+| SSH | `com.github.mwiede:jsch:2.28.8` |
 | 网络 | `com.squareup.okhttp3:okhttp:5.5.0` |
+| 本地存储 | `androidx.datastore:datastore-preferences:1.2.1`（凭据经 Android Keystore AES-GCM 加密） |
 
 ## 项目结构
 
