@@ -12,12 +12,12 @@
 
 | 编号 | 级别 | 问题 | 状态 |
 | --- | --- | --- | --- |
-| S1 | 高 | 路由器/SSH 密码明文存 DataStore | 🟢 已修复 |
+| S1 | 高 | 地址/端口/用户名/密码明文存 DataStore | 🟢 已修复 |
 | S2 | 高 | 无 Gradle Wrapper，构建不可复现 | 🔴 |
-| S3 | 中 | 解密后的凭据经 Intent 跨 17 个 Activity 传递 | 🔴 |
+| S3 | 中 | 解密后的凭据经 Intent 跨 17 个 Activity 传递 | 🟢 已修复 |
 | S4 | 中 | 明文 HTTP + 信任用户证书 + 可选全信任 TLS | 🟡 设计取舍 |
 | S5 | 中 | 零测试 | 🔴 |
-| S6 | 中 | 20 个 Activity，无 Navigation Compose | 🔴 |
+| S6 | 中 | 20 个 Activity，无 Navigation Compose | ⏸️ 暂缓 |
 | S7 | 中 | 巨型单文件（最大 2409 行） | 🔴 |
 | S8 | 中 | 无 i18n，约 1552 处硬编码中文 | 🔴 |
 | S9 | 中 | `material-icons-extended` 被上游冻结 | 🔴 |
@@ -32,18 +32,23 @@
 
 ## 一、安全与隐私
 
-### S1 🟢 路由器凭据明文落盘 —— 已修复
+### S1 🟢 设备连接信息明文落盘 —— 已修复
 
 **原问题**
-`SettingsStore.toJson()` 把 `password` / `sshPassword` 以明文写进 `devices_json` 这个
+`SettingsStore.toJson()` 把地址、端口、用户名与密码以明文写进 `devices_json` 这个
 DataStore 字符串。root 设备、`adb backup`、或任何能读到
-`files/datastore/openwrt_status_prefs.preferences_pb` 的途径都能直读密码。
+`files/datastore/openwrt_status_prefs.preferences_pb` 的途径都能直读。
 
 **修复方式**（新增 `data/local/CredentialCipher.kt`，改造 `SettingsStore.kt`）
 - 密钥：Android Keystore 内生成 **AES-256-GCM**，别名 `openwrt_status_credentials_v1`，
   密钥材料不可导出；有 TEE 的设备上落在安全硬件里。
 - 存储格式：`enc:v1:<base64(iv ‖ ciphertext ‖ gcmTag)>`，96 位 IV + 128 位认证标签。
-- **只加密敏感字段**，地址/端口/用户名保持明文以便排错。
+- **加密范围**（`SettingsStore.ENCRYPTED_KEYS`）：`ip` / `port` / `username` /
+  `sshHost` / `sshPort` / `sshUsername` / `password` / `sshPassword`。
+  地址与用户名同样能定位到具体路由器，只加密密码会让防护形同虚设。
+  `port` / `sshPort` 是 Int，以十进制字符串加密存储，读取端 `decrypt` 后
+  `toIntOrNull` 解析回 Int，并兼容旧版直接存的 JSON number。
+  仅 `name`（用户自取标签）与几个功能开关保持明文以便排错。
 - 迁移：`decrypt` 对无前缀的值原样返回（兼容旧明文），`loadDevices` 检测到明文后
   一次性密文回写；旧单机配置的 `password` / `sshPassword` 键在迁入设备列表后被删除，
   避免明文残留。
@@ -62,22 +67,32 @@ DataStore 字符串。root 设备、`adb backup`、或任何能读到
 
 ---
 
-### S3 🔴 解密后的凭据经 Intent 跨 17 个 Activity 传递
+### S3 🟢 解密后的凭据经 Intent 跨 Activity 传递 —— 已修复
 
-**位置**：`RouterConfig` 实现 `java.io.Serializable`；`DeviceEditActivity` 等 17 处
-`intent.getSerializableExtra(EXTRA_CONFIG) as? RouterConfig`
+**原问题**
+`RouterConfig` 实现 `java.io.Serializable`，17 处
+`intent.getSerializableExtra(EXTRA_CONFIG) as? RouterConfig`：每次进入二级页（无线、
+日志、路由表、防火墙…），**已解密的明文地址、用户名与密码**都会作为 Serializable
+extra 走一次 Binder 事务，短暂驻留在 system_server 的 Intent 记录里。
+所有二级 Activity 均为 `android:exported="false"`，因此不存在跨应用泄露——属于
+「不必要的暴露面」，但在 S1 修复后它是仅存的明文驻留点。
 
-**现象**：每次进入二级页（无线、日志、路由表、防火墙…），**已解密的明文密码**
-都会作为 Serializable extra 走一次 Binder 事务，短暂驻留在 system_server 的
-Intent 记录里。
+**修复方式**（新增 `ui/DeviceHandoff.kt`，改造 19 个 Activity + `AppRoot.kt`）
+- **出向**：Intent 只带 `EXTRA_DEVICE_ID`（一个不含凭据的字符串）。页面用
+  `rememberDeviceConfig(deviceId)` / `rememberDeviceContext(...)` 自己取配置：
+  优先读进程内快照 `DeviceSnapshot`（由 `RouterViewModel` 在设备列表变化时发布，
+  与主界面同源，不存在「刚改完设备、DataStore 还没写完就被打开二级页」的竞态），
+  快照缺失时退回 DataStore 读取——进程被杀后重建，Intent 里的 id 仍在，仍能取到正确配置。
+- **回向**：保存/删除的结果同样带着明文凭据，因此不经 `setResult` 返回（那部分数据由
+  system_server 持有），改由 `DeviceEditResult` 进程内交接。Intent 只承载
+  `EXTRA_OPEN_INLINE` 这类不含凭据的标记位。
+- **编辑页的设备列表**（用于重名检查的 `existingNames`）也不再经 Intent 传递——
+  标签为空时会回落到地址，同样属于敏感信息。
+- **移除 `RouterConfig : java.io.Serializable`**：已无任何使用点，同时从根上堵住
+  「顺手塞进 Intent」的可能。
 
-**风险评估**：所有二级 Activity 均为 `android:exported="false"`，**不存在跨应用泄露**。
-属于「不必要的暴露面」而非可被利用的漏洞。S1 修复后，磁盘侧已安全，这里成为
-仅存的明文驻留点。
-
-**建议**：改为只传 `deviceId`，由各页面自行从 ViewModel / 仓库取配置；
-或传一个剔除密码的 `RouterConfig` 副本，密码按需从 Keystore 解出。
-改动面较大（17 个 Activity + 对应 Screen），建议与 S6（迁 Navigation）合并做。
+**残留风险**：`DeviceEditResult` 是进程内状态，若进程恰好在编辑页 `setResult` 之后、
+主界面回调之前被杀，这次保存会丢失。窗口仅毫秒级，可接受。
 
 ---
 
@@ -170,7 +185,7 @@ Intent 记录里。
 
 ## 三、架构与代码质量
 
-### S6 🔴 20 个 Activity，无 Navigation Compose
+### S6 ⏸️ 20 个 Activity，无 Navigation Compose —— 暂缓
 
 **位置**：`MainActivity` + 19 个二级 Activity（About / ThemeSettings / FileManager /
 PackageManager / Wireless / Admin / Led / Processes / Routes / Realtime / ChannelAnalysis /
@@ -180,11 +195,25 @@ Nftables / Logs / Flash / NetworkInterfaces / Crontab / Startup / System / Devic
 **影响**
 - 返回栈、状态恢复、深链全靠手写，每个页面都要重复 `setupEdgeToEdge()` 与
   `OpenWrtStatusTheme {}` 样板；
-- 跨页共享状态只能靠进程级单例（`ThemePrefs`、`SshHostKeys`）；
-- 也是 S3 的成因之一——正因为跨 Activity，才需要用 Intent 传配置。
+- 跨页共享状态只能靠进程级单例（`ThemePrefs`、`SshHostKeys`、`DeviceSnapshot`）。
 
-**建议**：单 Activity + `androidx.navigation:navigation-compose`。
-这是**架构级重构**，工作量最大，建议排在 S1/S2/S5 之后。
+**暂缓原因（读代码后修正的判断）**
+本文档最初建议「单 Activity + Navigation Compose」，但通读 `AppRoot.kt` 后发现现状
+比「20 个 Activity 没有导航」复杂得多：
+
+1. `AppRoot` **已经有一套完整的内联渲染机制**，能渲染全部 19 个二级页——横屏右栏、
+   以及竖屏旋转过渡都在用它（`secondaryPane` + `movableContentOf` 跨朝向保活）。
+   Activity 层存在的唯一理由是**竖屏时拿系统的预测性返回动画**。
+2. 现有实现还包含：横屏双栏布局、三处定制预测性返回（右栏右滑 / 竖屏下滑 / 锚定
+   FAB 的展开面板）、`layerBackdrop` 实时模糊的 Tab 条。**Navigation Compose 不原生
+   支持双栏**，全量迁移等于重写这 1055 行，且动效可能变差。
+3. 因此三条路线的代价与收益差别很大，需要先定方向：
+   - **(A)** NavHost 只管二级页、Tab 仍自管 —— 架构最正，但要改造双栏与保活；
+   - **(B)** 去掉 19 个 Activity 包装层、全部内联 —— 删掉约 1100 行重复代码，风险最低，
+     但竖屏失去系统级预测性返回；
+   - **(C)** 连 6 个 Tab 一起进 NavHost —— 最标准，风险最高。
+
+**建议**：先做 S2/S5 等低风险项，S6 待明确方向后再动。
 
 ---
 
@@ -280,18 +309,20 @@ runBlocking { withTimeoutOrNull(400) { load() } }
 
 | 项 | 内容 |
 | --- | --- |
-| S1 | 凭据明文落盘 → Android Keystore AES-256-GCM 加密（`CredentialCipher.kt` + `SettingsStore.kt`） |
+| S1 | 地址/端口/用户名/密码明文落盘 → Android Keystore AES-256-GCM 加密（`CredentialCipher.kt` + `SettingsStore.kt`） |
+| S3 | 凭据经 Intent 跨 17 个 Activity 传递 → 只传设备 id + 进程内交接（`DeviceHandoff.kt` + 19 个 Activity + `AppRoot.kt`） |
 | — | 依赖升级：`datastore-preferences 1.1.1 → 1.2.1`、`jsch 2.28.7 → 2.28.8`、Kotlin `2.4.20 → 2.4.21` |
 | — | CI Gradle `9.8.0 → 9.8.1`；README 同步更新 |
+| — | 顺带修正 `AppRoot` 里 `PackageManager` 误用 `FileManagerActivity.EXTRA_CONFIG` 的写法 |
 
 ---
 
 ## 六、建议的推进顺序
 
 1. **S2 补 Gradle Wrapper** —— 零风险，且是后续所有验证的前提（CI 可删掉手装步骤）
-2. **S5 补测试** —— 为刚做完的 S1 加密与迁移逻辑加回归保护，性价比最高
+2. **S5 补测试** —— 为 S1 的加密/迁移与 S3 的设备交接加回归保护，性价比最高。
+   S1/S3 都是「出错时表现为连不上路由器、且无法在编译期发现」的改动，尤其需要单测
 3. **S13 / S14 / S15** —— 构建提速 + 版本集中管理 + 自动跟进
 4. **S10 / S11** —— 两个低风险代码清理，顺手就做
 5. **S9 迁出 material-icons-extended** —— 减包
-6. **S3 消除 Intent 传密码** —— 建议与 S6 合并
-7. **S6 / S7 / S8** —— 架构级重构与 i18n，长期投入
+6. **S6 / S7 / S8** —— 架构级重构与 i18n，长期投入（S6 需先定方向）
