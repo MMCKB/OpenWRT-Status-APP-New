@@ -193,25 +193,23 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     ) { result ->
         val data = result.data
         // 设备编辑页旋转到横屏的交接：转成右栏内联编辑器，继续编辑同一设备。
+        // 设备配置本身走进程内交接（含明文凭据，不进 Intent），Intent 只带交接标记位。
         if (data != null && data.getBooleanExtra(DeviceEditActivity.EXTRA_OPEN_INLINE, false)) {
-            val initial = data.getSerializableExtra(DeviceEditActivity.EXTRA_DEVICE) as? RouterConfig
-            if (initial != null) {
-                secondary = SecondaryPage.DeviceEditor(
-                    initial,
-                    data.getBooleanExtra(DeviceEditActivity.EXTRA_IS_NEW, false)
-                )
+            DeviceEditResult.consumeHandoff()?.let { handoff ->
+                secondary = SecondaryPage.DeviceEditor(handoff.device, handoff.isNew)
             }
             return@rememberLauncherForActivityResult
         }
-        val deletedId = data?.getStringExtra(DeviceEditActivity.EXTRA_DELETE_ID)
-        if (deletedId != null) {
-            viewModel.deleteDevice(deletedId)
-            return@rememberLauncherForActivityResult
-        }
-        val saved = data?.getSerializableExtra(DeviceEditActivity.EXTRA_SAVED) as? RouterConfig
-        if (saved != null) {
-            val isNew = data?.getBooleanExtra(DeviceEditActivity.EXTRA_IS_NEW, false) ?: false
-            if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
+        val outcome = DeviceEditResult.consumeOutcome() ?: return@rememberLauncherForActivityResult
+        val deletedId = outcome.deletedId
+        val saved = outcome.saved
+        when {
+            deletedId != null -> viewModel.deleteDevice(deletedId)
+            saved != null -> if (outcome.savedIsNew) {
+                viewModel.addDevice(saved)
+            } else {
+                viewModel.updateDevice(saved)
+            }
         }
     }
 
@@ -498,11 +496,11 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 when (page) {
                     SecondaryPage.FileManager -> fileManagerLauncher.launch(
                         Intent(context, FileManagerActivity::class.java)
-                            .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
+                            .putExtra(FileManagerActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.PackageManager -> packageManagerLauncher.launch(
                         Intent(context, PackageManagerActivity::class.java)
-                            .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
+                            .putExtra(PackageManagerActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.About -> aboutLauncher.launch(
                         Intent(context, AboutActivity::class.java)
@@ -512,59 +510,59 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     SecondaryPage.Wireless -> wirelessLauncher.launch(
                         Intent(context, WirelessActivity::class.java)
-                            .putExtra(WirelessActivity.EXTRA_CONFIG, config)
+                            .putExtra(WirelessActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Admin -> adminLauncher.launch(
                         Intent(context, AdminActivity::class.java)
-                            .putExtra(AdminActivity.EXTRA_CONFIG, config)
+                            .putExtra(AdminActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Realtime -> realtimeLauncher.launch(
                         Intent(context, RealtimeActivity::class.java)
-                            .putExtra(RealtimeActivity.EXTRA_CONFIG, config)
+                            .putExtra(RealtimeActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.ChannelAnalysis -> channelAnalysisLauncher.launch(
                         Intent(context, ChannelAnalysisActivity::class.java)
-                            .putExtra(ChannelAnalysisActivity.EXTRA_CONFIG, config)
+                            .putExtra(ChannelAnalysisActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Led -> ledLauncher.launch(
                         Intent(context, LedActivity::class.java)
-                            .putExtra(LedActivity.EXTRA_CONFIG, config)
+                            .putExtra(LedActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Routes -> routesLauncher.launch(
                         Intent(context, RoutesActivity::class.java)
-                            .putExtra(RoutesActivity.EXTRA_CONFIG, config)
+                            .putExtra(RoutesActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Nftables -> nftablesLauncher.launch(
                         Intent(context, NftablesActivity::class.java)
-                            .putExtra(NftablesActivity.EXTRA_CONFIG, config)
+                            .putExtra(NftablesActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Logs -> logsLauncher.launch(
                         Intent(context, LogsActivity::class.java)
-                            .putExtra(LogsActivity.EXTRA_CONFIG, config)
+                            .putExtra(LogsActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Processes -> processesLauncher.launch(
                         Intent(context, ProcessesActivity::class.java)
-                            .putExtra(ProcessesActivity.EXTRA_CONFIG, config)
+                            .putExtra(ProcessesActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Flash -> flashLauncher.launch(
                         Intent(context, FlashActivity::class.java)
-                            .putExtra(FlashActivity.EXTRA_CONFIG, config)
+                            .putExtra(FlashActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.NetworkInterfaces -> networkInterfacesLauncher.launch(
                         Intent(context, NetworkInterfacesActivity::class.java)
-                            .putExtra(NetworkInterfacesActivity.EXTRA_CONFIG, config)
+                            .putExtra(NetworkInterfacesActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Crontab -> crontabLauncher.launch(
                         Intent(context, CrontabActivity::class.java)
-                            .putExtra(CrontabActivity.EXTRA_CONFIG, config)
+                            .putExtra(CrontabActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.Startup -> startupLauncher.launch(
                         Intent(context, StartupActivity::class.java)
-                            .putExtra(StartupActivity.EXTRA_CONFIG, config)
+                            .putExtra(StartupActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     SecondaryPage.System -> systemLauncher.launch(
                         Intent(context, SystemActivity::class.java)
-                            .putExtra(SystemActivity.EXTRA_CONFIG, config)
+                            .putExtra(SystemActivity.EXTRA_DEVICE_ID, config.id)
                     )
                     is SecondaryPage.DeviceEditor -> return
                 }
@@ -575,13 +573,12 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             if (isLandscape) {
                 secondary = SecondaryPage.DeviceEditor(device, isNew)
             } else {
-                val intent = Intent(context, DeviceEditActivity::class.java).apply {
-                    putExtra(DeviceEditActivity.EXTRA_DEVICE, device)
-                    putExtra(DeviceEditActivity.EXTRA_IS_NEW, isNew)
-                    putStringArrayListExtra(
-                        DeviceEditActivity.EXTRA_EXISTING,
-                        ArrayList(devices.filterNot { it.id == device.id }.map { it.displayName })
-                    )
+                // 只传设备 id 与「是否新增」——配置本身由编辑页从本地读取，
+                // 凭据不进 Intent（新增设备没有 id，缺省即为空）。
+                val intent = Intent(context, DeviceEditActivity::class.java)
+                    .putExtra(DeviceEditActivity.EXTRA_IS_NEW, isNew)
+                if (device.id.isNotEmpty()) {
+                    intent.putExtra(DeviceEditActivity.EXTRA_DEVICE_ID, device.id)
                 }
                 editLauncher.launch(intent)
             }

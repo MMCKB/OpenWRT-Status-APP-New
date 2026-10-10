@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
+import com.mmckb.openwrtstatus.ui.rememberDeviceConfig
 import com.mmckb.openwrtstatus.ui.screens.CrontabScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
 
@@ -19,7 +19,7 @@ class CrontabActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val config = intent.getSerializableExtra(EXTRA_CONFIG) as? RouterConfig ?: RouterConfig()
+        val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID)
 
         if (savedInstanceState != null &&
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -31,11 +31,14 @@ class CrontabActivity : ComponentActivity() {
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
-                    CrontabScreen(
-                        config = config,
-                        sshEnabled = config.sshEnabled,
-                        onBack = { finish() }
-                    )
+                    val config = rememberDeviceConfig(deviceId)
+                    if (config != null) {
+                        CrontabScreen(
+                            config = config,
+                            sshEnabled = config.sshEnabled,
+                            onBack = { finish() }
+                        )
+                    }
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
                 }
             }
@@ -48,7 +51,7 @@ class CrontabActivity : ComponentActivity() {
     }
 
     companion object {
-        const val EXTRA_CONFIG = "config"
+        const val EXTRA_DEVICE_ID = "deviceId"
         const val EXTRA_OPEN_INLINE = "openInline"
     }
 }

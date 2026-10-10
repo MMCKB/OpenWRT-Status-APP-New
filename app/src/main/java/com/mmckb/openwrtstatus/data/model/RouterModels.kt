@@ -6,6 +6,10 @@ package com.mmckb.openwrtstatus.data.model
  * The router is reached over the rpcd ubus endpoint (`http(s)://host:port/ubus`).
  * Multiple [RouterConfig] entries are kept in the device list; `id` is the stable key
  * used for selection and `name` is the user-facing label (falls back to the address).
+ *
+ * 刻意**不实现 `Serializable`/`Parcelable`**：这个对象带着明文凭据，一旦可序列化就
+ * 容易被塞进 Intent/Bundle，凭据会经 Binder 落到 system_server。二级页改为只收设备 id
+ * 并按 id 从本地读取（见 `ui/DeviceHandoff.kt`）。
  */
 data class RouterConfig(
     val id: String = "",
@@ -24,7 +28,7 @@ data class RouterConfig(
     val sshPort: Int = 22,
     val sshUsername: String = "root",
     val sshPassword: String = ""
-) : java.io.Serializable {
+) {
     /** Label shown in device lists. */
     val displayName: String get() = name.ifBlank { ip }
 }
