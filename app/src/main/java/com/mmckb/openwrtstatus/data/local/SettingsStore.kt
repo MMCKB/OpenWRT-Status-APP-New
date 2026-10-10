@@ -124,6 +124,11 @@ class SettingsStore(private val context: Context) {
                 runCatching { saveDevices(devices, activeId) }
                     .onFailure { Log.w(TAG, "明文凭据迁移回写失败，下次启动会重试", it) }
             }
+            // 早期版本可能**同时**留下 devices_json 与旧单机键（真机验证时确认过这种状态），
+            // 此时走的是本分支、不经过下面的迁移清理，单机键里的明文地址/密码会一直留着。
+            // 因此这里无条件清一次：没有残留时 [purgeLegacyKeys] 直接返回，不产生写入。
+            runCatching { purgeLegacyKeys(prefs) }
+                .onFailure { Log.w(TAG, "旧单机键清理失败，下次启动会重试", it) }
             return@withContext devices
         }
         if (prefs.contains(stringPreferencesKey("ip"))) {
@@ -132,19 +137,34 @@ class SettingsStore(private val context: Context) {
             // 落盘失败不阻断加载——本次仍以内存中的配置运行，下次启动重试。
             runCatching {
                 saveDevices(listOf(legacy), ID_LEGACY)
-                // 旧的单机键已无用，全部清掉避免地址/用户名/密码以明文残留在 DataStore
-                // （loadLegacy 的读取发生在上一步之前）。类型不确定，三种键形态都尝试删除。
-                data.edit { edit ->
-                    LEGACY_CONFIG_KEYS.forEach { key ->
-                        edit.remove(stringPreferencesKey(key))
-                        edit.remove(intPreferencesKey(key))
-                        edit.remove(booleanPreferencesKey(key))
-                    }
-                }
+                // loadLegacy 的读取发生在上一步之前，这里可以安全清除旧键。
+                purgeLegacyKeys(prefs)
             }.onFailure { Log.w(TAG, "旧单机配置迁移失败，下次启动会重试", it) }
             return@withContext listOf(legacy)
         }
         emptyList()
+    }
+
+    /**
+     * 清除旧单机配置遗留的键——它们含明文地址、用户名与密码。
+     *
+     * 键的类型在不同版本里不一样（String / Int / Boolean），三种形态都尝试删除。
+     * 没有任何残留时直接返回，避免每次启动都产生一次无意义的写入。
+     */
+    private suspend fun purgeLegacyKeys(prefs: Preferences) {
+        val present = LEGACY_CONFIG_KEYS.any { key ->
+            prefs.contains(stringPreferencesKey(key)) ||
+                prefs.contains(intPreferencesKey(key)) ||
+                prefs.contains(booleanPreferencesKey(key))
+        }
+        if (!present) return
+        data.edit { edit ->
+            LEGACY_CONFIG_KEYS.forEach { key ->
+                edit.remove(stringPreferencesKey(key))
+                edit.remove(intPreferencesKey(key))
+                edit.remove(booleanPreferencesKey(key))
+            }
+        }
     }
 
     /** Stored active id if still valid, otherwise the first device. */

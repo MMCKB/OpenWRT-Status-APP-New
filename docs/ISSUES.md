@@ -27,6 +27,7 @@
 | S13 | 低 | 未开启 Gradle 配置缓存 | 🔴 |
 | S14 | 低 | 无版本目录 `libs.versions.toml` | 🔴 |
 | S15 | 低 | 无依赖自动更新（Dependabot/Renovate） | 🔴 |
+| S16 | 高 | 共享存储 `/sdcard/` 残留**明文**配置快照与 UI dump | 🔴 待清理 |
 
 ---
 
@@ -84,6 +85,20 @@ DataStore 字符串。root 设备、`adb backup`、或任何能读到
 
 界面侧同时确认：设备卡片仍能正确显示 `192.168.2.1:8888 · root`，
 说明**加密 → 落盘 → 读回解密**整条链路可用。
+
+**升级迁移路径实测（用真机 dump 出的旧明文文件回灌）**
+
+光看新装的包只能证明「新数据是加密的」，证明不了「老用户升级后旧数据也被加密」。
+于是把设备上找到的一份**旧版明文 DataStore** 直接覆盖回去，再启动 App：
+
+- ✅ `devices_json` 里的 ip / port / username / password / sshPort / sshUsername /
+  sshPassword **全部被自动加密回写**（文件从 648 → 1071 字节）；
+- ❌ **但旧单机键 `ip` / `password` / `sshPassword` / `username` 仍是明文**
+  ——清理逻辑只写在「`devices_json` 不存在」的分支里，而这份数据**两者同时存在**，
+  走的是另一个分支，旧键永远不会被清。
+
+→ 已修复：抽出 `purgeLegacyKeys()`，在两条分支上都调用（无残留时不产生写入）。
+这个问题编译期、代码审阅都发现不了，只有真的跑一次升级路径才会暴露。
 
 ---
 
@@ -149,8 +164,31 @@ extra 走一次 Binder 事务，短暂驻留在 system_server 的 Intent 记录�
 
 ---
 
-## 二、构建与工程
+### S16 🔴 共享存储残留明文配置快照与 UI dump
 
+**位置**：设备共享存储（`/sdcard/`），非应用私有目录
+
+**证据**（ADB 实测，全部为 2026-10-05 的遗留文件）
+
+| 文件 | 内容 |
+| --- | --- |
+| `/sdcard/openwrt_status_prefs.preferences_pb` | **完整明文配置**：`ip=192.168.2.1`、`port=8888`、`username=root`、`password=root`、`sshPassword=root` |
+| `/sdcard/Download/openwrt_status_prefs.preferences_pb` | 同上，另一份副本 |
+| `/sdcard/u1.xml`、`u2.xml`、`u3.xml`、`ui.xml`、`ui2.xml`、`ui3.xml` | `uiautomator dump` 的 UI 层级，含屏幕上显示的 `root@192.168.2.1:8888` |
+
+**影响**：`/sdcard/` 是共享存储，**任何拿到存储权限的 App 都能读**，
+文件管理器里也直接可见，还容易被相册/网盘类应用扫走。
+
+**归因**：**不是应用代码造成的**——`grep` 确认代码里没有任何
+`getExternalFilesDir` / `Environment.getExternalStorage` / `/sdcard` 写入。
+这些是早期调试时手工拷出来的快照与 dump 文件。
+
+**建议**：直接删除这 8 个文件。同时提醒：以后排查问题时不要把
+`preferences_pb` 拷到共享存储——即使内容是密文，拷出来也绕过了「只在私有目录」的保护。
+
+---
+
+## 二、构建与工程
 ### S2 🔴 无 Gradle Wrapper，构建不可复现
 
 **位置**：仓库根目录无 `gradlew` / `gradlew.bat` / `gradle/wrapper/`
