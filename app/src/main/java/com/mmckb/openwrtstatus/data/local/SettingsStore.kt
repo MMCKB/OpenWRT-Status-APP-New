@@ -86,8 +86,10 @@ private fun settingsDataStore(context: Context): DataStore<Preferences> =
  *
  * 全部读写为 suspend 函数，由调用方在自身作用域内执行（UI 线程不再做磁盘 I/O）。
  *
- * 敏感字段（路由器密码 / SSH 密码）经 [CredentialCipher] 加密后落盘，
- * 其余字段保持明文以便排错；旧版本遗留的明文密码会在首次读取时自动加密回写。
+ * 设备连接信息中的**可识别字段**（地址、端口、用户名，以及 ubus/SSH 两套密码）经
+ * [CredentialCipher] 加密后落盘——地址与用户名同样能定位到具体路由器，单独留着明文
+ * 会让加密形同虚设。设备标签（[RouterConfig.name]）与几个功能开关保持明文以便排错；
+ * 旧版本遗留的明文字段会在首次读取时自动加密回写。
  */
 class SettingsStore(private val context: Context) {
 
@@ -125,14 +127,18 @@ class SettingsStore(private val context: Context) {
         }
         if (prefs.contains(stringPreferencesKey("ip"))) {
             val legacy = loadLegacy(prefs).copy(id = ID_LEGACY)
-            // 旧单机配置迁入设备列表：loadLegacy 已解出密码，saveDevices 会重新加密。
+            // 旧单机配置迁入设备列表：loadLegacy 已解出各字段，saveDevices 会重新加密。
             // 落盘失败不阻断加载——本次仍以内存中的配置运行，下次启动重试。
             runCatching {
                 saveDevices(listOf(legacy), ID_LEGACY)
-                // 旧的单机键已无用，清掉避免明文密码残留（loadLegacy 的读取发生在上一步之前）。
-                data.edit {
-                    it.remove(stringPreferencesKey("password"))
-                    it.remove(stringPreferencesKey("sshPassword"))
+                // 旧的单机键已无用，全部清掉避免地址/用户名/密码以明文残留在 DataStore
+                // （loadLegacy 的读取发生在上一步之前）。类型不确定，三种键形态都尝试删除。
+                data.edit { edit ->
+                    LEGACY_CONFIG_KEYS.forEach { key ->
+                        edit.remove(stringPreferencesKey(key))
+                        edit.remove(intPreferencesKey(key))
+                        edit.remove(booleanPreferencesKey(key))
+                    }
                 }
             }.onFailure { Log.w(TAG, "旧单机配置迁移失败，下次启动会重试", it) }
             return@withContext listOf(legacy)
@@ -233,67 +239,107 @@ class SettingsStore(private val context: Context) {
 
     /** Legacy single-config storage（键已随迁移进入 DataStore，仅用于老安装的迁移读取）。 */
     private fun loadLegacy(prefs: Preferences): RouterConfig = RouterConfig(
-        ip = prefs[stringPreferencesKey("ip")] ?: "192.168.1.1",
+        // 旧值均为明文；decrypt 对无前缀的值原样返回，因此这里同时兼容两种形态。
+        ip = decryptOrNull(prefs[stringPreferencesKey("ip")]).ifBlank { "192.168.1.1" },
         port = prefs[intPreferencesKey("port")] ?: 80,
-        username = prefs[stringPreferencesKey("username")] ?: "root",
-        password = CredentialCipher.decrypt(prefs[stringPreferencesKey("password")] ?: ""),
+        username = decryptOrNull(prefs[stringPreferencesKey("username")]).ifBlank { "root" },
+        password = decryptOrNull(prefs[stringPreferencesKey("password")]),
         useHttps = prefs[booleanPreferencesKey("useHttps")] ?: false,
         allowInsecureTls = prefs[booleanPreferencesKey("allowInsecureTls")] ?: false,
         refreshIntervalSec = (prefs[intPreferencesKey("refreshIntervalSec")] ?: 5).coerceIn(2, 60),
         sshEnabled = prefs[booleanPreferencesKey("sshEnabled")] ?: false,
-        sshHost = prefs[stringPreferencesKey("sshHost")] ?: "",
+        sshHost = decryptOrNull(prefs[stringPreferencesKey("sshHost")]),
         sshPort = (prefs[intPreferencesKey("sshPort")] ?: 22).coerceIn(1, 65535),
-        sshUsername = prefs[stringPreferencesKey("sshUsername")] ?: "root",
-        sshPassword = CredentialCipher.decrypt(prefs[stringPreferencesKey("sshPassword")] ?: "")
+        sshUsername = decryptOrNull(prefs[stringPreferencesKey("sshUsername")]).ifBlank { "root" },
+        sshPassword = decryptOrNull(prefs[stringPreferencesKey("sshPassword")])
     )
 
-    /** 该 JSON 对象里是否还残留未加密的非空密码（用于触发一次性迁移回写）。 */
-    private fun hasPlaintextSecret(o: JSONObject): Boolean {
-        val password = o.optString("password")
-        val sshPassword = o.optString("sshPassword")
-        return (password.isNotEmpty() && !CredentialCipher.isEncrypted(password)) ||
-            (sshPassword.isNotEmpty() && !CredentialCipher.isEncrypted(sshPassword))
-    }
+    /**
+     * 该 JSON 对象里是否还残留未加密的非空可识别字段（用于触发一次性迁移回写）。
+     * 覆盖 [ENCRYPTED_KEYS] 全部字段——只查密码会漏掉地址/用户名。
+     */
+    private fun hasPlaintextSecret(o: JSONObject): Boolean =
+        ENCRYPTED_KEYS.any { key ->
+            val value = o.optString(key)
+            value.isNotEmpty() && !CredentialCipher.isEncrypted(value)
+        }
 
     private fun RouterConfig.toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
-        put("ip", ip)
-        put("port", port)
-        put("username", username)
-        // 敏感字段：加密后落盘（见 CredentialCipher）。
+        // 可识别字段：加密后落盘（见 CredentialCipher）。port / sshPort 是 Int，
+        // 以十进制字符串加密存储，读取端解析回 Int。
+        put("ip", CredentialCipher.encrypt(ip))
+        put("port", CredentialCipher.encrypt(port.toString()))
+        put("username", CredentialCipher.encrypt(username))
         put("password", CredentialCipher.encrypt(password))
         put("useHttps", useHttps)
         put("allowInsecureTls", allowInsecureTls)
         put("refreshIntervalSec", refreshIntervalSec)
         put("sshEnabled", sshEnabled)
-        put("sshHost", sshHost)
-        put("sshPort", sshPort)
-        put("sshUsername", sshUsername)
+        put("sshHost", CredentialCipher.encrypt(sshHost))
+        put("sshPort", CredentialCipher.encrypt(sshPort.toString()))
+        put("sshUsername", CredentialCipher.encrypt(sshUsername))
         put("sshPassword", CredentialCipher.encrypt(sshPassword))
     }
 
     private fun deviceFromJson(o: JSONObject): RouterConfig = RouterConfig(
         id = o.optString("id"),
         name = o.optString("name"),
-        ip = o.optString("ip", "192.168.1.1"),
-        port = o.optInt("port", 80),
-        username = o.optString("username", "root"),
-        // 无前缀的旧值会被 decrypt 原样返回，从而兼容明文遗留数据。
+        ip = o.decryptedString("ip", "192.168.1.1"),
+        port = o.decryptedInt("port", 80),
+        username = o.decryptedString("username", "root"),
         password = CredentialCipher.decrypt(o.optString("password")),
         useHttps = o.optBoolean("useHttps"),
         allowInsecureTls = o.optBoolean("allowInsecureTls"),
         refreshIntervalSec = o.optInt("refreshIntervalSec", 5).coerceIn(2, 60),
         sshEnabled = o.optBoolean("sshEnabled"),
-        sshHost = o.optString("sshHost"),
-        sshPort = o.optInt("sshPort", 22),
-        sshUsername = o.optString("sshUsername", "root"),
+        sshHost = o.decryptedString("sshHost", ""),
+        sshPort = o.decryptedInt("sshPort", 22),
+        sshUsername = o.decryptedString("sshUsername", "root"),
         sshPassword = CredentialCipher.decrypt(o.optString("sshPassword"))
     )
+
+    /**
+     * 解密后取字符串，空值回落 [default]。
+     * 键缺失时 [JSONObject.optString] 返回空串，[CredentialCipher.decrypt] 原样返回，
+     * 因此缺失与解密失败两种情形都会落到默认值。
+     */
+    private fun JSONObject.decryptedString(key: String, default: String): String =
+        CredentialCipher.decrypt(optString(key)).ifBlank { default }
+
+    /**
+     * 解密后解析为整数，非法值回落 [default]。
+     * 兼容三种历史形态：加密后的十进制字符串、旧版直接存的 JSON number
+     * （[JSONObject.optString] 会把 number 转成字符串）、以及键缺失。
+     */
+    private fun JSONObject.decryptedInt(key: String, default: Int): Int =
+        CredentialCipher.decrypt(optString(key)).trim().toIntOrNull()?.coerceIn(1, 65535) ?: default
+
+    private fun decryptOrNull(value: String?): String =
+        value?.let { CredentialCipher.decrypt(it) }.orEmpty()
 
     companion object {
         private const val TAG = "SettingsStore"
         const val ID_LEGACY = "device-legacy"
+
+        /**
+         * 以密文落盘的设备字段（经 [CredentialCipher]）。
+         *
+         * 地址、端口、用户名与密码一样属于可识别信息：只知道地址就能定位到具体路由器，
+         * 因此一并加密；[RouterConfig.name]（用户自取标签）与功能开关保持明文以便排错。
+         * 这份清单同时驱动 [hasPlaintextSecret] 的一次性迁移检测。
+         */
+        private val ENCRYPTED_KEYS = listOf(
+            "ip", "port", "username",
+            "sshHost", "sshPort", "sshUsername",
+            "password", "sshPassword"
+        )
+
+        /** 旧单机配置使用过的全部键，迁入设备列表后逐类型清除，避免明文残留。 */
+        private val LEGACY_CONFIG_KEYS = ENCRYPTED_KEYS + listOf(
+            "useHttps", "allowInsecureTls", "refreshIntervalSec", "sshEnabled"
+        )
 
         private val KEY_DEVICES = stringPreferencesKey("devices_json")
         private val KEY_ACTIVE = stringPreferencesKey("activeDeviceId")

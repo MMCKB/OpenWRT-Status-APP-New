@@ -11,11 +11,16 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * 路由器凭据的静态加密（at-rest encryption）。
+ * 设备配置中**可识别字段**的静态加密（at-rest encryption）。
  *
- * 设备列表此前把路由器密码与 SSH 密码以明文 JSON 写进 DataStore，root 设备或
- * `adb backup` 可直读。这里改为：**只有敏感字段**经 Android Keystore 中的
- * AES-256-GCM 密钥加密后再落盘，其余字段（地址、端口、用户名）保持明文以便排错。
+ * 设备列表此前把地址、端口、用户名与密码以明文 JSON 写进 DataStore，root 设备或
+ * `adb backup` 可直读。这里改为：只有可识别字段经 Android Keystore 中的
+ * AES-256-GCM 密钥加密后再落盘，其余字段（设备标签、功能开关）保持明文以便排错。
+ *
+ * 加密范围（见 `SettingsStore.ENCRYPTED_KEYS`）：`ip` / `port` / `username` /
+ * `sshHost` / `sshPort` / `sshUsername` / `password` / `sshPassword`。
+ * 地址与用户名同样能定位到具体路由器，单独留明文会让加密形同虚设。
+ * 两个端口字段是 Int，以十进制字符串形式加密，由读取端解析回 Int。
  *
  * 存储格式：`enc:v1:<base64(iv ‖ ciphertext ‖ gcmTag)>`
  * - 前缀用于版本演进与「是否已加密」判定；
@@ -23,13 +28,13 @@ import javax.crypto.spec.GCMParameterSpec
  *
  * 密钥特性：
  * - 生成并保存在 **AndroidKeyStore** 中，私钥材料不可导出，只存在于本机安全硬件（有 TEE 时）；
- * - 无需用户认证即可使用（后台自动刷新要能读密码），因此不设 `setUserAuthenticationRequired`。
+ * - 无需用户认证即可使用（后台自动刷新要能读配置），因此不设 `setUserAuthenticationRequired`。
  *
  * 兼容与降级：
- * - [decrypt] 遇到无前缀的旧值会原样返回——旧安装的明文密码可被透明读取，随后由
+ * - [decrypt] 遇到无前缀的旧值会原样返回——旧安装的明文配置可被透明读取，随后由
  *   [SettingsStore] 回写为密文，完成一次性迁移；
  * - 加解密任何异常都不抛出：加密失败退化为明文（优先保证不丢配置），
- *   解密失败退化为空串（密钥失效时让用户重填密码，而不是崩溃）。
+ *   解密失败退化为空串（密钥失效时让用户重填，而不是崩溃）。
  *
  * 该对象只做纯字节层操作，不感知 [com.mmckb.openwrtstatus.data.model.RouterConfig]。
  */
