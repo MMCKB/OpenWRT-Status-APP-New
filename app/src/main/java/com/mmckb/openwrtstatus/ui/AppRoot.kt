@@ -181,7 +181,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var addSheetFabRect by remember { mutableStateOf<Rect?>(Rect.Zero) }
     var addSheetOpen by remember { mutableStateOf(false) }
     val addSheetProgress = remember { Animatable(1f) }
-    val addSheetEasing = CubicBezierEasing(0.72f, 0f, 0.24f, 1f)
+    val addSheetEasing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
     // 收起/回弹动画挂 rootScope（不随手势回调被取消而中断）：
     // 收起进行中再来侧滑，手势从当前进度相对接管，提交后从当前位置继续收起——
     // 不回弹全屏、不重播收起动画（多次侧滑只连续推进）。
@@ -597,7 +597,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             addSheetOpen = true
             rootScope.launch {
                 addSheetProgress.snapTo(0f)
-                addSheetProgress.animateTo(1f, tween(560, easing = addSheetEasing))
+                addSheetProgress.animateTo(1f, tween(650, easing = addSheetEasing))
             }
         }
 
@@ -611,7 +611,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 // 按钮触发的收起初速度为 0，同样平滑落位。
                 addSheetProgress.animateTo(
                     0f,
-                    spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
+                    // 静止全屏时（按钮/返回键）与 HTML 一致：同曲线 650ms；
+                    // 手势中途松手（进度 < 1）仍用弹簧接住松手速度，不断速。
+                    if (addSheetProgress.value >= 0.999f) tween<Float>(650, easing = addSheetEasing)
+                    else spring<Float>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
                     initialVelocity = releaseVelocity.coerceIn(-3f, 0f)
                 )
                 addSheetOpen = false
@@ -954,7 +957,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             if (addSheetOpen) {
                 val fab = addSheetFabRect ?: Rect.Zero
                 // 缩放生长（graphicsLayer）：面板固定全屏，进度只在绘制层读取——动画帧内
-                // 零重组、零重测量；表单按整屏布局一次后随层缩放（iOS 式缩放呈现）。
+                // 零重组、零重测量；表单按整屏布局一次，外层缩放由内层反向缩放抵消（见下），不被拉伸。
                 val screenW = constraints.maxWidth.toFloat()
                 val screenH = constraints.maxHeight.toFloat()
                 // 缩放锚点按边界反解（不是按钮中心）：非中心缩放时缩放矩形并不以锚点为
@@ -983,6 +986,13 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         }
                         .background(colors.background)
                 ) {
+                    // 按钮色 → 页面色：与 HTML 的 background-color 过渡同一进度 p
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = 1f - addSheetProgress.value.coerceIn(0f, 1f) }
+                            .background(colors.primary)
+                    )
                     DeviceEditScreen(
                         initial = RouterConfig(),
                         isNew = true,
@@ -995,7 +1005,20 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         onDelete = { },
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer { alpha = addSheetProgress.value.coerceIn(0f, 1f) }
+                            .graphicsLayer {
+                                val p = addSheetProgress.value.coerceIn(0f, 1f)
+                                val sx = lerp(startScaleX, 1f, p)
+                                val sy = lerp(startScaleY, 1f, p)
+                                // 反向缩放抵消外层缩放：表单始终是整屏尺寸、不被拉伸，
+                                // 外层只负责「裁出」可见区域（等价于 HTML 的 clip-path）
+                                scaleX = 1f / sx
+                                scaleY = 1f / sy
+                                transformOrigin = TransformOrigin(originX, originY)
+                                // 内容晚一点出现（p > 0.65 才淡入）并从下方 40dp 浮上来
+                                val c = ((p - 0.65f) / 0.35f).coerceIn(0f, 1f)
+                                alpha = c
+                                translationY = (1f - c) * 40.dp.toPx() / sy
+                            }
                     )
                 }
 
