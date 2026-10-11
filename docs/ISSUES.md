@@ -28,6 +28,11 @@
 | S14 | 低 | 无版本目录 `libs.versions.toml` | 🔴 |
 | S15 | 低 | 无依赖自动更新（Dependabot/Renovate） | 🔴 |
 | S16 | 高 | 共享存储 `/sdcard/` 残留**明文**配置快照与 UI dump | 🔴 待清理 |
+| S17 | 中 | 默认走明文 HTTP，路由器密码在局域网内可被嗅探 | 🔴 |
+| S18 | 中 | `allowInsecureTls` 是完全信任（含 hostname），开启后可被 MITM | 🟡 设计取舍 |
+| S19 | 低 | TOFU 指纹不匹配时返回 `NOT_INCLUDED` 而非 `CHANGED` | 🔴 |
+| S20 | 低 | 敏感页未启用 `FLAG_SECURE`，可被截屏/录屏 | 🔴 |
+| S21 | 低 | DataStore 残留 `useMock` 死键 | 🔴 |
 
 ---
 
@@ -210,6 +215,103 @@ Intent 记录里只显示 `WirelessActivity (has extras)`，看不到任何凭�
 
 **建议**：直接删除这 8 个文件。同时提醒：以后排查问题时不要把
 `preferences_pb` 拷到共享存储——即使内容是密文，拷出来也绕过了「只在私有目录」的保护。
+
+---
+
+### S17 🔴 默认明文 HTTP，路由器密码在局域网内可被嗅探
+
+**位置**：`RouterConfig.useHttps` 默认 `false`；`UbusRpcClient.login()` 把
+`{"username": ..., "password": ...}` 以 JSON 发到 `http://host:port/ubus`
+
+**说明**：ubus 的 `session.login` 就是「把账号密码明文发给路由器换一个 sid」，
+LuCI 本身也是这么做的，属于 OpenWrt 的协议现实。但在 HTTP 下，**同一局域网内
+任何能抓包的人（ARP 欺骗、镜像端口、恶意 AP）都能直接拿到路由器密码**。
+改密码（`AdminClient.changePassword`）同样如此。
+
+**现状**：设备编辑页只有一个「使用 HTTPS」开关，**没有任何风险提示**。
+
+**建议**（改动都很小）
+1. 设备编辑页：`useHttps` 关闭时在开关下方显示一行提示，说明密码会明文传输；
+2. 首次连接成功后，若发现路由器同时开放 HTTPS，提示用户可以改用它；
+3. README 的安全说明里把这条列在最前面（目前只写了「默认 HTTP」而没说后果）。
+
+---
+
+### S18 🟡 `allowInsecureTls` 是完全信任，开启后可被 MITM
+
+**位置**：`UbusRpcClient.kt:121-131`
+```kotlin
+override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) = Unit
+...
+hostnameVerifier { _, _ -> true }
+```
+
+**说明**：`checkServerTrusted` 空实现 = 接受任何证书链；`hostnameVerifier` 恒真 =
+接受任何主机名。两者叠加后 HTTPS 的**全部**保护都失效，主动 MITM 可以冒充路由器
+拿到密码。这是用户显式勾选「忽略证书校验」才生效的**有意取舍**（路由器多用自签名证书），
+且注释写明了意图，因此不算疏漏。
+
+**建议**：仅 UI 层面——在开关旁注明「开启后无法防范中间人攻击」，
+并在开启时用一次确认对话框，避免用户随手打开后忘记关。
+
+---
+
+### S19 🔴 TOFU 指纹不匹配时返回 `NOT_INCLUDED` 而非 `CHANGED`
+
+**位置**：`data/ssh/SshClient.kt` 的 `TofuHostKeyRepository.check()`
+```kotlin
+known == null -> { SshHostKeys.remember(hostPort, fingerprint); HostKeyRepository.OK }
+fingerprint == known -> HostKeyRepository.OK
+else -> HostKeyRepository.NOT_INCLUDED      // ← 应为 CHANGED
+```
+
+**影响**：JSch 里 `NOT_INCLUDED` 表示「未知主机」、`CHANGED` 表示「主机密钥已变更」。
+语义上报错了，但**当前不构成漏洞**——因为会话配置了 `StrictHostKeyChecking=yes`，
+这两种返回码都会被 JSch 拒绝连接。属于「依赖另一处配置兜底」的脆弱写法：
+一旦有人把 `StrictHostKeyChecking` 改成 `no`（很常见的手工调试动作），
+`NOT_INCLUDED` 会被**静默接受**，MITM 就此成立。
+
+**建议**：改成返回 `HostKeyRepository.CHANGED`，让「密钥变更」这件事在返回值上
+就表达清楚，不再依赖 StrictHostKeyChecking 兜底。
+
+---
+
+### S20 🔴 敏感页未启用 `FLAG_SECURE`
+
+**位置**：全局 —— `grep -rn "FLAG_SECURE" app/src` 零命中
+
+**影响**：设备编辑页（含密码输入）、终端页（可能回显敏感输出）、日志页
+都可以被截屏与录屏，第三方录屏/投屏应用可捕获。
+
+**建议**：对设备编辑、终端、日志这三个 Activity 的窗口加
+`window.setFlags(FLAG_SECURE, FLAG_SECURE)`（或 Compose 侧等价做法）。
+
+---
+
+### S21 🔴 DataStore 残留 `useMock` 死键
+
+**证据**：真机 dump 的 `preferences_pb` 里有 `useMock`，但
+`grep -rni "mock" app/src` **零命中** —— 早期版本留下的键，代码已不再读写。
+
+**影响**：无安全影响，属数据卫生问题（同 S1 的旧单机键，但那次清理只覆盖了
+`LEGACY_CONFIG_KEYS` 列表内的键）。
+
+**建议**：在 `purgeLegacyKeys()` 的清理清单里加上它。
+
+---
+
+### 本轮确认「没有问题」的项（供后续审阅参考）
+
+| 检查项 | 结论 |
+| --- | --- |
+| WebView / JS 桥 | ✅ 完全没用 WebView，无 JS 注入面 |
+| 硬编码密钥 | ✅ 无。APK 里 `sk-` 是 SSH 的 FIDO 算法名（`sk-ssh-ed25519@openssh.com`），`secret` 是 UCI 字段名（`auth_secret`），均为误报 |
+| Shell 命令注入 | ✅ 47 处命令执行点，可变的都经 `shq()`（`'` → `'\''` 的 POSIX 单引号转义）；`PackageClient` 另有包名白名单 `[a-zA-Z0-9+._:@/-]` 与仓库 URL 的格式 + 元字符双重校验；`FlashClient` 的临时路径来自时间戳，非用户输入 |
+| Deep link / 组件劫持 | ✅ `MainActivity` 只有 MAIN/LAUNCHER，无自定义 scheme；其余 19 个 Activity 全部 `exported=false` |
+| FileProvider | ✅ 只暴露 `cache-path share/`，范围很窄 |
+| ubus 会话 id | ✅ 只在内存，不落盘 |
+| SSH 主机密钥 | ✅ `StrictHostKeyChecking=yes`（见 S19 的说明） |
+| 剪贴板 | ✅ 只有日志页用于复制日志，不涉及密码 |
 
 ---
 
