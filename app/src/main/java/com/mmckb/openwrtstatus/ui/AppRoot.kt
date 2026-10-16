@@ -56,10 +56,13 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import android.os.Build
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -956,34 +959,34 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             // 面板颜色 = 页面本色；表单内容随展开进度淡入。手绘预测性返回见面板内的 handler。
             if (addSheetOpen) {
                 val fab = addSheetFabRect ?: Rect.Zero
-                // 缩放生长（graphicsLayer）：面板固定全屏，进度只在绘制层读取——动画帧内
-                // 零重组、零重测量；表单按整屏布局一次，外层缩放由内层反向缩放抵消（见下），不被拉伸。
-                val screenW = constraints.maxWidth.toFloat()
-                val screenH = constraints.maxHeight.toFloat()
-                // 缩放锚点按边界反解（不是按钮中心）：非中心缩放时缩放矩形并不以锚点为
-                // 中心，只有锚点取 fabLeft/(屏宽-按钮宽) 才能让 p=0 的缩放矩形恰好等于
-                // 按钮矩形——面板严格从按钮位置生长，几何与旧裁剪式完全一致。
-                val originX = (fab.left / (screenW - fab.width).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                val originY = (fab.top / (screenH - fab.height).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                val startScaleX = (fab.width / screenW).coerceIn(0.02f, 1f)
-                val startScaleY = (fab.height / screenH).coerceIn(0.02f, 1f)
+                // 真 clip-path：内容整屏布局、从不缩放，只在绘制阶段按进度裁出
+                // 「按钮矩形 → 全屏」的圆角窗口（等价 HTML 的 clip-path + border-radius）。
+                // 圆角在未缩放的坐标系里直接给，两轴恒等——收拢末端与胶囊按钮精确吻合；
+                // 绘制阶段读取进度 → 动画帧内零重组、零重测量。
                 val startCorner = fab.height / 2f
+                // 复用同一个 Path，避免每帧新建（变量名刻意避开 DrawScope.clipPath()）
+                val sheetPath = remember { Path() }
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .graphicsLayer {
+                        .drawWithContent {
                             val p = addSheetProgress.value.coerceIn(0f, 1f)
-                            val sx = lerp(startScaleX, 1f, p)
-                            val sy = lerp(startScaleY, 1f, p)
-                            scaleX = sx
-                            scaleY = sy
-                            transformOrigin = TransformOrigin(originX, originY)
-                            // 层内圆角按缩放反向补偿：视觉上从按钮胶囊半径收平到直角
-                            // （方形按钮下 Android 圆角钳制后两轴都精确等于胶囊半径）
-                            val visualCorner = lerp(startCorner, 0f, p)
-                            shape = RoundedCornerShape((visualCorner / minOf(sx, sy)).toDp())
-                            clip = true
+                            val corner = lerp(startCorner, 0f, p)
+                            sheetPath.reset()
+                            sheetPath.addRoundRect(
+                                RoundRect(
+                                    lerp(fab.left, 0f, p),
+                                    lerp(fab.top, 0f, p),
+                                    lerp(fab.right, size.width, p),
+                                    lerp(fab.bottom, size.height, p),
+                                    corner,
+                                    corner
+                                )
+                            )
+                            clipPath(sheetPath) { this@drawWithContent.drawContent() }
                         }
+                        // 裁剪窗口内的不透明底：中间进度时主色层 alpha < 1，
+                        // 没有它会透出背后的设备列表。
                         .background(colors.background)
                 ) {
                     // 按钮色 → 页面色：与 HTML 的 background-color 过渡同一进度 p
@@ -1007,17 +1010,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                             .fillMaxSize()
                             .graphicsLayer {
                                 val p = addSheetProgress.value.coerceIn(0f, 1f)
-                                val sx = lerp(startScaleX, 1f, p)
-                                val sy = lerp(startScaleY, 1f, p)
-                                // 反向缩放抵消外层缩放：表单始终是整屏尺寸、不被拉伸，
-                                // 外层只负责「裁出」可见区域（等价于 HTML 的 clip-path）
-                                scaleX = 1f / sx
-                                scaleY = 1f / sy
-                                transformOrigin = TransformOrigin(originX, originY)
                                 // 内容晚一点出现（p > 0.65 才淡入）并从下方 40dp 浮上来
                                 val c = ((p - 0.65f) / 0.35f).coerceIn(0f, 1f)
                                 alpha = c
-                                translationY = (1f - c) * 40.dp.toPx() / sy
+                                translationY = (1f - c) * 40.dp.toPx()
                             }
                     )
                 }
