@@ -58,7 +58,7 @@
   **Copyright (c) 2002-2015 Atsuhiko Yamanaka, JCraft,Inc. All rights reserved.**
 - 许可文本全文：[licenses/bsd-3-clause.txt](./licenses/bsd-3-clause.txt)
 
-### OkHttp（`com.squareup.okhttp3:okhttp:5.5.0`）— Apache License 2.0
+### OkHttp（`com.squareup.okhttp3:okhttp:5.5.1`）— Apache License 2.0
 
 - 来源：<https://github.com/square/okhttp>
 - 用途：rpcd ubus JSON-RPC 的 HTTP 通信
@@ -82,11 +82,19 @@
   `androidx.core:core-ktx:1.19.1`、`androidx.lifecycle:lifecycle-*:2.11.0`
 - 来源：<https://developer.android.com/jetpack>
 
+### DataStore（`androidx.datastore:datastore-preferences:1.3.0`）— Apache License 2.0
+
+- 来源：<https://developer.android.com/jetpack/androidx/releases/datastore>
+- 用途：本地设置与设备配置的持久化（Preferences DataStore），含旧 SharedPreferences 数据迁移
+- 备注：随该依赖传递引入的 proto DataStore 构件（`androidx.datastore:datastore`）
+  提供 `androidx.datastore.migrations.SharedPreferencesMigration`（本项目的迁移逻辑即用此类），
+  同属 Apache-2.0，一并覆盖在本条目下。
+
 ### Kotlin 及官方库 — Apache License 2.0
 
 - 组件：`org.jetbrains.kotlin:*`（Kotlin 2.4.21）、
   `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0`、
-  `org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0`
+  `org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0`
 
 ## 三、义务摘要（非法律意见）
 

@@ -121,8 +121,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
 
     // Liquid glass / backdrop effects (Kyant0, Apache-2.0, Maven Central)
     implementation("io.github.kyant0:backdrop:2.0.1")
@@ -135,7 +135,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.4")
 
     // 本地设置存储（Jetpack DataStore，替代 SharedPreferences）
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
