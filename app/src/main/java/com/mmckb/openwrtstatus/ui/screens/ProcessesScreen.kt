@@ -186,11 +186,7 @@ fun ProcessesScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     // 浏览超过一屏后，标题右侧出现「回到顶部」按钮
     val listState = rememberLazyListState()

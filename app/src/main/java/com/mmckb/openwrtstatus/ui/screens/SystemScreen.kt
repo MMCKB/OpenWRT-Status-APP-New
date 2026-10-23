@@ -224,11 +224,7 @@ fun SystemScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     val timeText = routerTime?.let {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it * 1000))

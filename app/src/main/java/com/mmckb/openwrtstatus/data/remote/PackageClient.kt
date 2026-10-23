@@ -95,7 +95,7 @@ class PackageClient {
 
     // ---- 后端检测（apk / opkg，自动适配，逻辑同 LuCI helper） ----
 
-    private val backends = mutableMapOf<String, String>()
+    private val backends = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** 检测路由器使用的包管理器：有 /usr/bin/apk 用 apk，否则 opkg。 */
     suspend fun backend(ssh: SshConfig): String = withContext(Dispatchers.IO) {

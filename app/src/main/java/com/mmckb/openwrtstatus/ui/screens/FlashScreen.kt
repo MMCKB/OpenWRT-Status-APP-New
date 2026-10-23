@@ -210,11 +210,7 @@ fun FlashScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     val backupDownloadLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/x-gzip")

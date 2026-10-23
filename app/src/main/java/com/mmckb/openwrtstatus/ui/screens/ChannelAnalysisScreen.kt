@@ -169,11 +169,7 @@ fun ChannelAnalysisScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     val bands = data?.bands.orEmpty()
     val tabOptions = bands.mapIndexed { i, b ->

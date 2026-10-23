@@ -215,7 +215,7 @@ fun LedScreen(
     var editForm by remember { mutableStateOf<LedEditForm?>(null) }
 
     fun load() {
-        scope.launch {
+        opJob = scope.launch {
             loading = true
             var hadError: String? = null
             try {
@@ -239,15 +239,11 @@ fun LedScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     fun save() {
         if (!ensureConnected()) return
-        scope.launch {
+        opJob = scope.launch {
             busy = true
             try {
                 withTimeout(LED_APPLY_TIMEOUT_MS) {

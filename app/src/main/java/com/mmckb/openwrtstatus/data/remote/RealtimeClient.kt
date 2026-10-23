@@ -32,22 +32,29 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
 
     private data class Session(val endpoint: String, val sid: String)
 
-    private var cachedSession: Session? = null
-    private var cachedKey: String? = null
+    /**
+     * key 与 session 合成单一不可变引用：轮询协程与首次加载协程并发访问本客户端时，
+     * 二者要么同时命中、要么各自登录——不会出现「key 是新的但 session 是旧的」的错配，
+     * 也不再依赖 `cachedSession!!`（并发 invalidate 下会 NPE）。
+     * 代价是并发未命中时可能多登录一次，但每个调用方拿到的都是自己登录出的自洽会话。
+     */
+    private data class Cached(val key: String, val session: Session)
+
+    @Volatile
+    private var cached: Cached? = null
 
     private suspend fun session(config: RouterConfig): Session {
         val endpoint = rpc.buildEndpoint(config.ip, config.port, config.useHttps)
         val key = "${config.username}|$endpoint|${config.allowInsecureTls}"
-        cachedSession?.takeIf { cachedKey == key }?.let { return it }
+        cached?.takeIf { it.key == key }?.let { return it.session }
         val sid = rpc.login(endpoint, config.username, config.password, config.allowInsecureTls)
-        cachedSession = Session(endpoint, sid)
-        cachedKey = key
-        return cachedSession!!
+        val s = Session(endpoint, sid)
+        cached = Cached(key, s)
+        return s
     }
 
-    private suspend fun invalidate() {
-        cachedSession = null
-        cachedKey = null
+    private fun invalidate() {
+        cached = null
     }
 
     /**

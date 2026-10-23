@@ -23,6 +23,7 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLContext
@@ -69,7 +70,7 @@ class UbusRpcClient {
     /** The "null" ubus session used before authenticating. */
     private val nullSession = "00000000000000000000000000000000"
 
-    private val clients = mutableMapOf<Pair<Boolean, Boolean>, OkHttpClient>()
+    private val clients = ConcurrentHashMap<Pair<Boolean, Boolean>, OkHttpClient>()
 
     /**
      * Builds `http(s)://host:port/ubus`.

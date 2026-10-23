@@ -178,11 +178,7 @@ fun LogsScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     // ---- 过滤状态（语义与 LuCI LogreadBox / dmesg 视图一致） ----
     var sysFacility by remember { mutableStateOf("any") }

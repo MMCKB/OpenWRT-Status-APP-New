@@ -164,6 +164,9 @@ fun PackageManagerScreen(
         storageLoading = true
         setMsg(null, false)
         scope.launch {
+            // 记录包管理器类型：上传安装的临时文件必须与后端一致（.ipk / .apk）。
+            // 此前恒为 null，opkg 设备上传的包被存成 /tmp/upload.apk，安装与清理错位。
+            backend = withContext(Dispatchers.IO) { client.backend(ssh) }
             val installedJob = launch {
                 try {
                     installed = client.listInstalled(ssh)
