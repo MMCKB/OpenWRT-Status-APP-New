@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus.data.remote
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
+import com.mmckb.openwrtstatus.data.ssh.shq
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -208,12 +209,11 @@ class RealtimeClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     /** 无线接口信号/噪声（SSH iwinfo info，dBm）。 */
     suspend fun wirelessInfoViaSsh(ssh: SshConfig, device: String): Pair<Double, Double>? =
         withContext(Dispatchers.IO) {
+            // device 来自 iwinfo 输出，但一律按不可信处理：先做 JSON 编码，再整体 shell 转义，
+            // 避免引号/花括号破坏 ubus 参数或注入命令。
+            val payload = buildJsonObject { put("device", device) }.toString()
             val out = runCatching {
-                SshExec.run(
-                    ssh,
-                    "ubus -S call iwinfo info '{\"device\":\"" + device + "\"}' 2>/dev/null",
-                    10_000
-                )
+                SshExec.run(ssh, "ubus -S call iwinfo info ${shq(payload)} 2>/dev/null", 10_000)
             }.getOrDefault("")
             val obj = runCatching { Json.parseToJsonElement(out.trim()).jsonObject }.getOrNull()
                 ?: return@withContext null

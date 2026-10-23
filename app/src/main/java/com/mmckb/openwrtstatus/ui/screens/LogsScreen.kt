@@ -208,11 +208,13 @@ fun LogsScreen(
             val line = "${e.time} ${e.facility}.${e.severity} ${e.tag}: ${e.msg}"
             val facOk = sysFacility == "any" || e.facility == sysFacility
             val sevOk = sysSeverity == "any" || e.severity == sysSeverity
+            // 标签按子串匹配（与 LuCI 的 tag 过滤一致），空串表示不参与过滤。
+            val tagOk = sysTag.isBlank() || e.tag.contains(sysTag.trim(), ignoreCase = true)
             val txtOk = sysText.isBlank() || line.contains(sysText, ignoreCase = true)
             val fac = if (sysFacilityNot) !facOk else facOk
             val sev = if (sysSeverityNot) !sevOk else sevOk
             val txt = if (sysTextNot) !txtOk else txtOk
-            fac && sev && txt
+            fac && sev && tagOk && txt
         }
         if (sysNewestFirst) list.asReversed() else list
     }

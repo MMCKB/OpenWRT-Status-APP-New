@@ -4,6 +4,7 @@ import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
+import com.mmckb.openwrtstatus.data.ssh.shq
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -78,7 +79,7 @@ class StartupClient {
                 "执行动作需要 SSH 访问。",
                 "请在设备编辑页开启 SSH 后重试。"
             )
-            SshExec.run(s, "/etc/init.d/${shq(name)} $action 2>&1", 30_000)
+            SshExec.run(s, "/etc/init.d/${shq(name)} ${shq(action)} 2>&1", 30_000)
             Unit
         }
 
@@ -92,6 +93,4 @@ class StartupClient {
             val normalized = content.replace("\r\n", "\n").trim() + "\n"
             SshFiles.upload(s, "/etc/rc.local", normalized.toByteArray(Charsets.UTF_8))
         }
-
-    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
 }

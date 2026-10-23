@@ -3,6 +3,8 @@ package com.mmckb.openwrtstatus.data.remote
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
+import com.mmckb.openwrtstatus.data.ssh.shq
+import com.mmckb.openwrtstatus.data.ssh.sshOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -301,9 +303,9 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 if (ntpTouched) append("/etc/init.d/sysntpd restart >/dev/null 2>&1; ")
                 append("echo __SYS_APPLY_OK__")
             }
-            val committed = runCatching {
+            val committed = sshOrNull {
                 SshExec.run(ssh, script, 30_000).contains("__SYS_APPLY_OK__")
-            }.getOrDefault(false)
+            } ?: false
             if (committed) return@withContext
             onPhase("SSH 提交失败，改用 uci apply 提交…")
             applyViaUbus(config, changes.keys.toList(), onPhase)
@@ -356,9 +358,6 @@ class SystemClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         }
         return sb.toString()
     }
-
-    /** 单引号 shell 转义（' → '\''）。 */
-    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
 
     /** 无 SSH 后备：ubus 逐段 uci set/delete（staged）。空字符串值表示删除该选项。 */
     private suspend fun ubusWrite(

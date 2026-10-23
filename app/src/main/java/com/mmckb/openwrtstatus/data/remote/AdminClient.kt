@@ -4,6 +4,8 @@ import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
+import com.mmckb.openwrtstatus.data.ssh.shq
+import com.mmckb.openwrtstatus.data.ssh.sshOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -107,8 +109,6 @@ class AdminClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     private fun str(section: JsonObject, key: String): String? =
         (section[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
 
-    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
-
     // ===== 路由器密码（LuCI password.js：luci.setPassword） =====
 
     /**
@@ -208,9 +208,9 @@ class AdminClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 append("(sleep 2 && /etc/init.d/dropbear restart) >/dev/null 2>&1 & ")
                 append("echo __ADMIN_APPLY_OK__")
             }
-            val ok = runCatching {
+            val ok = sshOrNull {
                 SshExec.run(ssh, script, 30_000).contains("__ADMIN_APPLY_OK__")
-            }.getOrDefault(false)
+            } ?: false
             if (ok) return@withContext
             onPhase("SSH 提交失败，改用 uci apply 提交…")
             ubusDropbear(config, named, deletedSections, newSections)
@@ -426,9 +426,9 @@ class AdminClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 "uci commit uhttpd; " +
                 "(sleep 1 && /etc/init.d/uhttpd restart) >/dev/null 2>&1 & " +
                 "echo __ADMIN_APPLY_OK__"
-            val ok = runCatching {
+            val ok = sshOrNull {
                 SshExec.run(ssh, script, 30_000).contains("__ADMIN_APPLY_OK__")
-            }.getOrDefault(false)
+            } ?: false
             if (ok) return@withContext
             onPhase("SSH 提交失败，改用 uci apply 提交…")
         } else {

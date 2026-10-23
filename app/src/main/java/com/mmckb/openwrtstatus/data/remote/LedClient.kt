@@ -3,6 +3,8 @@ package com.mmckb.openwrtstatus.data.remote
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
+import com.mmckb.openwrtstatus.data.ssh.shq
+import com.mmckb.openwrtstatus.data.ssh.sshOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -113,8 +115,6 @@ class LedClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
     private fun str(section: JsonObject, key: String): String? =
         (section[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
 
-    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
-
     /** 可用 LED 及其支持的触发器（luci getLEDs）。 */
     suspend fun loadLeds(config: RouterConfig): List<LedDevice> = withContext(Dispatchers.IO) {
         runCatching {
@@ -209,9 +209,9 @@ class LedClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 append("/etc/init.d/led start >/dev/null 2>&1; ")
                 append("echo __LED_APPLY_OK__")
             }
-            val ok = runCatching {
+            val ok = sshOrNull {
                 SshExec.run(ssh, script, 30_000).contains("__LED_APPLY_OK__")
-            }.getOrDefault(false)
+            } ?: false
             if (ok) return@withContext
             onPhase("SSH 提交失败，改用 uci apply 提交…")
             ubusLeds(config, named, deletedSections, newSections)

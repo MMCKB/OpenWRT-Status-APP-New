@@ -92,11 +92,35 @@ internal fun JSch.applyTofuHostKeyChecking(host: String, port: Int): JSch {
     return this
 }
 
+/**
+ * 主机密钥与首次信任记录不一致（中间人风险）。
+ *
+ * 单独成类型，是为了让「SSH 失败就回退 ubus」的写配置路径能区分两类失败：
+ * 连接不可用 / 认证失败可以静默回退，这一类**必须上抛**——否则回退逻辑会把
+ * 「可能存在中间人风险」的告警一并吞掉，用户只看到「保存失败」。
+ */
+class HostKeyMismatchException(message: String) : JSchException(message)
+
+/**
+ * 只在「SSH 本身不可用」时返回 null；[HostKeyMismatchException] 原样上抛。
+ *
+ * 供「优先走 SSH、失败再回退 ubus」的路径使用：回退只该吞掉可用性问题，
+ * 不能连安全信号一起吞掉。
+ */
+internal inline fun <T> sshOrNull(block: () -> T): T? =
+    try {
+        block()
+    } catch (e: HostKeyMismatchException) {
+        throw e
+    } catch (_: Throwable) {
+        null
+    }
+
 /** 主机密钥被拒（指纹与记录不符）时给出中文说明，其余异常原样透传。 */
 internal fun hostKeyFriendly(e: JSchException): JSchException =
     if (e.message?.contains("reject", ignoreCase = true) == true ||
         e.message?.contains("hostkey", ignoreCase = true) == true
-    ) JSchException(
+    ) HostKeyMismatchException(
         "路由器 SSH 指纹与首次连接记录不一致，可能存在中间人风险。" +
             "若确认路由器重装或更换过，请在系统设置中清除本应用数据后重新信任。"
     ) else e
