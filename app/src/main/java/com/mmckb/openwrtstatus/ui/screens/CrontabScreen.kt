@@ -102,7 +102,6 @@ fun CrontabScreen(
     var alertTopPadding by remember { mutableStateOf(0.dp) }
 
     var content by remember { mutableStateOf("") }
-    var loadedOnce by remember { mutableStateOf(false) }
 
     var opJob by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(Unit) {

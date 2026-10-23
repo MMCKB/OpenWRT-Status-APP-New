@@ -229,11 +229,7 @@ fun AdminScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     fun saveDropbear() {
         if (!ensureConnected()) return

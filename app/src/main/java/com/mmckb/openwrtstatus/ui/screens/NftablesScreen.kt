@@ -226,11 +226,7 @@ fun NftablesScreen(
         }
     }
 
-    var loadedOnce by remember { mutableStateOf(false) }
-    if (!loadedOnce) {
-        loadedOnce = true
-        load()
-    }
+    LaunchedEffect(Unit) { load() }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(

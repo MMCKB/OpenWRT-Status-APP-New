@@ -344,7 +344,6 @@ fun WirelessScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
     var showApplyConfirm by remember { mutableStateOf(false) }
-    var pendingApply by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     var editRadioFor by remember { mutableStateOf<String?>(null) }
     var radioChannel by remember { mutableStateOf("auto") }
