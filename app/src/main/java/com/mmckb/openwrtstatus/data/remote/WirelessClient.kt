@@ -3,6 +3,8 @@ package com.mmckb.openwrtstatus.data.remote
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
+import com.mmckb.openwrtstatus.data.ssh.shq
+import com.mmckb.openwrtstatus.data.ssh.sshOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -456,9 +458,9 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
             // 不依赖 ubus 暂存的跨进程传递。
             val script = buildShellScript("wireless", changes) +
                 "uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__"
-            val committed = runCatching {
+            val committed = sshOrNull {
                 SshExec.run(ssh, script, 30_000).contains("__WIRELESS_APPLY_OK__")
-            }.getOrDefault(false)
+            } ?: false
             if (committed) return@withContext
             onPhase("SSH 提交失败，改用 uci apply 提交…")
             ubusWrite(config, changes, onPhase)
@@ -503,9 +505,6 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         }
         return sb.toString()
     }
-
-    /** 单引号 shell 转义（' → '\''）。 */
-    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
 
     /** 无 SSH 后备：ubus 逐段 uci set/delete（staged）。空字符串值表示删除该选项。 */
     private suspend fun ubusWrite(config: RouterConfig, changes: Map<String, Map<String, Any>>, onPhase: (String) -> Unit) = withContext(Dispatchers.IO) {
@@ -625,7 +624,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
                 }
             }
             val script = "S=\$(uci add wireless wifi-iface) && uci rename wireless.\$S=" + shq(name) + " && " + sets + "uci commit wireless; echo __WIRELESS_ADD_OK__"
-            val ok = runCatching { SshExec.run(ssh, script, 30_000).contains("__WIRELESS_ADD_OK__") }.getOrDefault(false)
+            val ok = sshOrNull { SshExec.run(ssh, script, 30_000).contains("__WIRELESS_ADD_OK__") } ?: false
             if (ok) return@withContext
             onPhase("SSH 创建失败，改用 ubus 暂存…")
         }
@@ -667,7 +666,7 @@ class WirelessClient(private val rpc: UbusRpcClient = UbusRpcClient()) {
         if (ssh != null) {
             onPhase("正在删除并重载无线…")
             val script = "uci -q delete wireless." + shq(section) + "; uci commit wireless && wifi reload && echo __WIRELESS_APPLY_OK__"
-            val ok = runCatching { SshExec.run(ssh, script, 30_000).contains("__WIRELESS_APPLY_OK__") }.getOrDefault(false)
+            val ok = sshOrNull { SshExec.run(ssh, script, 30_000).contains("__WIRELESS_APPLY_OK__") } ?: false
             if (ok) return@withContext
             onPhase("SSH 删除失败，改用 uci apply 提交…")
         }

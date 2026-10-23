@@ -351,7 +351,8 @@ fun WirelessScreen(
     var radioHtmode by remember { mutableStateOf("") }
     var radioTxpower by remember { mutableStateOf("") }
     var radioCountry by remember { mutableStateOf("") }
-    var radioHwmode by remember { mutableStateOf("11ax") }
+    // uci hwmode 取值：''/n/ac/ax/be（LuCI 同款，不带 "11" 前缀）
+    var radioHwmode by remember { mutableStateOf("") }
 
     var editIfaceFor by remember { mutableStateOf<String?>(null) }
     var ifaceMode by remember { mutableStateOf("ap") }
@@ -1877,7 +1878,7 @@ fun WirelessScreen(
         val radio = radios.orEmpty().firstOrNull { it.section == section }
         val band = radio?.band
         val hwmode = if (radioHwmode.isBlank()) {
-            when (band) { "5g" -> "11ac"; else -> "11n" }
+            when (band) { "5g" -> "ac"; else -> "n" }
         } else radioHwmode
         AppDialog(
             title = "设备配置（$section）",
@@ -1898,32 +1899,34 @@ fun WirelessScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SelectRow("工作频率", when (hwmode) {
-                    "11ax" -> "AX"
-                    "11ac" -> "AC"
-                    "11n" -> "N"
-                    "11g" -> "G"
-                    "11b" -> "B"
+                    "ax" -> "AX"
+                    "ac" -> "AC"
+                    "n" -> "N"
+                    "g" -> "G"
+                    "b" -> "B"
+                    "be" -> "BE"
+                    "" -> "自动"
                     else -> hwmode
                 }) {
                     selectState = SelectState(
                         "选择工作频率",
                         if (band == "5g") {
-                            listOf("11n" to "N", "11ac" to "AC", "11ax" to "AX")
+                            listOf("n" to "N", "ac" to "AC", "ax" to "AX")
                         } else {
-                            listOf("11b" to "B", "11g" to "G", "11n" to "N", "11ax" to "AX")
+                            listOf("b" to "B", "g" to "G", "n" to "N", "ax" to "AX")
                         },
                         hwmode
                     ) { v ->
                         radioHwmode = v
                         // 切换协议后保持频宽数值，前缀跟随协议。
                         val width = Regex("\\d+").find(radioHtmode)?.value ?: when (v) {
-                            "11ac" -> "80"
+                            "ac" -> "80"
                             else -> "20"
                         }
                         val prefix = when (v) {
-                            "11n" -> "HT"
-                            "11ac" -> "VHT"
-                            "11ax" -> "HE"
+                            "n" -> "HT"
+                            "ac" -> "VHT"
+                            "ax" -> "HE"
                             else -> "HT"
                         }
                         radioHtmode = "$prefix$width"

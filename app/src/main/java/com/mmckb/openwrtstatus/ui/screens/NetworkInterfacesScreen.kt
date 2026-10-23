@@ -93,7 +93,7 @@ fun NetworkInterfacesScreen(
     val client = remember { NetworkInterfacesClient() }
     val alertStack = rememberAlertStackState()
     var editSection by remember { mutableStateOf<String?>(null) } // null=关闭，""=新增
-    var deleteTarget by mutableStateOf<com.mmckb.openwrtstatus.data.remote.IfaceUci?>(null)
+    var deleteTarget by remember { mutableStateOf<com.mmckb.openwrtstatus.data.remote.IfaceUci?>(null) }
     val density = LocalDensity.current
     var alertTopPadding by remember { mutableStateOf(0.dp) }
 

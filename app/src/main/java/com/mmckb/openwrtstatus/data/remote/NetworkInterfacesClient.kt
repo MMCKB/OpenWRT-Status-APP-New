@@ -3,6 +3,7 @@ package com.mmckb.openwrtstatus.data.remote
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshExec
+import com.mmckb.openwrtstatus.data.ssh.shq
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -322,6 +323,4 @@ class NetworkInterfacesClient(private val rpc: UbusRpcClient = UbusRpcClient()) 
 
     private fun valuesJson(el: kotlinx.serialization.json.JsonElement?): JsonObject =
         ((el as? JsonObject)?.get("values") as? JsonObject) ?: JsonObject(emptyMap())
-
-    private fun shq(v: String): String = "'" + v.replace("'", "'\\''") + "'"
 }
