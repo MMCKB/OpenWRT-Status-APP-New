@@ -50,9 +50,9 @@
 - 来源：<https://github.com/Kyant0/Shapes>
 - 用途：`Capsule()` 等形状
 
-### JSch（`com.github.mwiede:jsch:2.28.7`）— BSD-3-Clause（Revised BSD）
+### JSch（`com.github.mwiede:jsch:2.28.8`）— BSD-3-Clause（Revised BSD）
 
-- 来源：<https://github.com/mwiede/jsch>（tag `jsch-2.28.7`）
+- 来源：<https://github.com/mwiede/jsch>（tag `jsch-2.28.8`）
 - 用途：SSH 远程终端（PTY Shell）、读取 `/tmp/dhcp.leases` 获取 DHCP 租约
 - 版权声明（BSD-3-Clause 要求二进制再分发时保留）：
   **Copyright (c) 2002-2015 Atsuhiko Yamanaka, JCraft,Inc. All rights reserved.**
@@ -63,6 +63,18 @@
 - 来源：<https://github.com/square/okhttp>
 - 用途：rpcd ubus JSON-RPC 的 HTTP 通信
 
+### ZXing Core（`com.google.zxing:core:3.5.4`）— Apache License 2.0
+
+- 来源：<https://github.com/zxing/zxing>（tag `zxing-3.5.4`）
+- 用途：无线设置页的 WiFi 分享二维码生成（`QRCodeWriter` 编码为 `BitMatrix`，
+  见 `ui/screens/WirelessScreen.kt`）
+- 版权声明（Apache-2.0 第 4 条要求保留）：
+  **Copyright (C) 2010 ZXing authors**
+  （构件 `core-3.5.4.pom` 文件头；源码各文件按年份标注，均为 ZXing authors）
+- 许可文本：[licenses/apache-2.0.txt](./licenses/apache-2.0.txt)
+- 备注：该构件的 `META-INF/` 内**未附带** LICENSE / NOTICE 文件（只有 `MANIFEST.MF`
+  的 `Bundle-License` 字段声明为 Apache-2.0），因此许可全文由本项目随仓库提供。
+
 ### Jetpack Compose / AndroidX — Apache License 2.0
 
 - 组件：`androidx.compose:compose-bom:2026.09.00`（ui / ui-graphics / material3 /
@@ -72,7 +84,7 @@
 
 ### Kotlin 及官方库 — Apache License 2.0
 
-- 组件：`org.jetbrains.kotlin:*`（Kotlin 2.4.20）、
+- 组件：`org.jetbrains.kotlin:*`（Kotlin 2.4.21）、
   `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0`、
   `org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0`
 
