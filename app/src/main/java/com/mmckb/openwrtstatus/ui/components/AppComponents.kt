@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -586,6 +587,9 @@ fun AppDialog(
             color = colors.surface,
             border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
             modifier = Modifier
+                // 弹窗窗口 decorFitsSystemWindows=false：键盘弹出时内容自行避让，
+                // 长表单弹窗底部的输入框不被软键盘遮挡。
+                .imePadding()
                 .widthIn(min = 280.dp, max = 360.dp)
                 .graphicsLayer {
                     scaleX = 1f - 0.1f * p

@@ -41,8 +41,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.ExperimentalComposeApi
-import androidx.compose.runtime.collectAsState
+
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
@@ -99,6 +100,7 @@ import com.mmckb.openwrtstatus.ThemeSettingsActivity
 import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
@@ -139,6 +141,14 @@ private const val TAB_TERMINAL = 3
 private const val TAB_TOOL = 4
 private const val TAB_SETTINGS = 5
 
+/**
+ * 二级 Activity 交接标记与设备 id extra。各 Activity companion 里的常量值均为这两个
+ * 字面量（"openInline" / "deviceId"），通用启动器直接取同一字面量，与任一 Activity 的
+ * 常量保持等值。
+ */
+private const val EXTRA_OPEN_INLINE = "openInline"
+private const val EXTRA_DEVICE_ID = "deviceId"
+
 /** 横屏右栏可承载的二级页面。 */
 private sealed interface SecondaryPage {
     data object FileManager : SecondaryPage
@@ -166,10 +176,10 @@ private sealed interface SecondaryPage {
 @Composable
 fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var selectedTab by remember { mutableIntStateOf(TAB_DASHBOARD) }
-    val config by viewModel.config.collectAsState()
-    val devices by viewModel.devices.collectAsState()
-    val toolsGrid by viewModel.toolsGridEnabled.collectAsState()
-    val terminalInlineInput by viewModel.terminalInlineInput.collectAsState()
+    val config by viewModel.config.collectAsStateWithLifecycle()
+    val devices by viewModel.devices.collectAsStateWithLifecycle()
+    val toolsGrid by viewModel.toolsGridEnabled.collectAsStateWithLifecycle()
+    val terminalInlineInput by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
@@ -216,135 +226,61 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         }
     }
 
-    // 竖屏独立二级页的启动器：旋转到横屏时 Activity 带着交接标记退出，在这里转成右栏内联。
-    val fileManagerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(FileManagerActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.FileManager
+    // 竖屏独立二级页的启动器：旋转到横屏时 Activity 带着交接标记（EXTRA_OPEN_INLINE，
+    // 各 Activity companion 常量值一致）退出，在这里转成右栏内联。除设备编辑器（回传
+    // 保存/删除结果）外全部同构，收敛为一个通用启动器 + 两张映射表。
+    @Composable
+    fun inlineLauncher(page: SecondaryPage, onResult: () -> Unit = {}) =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            onResult()
+            if (result.data?.getBooleanExtra(EXTRA_OPEN_INLINE, false) == true) {
+                secondary = page
+            }
         }
-    }
-    val packageManagerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(PackageManagerActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.PackageManager
-        }
-    }
-    val aboutLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        // 从关于页（独立 Activity）返回：重读解锁状态，详情页立即出现扩展信息卡
-        viewModel.refreshHiddenDiagUnlocked()
-        if (result.data?.getBooleanExtra(AboutActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.About
-        }
-    }
-    val themeSettingsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(ThemeSettingsActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.ThemeSettings
-        }
-    }
-    val systemLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(SystemActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.System
-        }
-    }
-    val wirelessLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(WirelessActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Wireless
-        }
-    }
-    val adminLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(AdminActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Admin
-        }
-    }
-    val realtimeLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(RealtimeActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Realtime
-        }
-    }
-    val channelAnalysisLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(ChannelAnalysisActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.ChannelAnalysis
-        }
-    }
-    val ledLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(LedActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Led
-        }
-    }
-    val routesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(RoutesActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Routes
-        }
-    }
-    val nftablesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(NftablesActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Nftables
-        }
-    }
-    val logsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(LogsActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Logs
-        }
-    }
-    val processesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(ProcessesActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Processes
-        }
-    }
-    val flashLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(FlashActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Flash
-        }
-    }
-    val networkInterfacesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(NetworkInterfacesActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.NetworkInterfaces
-        }
-    }
-    val crontabLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(CrontabActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Crontab
-        }
-    }
-    val startupLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(StartupActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Startup
-        }
-    }
+
+    val inlineLaunchers = mapOf(
+        SecondaryPage.FileManager to inlineLauncher(SecondaryPage.FileManager),
+        SecondaryPage.PackageManager to inlineLauncher(SecondaryPage.PackageManager),
+        SecondaryPage.About to inlineLauncher(SecondaryPage.About) {
+            // 从关于页（独立 Activity）返回：重读解锁状态，详情页立即出现扩展信息卡
+            viewModel.refreshHiddenDiagUnlocked()
+        },
+        SecondaryPage.ThemeSettings to inlineLauncher(SecondaryPage.ThemeSettings),
+        SecondaryPage.Wireless to inlineLauncher(SecondaryPage.Wireless),
+        SecondaryPage.Admin to inlineLauncher(SecondaryPage.Admin),
+        SecondaryPage.Realtime to inlineLauncher(SecondaryPage.Realtime),
+        SecondaryPage.ChannelAnalysis to inlineLauncher(SecondaryPage.ChannelAnalysis),
+        SecondaryPage.Led to inlineLauncher(SecondaryPage.Led),
+        SecondaryPage.Routes to inlineLauncher(SecondaryPage.Routes),
+        SecondaryPage.Nftables to inlineLauncher(SecondaryPage.Nftables),
+        SecondaryPage.Logs to inlineLauncher(SecondaryPage.Logs),
+        SecondaryPage.Processes to inlineLauncher(SecondaryPage.Processes),
+        SecondaryPage.Flash to inlineLauncher(SecondaryPage.Flash),
+        SecondaryPage.NetworkInterfaces to inlineLauncher(SecondaryPage.NetworkInterfaces),
+        SecondaryPage.Crontab to inlineLauncher(SecondaryPage.Crontab),
+        SecondaryPage.Startup to inlineLauncher(SecondaryPage.Startup)
+    )
+
+    // 竖屏启动目标（设备编辑器走 openEditor，不在此表；关于/主题设置两页忽略设备 id）。
+    val secondaryActivities = mapOf(
+        SecondaryPage.FileManager to FileManagerActivity::class.java,
+        SecondaryPage.PackageManager to PackageManagerActivity::class.java,
+        SecondaryPage.About to AboutActivity::class.java,
+        SecondaryPage.ThemeSettings to ThemeSettingsActivity::class.java,
+        SecondaryPage.Wireless to WirelessActivity::class.java,
+        SecondaryPage.Admin to AdminActivity::class.java,
+        SecondaryPage.Realtime to RealtimeActivity::class.java,
+        SecondaryPage.ChannelAnalysis to ChannelAnalysisActivity::class.java,
+        SecondaryPage.Led to LedActivity::class.java,
+        SecondaryPage.Routes to RoutesActivity::class.java,
+        SecondaryPage.Nftables to NftablesActivity::class.java,
+        SecondaryPage.Logs to LogsActivity::class.java,
+        SecondaryPage.Processes to ProcessesActivity::class.java,
+        SecondaryPage.Flash to FlashActivity::class.java,
+        SecondaryPage.NetworkInterfaces to NetworkInterfacesActivity::class.java,
+        SecondaryPage.Crontab to CrontabActivity::class.java,
+        SecondaryPage.Startup to StartupActivity::class.java
+    )
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -356,12 +292,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         movableContentOf<SecondaryPage> { page ->
             Box(Modifier.fillMaxSize()) {
                 val cfg = config
-                val ssh = SshConfig(
-                    host = cfg.sshHost.ifBlank { cfg.ip },
-                    port = cfg.sshPort,
-                    username = cfg.sshUsername,
-                    password = cfg.sshPassword
-                )
+                val ssh = cfg.toSshConfig()
                 when (page) {
                     SecondaryPage.FileManager -> FileManagerScreen(
                         ssh = ssh,
@@ -374,7 +305,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     )
                     SecondaryPage.About -> AboutScreen(
                         onBack = { secondary = null },
-                        hiddenDiagUnlocked = viewModel.hiddenDiagUnlocked.collectAsState().value,
+                        hiddenDiagUnlocked = viewModel.hiddenDiagUnlocked.collectAsStateWithLifecycle().value,
                         onUnlockHiddenDiag = { viewModel.unlockHiddenDiag() }
                     )
                     SecondaryPage.ThemeSettings -> ThemeSettingsScreen(
@@ -496,79 +427,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             if (isLandscape) {
                 secondary = page
             } else {
-                when (page) {
-                    SecondaryPage.FileManager -> fileManagerLauncher.launch(
-                        Intent(context, FileManagerActivity::class.java)
-                            .putExtra(FileManagerActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.PackageManager -> packageManagerLauncher.launch(
-                        Intent(context, PackageManagerActivity::class.java)
-                            .putExtra(PackageManagerActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.About -> aboutLauncher.launch(
-                        Intent(context, AboutActivity::class.java)
-                    )
-                    SecondaryPage.ThemeSettings -> themeSettingsLauncher.launch(
-                        Intent(context, ThemeSettingsActivity::class.java)
-                    )
-                    SecondaryPage.Wireless -> wirelessLauncher.launch(
-                        Intent(context, WirelessActivity::class.java)
-                            .putExtra(WirelessActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Admin -> adminLauncher.launch(
-                        Intent(context, AdminActivity::class.java)
-                            .putExtra(AdminActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Realtime -> realtimeLauncher.launch(
-                        Intent(context, RealtimeActivity::class.java)
-                            .putExtra(RealtimeActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.ChannelAnalysis -> channelAnalysisLauncher.launch(
-                        Intent(context, ChannelAnalysisActivity::class.java)
-                            .putExtra(ChannelAnalysisActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Led -> ledLauncher.launch(
-                        Intent(context, LedActivity::class.java)
-                            .putExtra(LedActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Routes -> routesLauncher.launch(
-                        Intent(context, RoutesActivity::class.java)
-                            .putExtra(RoutesActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Nftables -> nftablesLauncher.launch(
-                        Intent(context, NftablesActivity::class.java)
-                            .putExtra(NftablesActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Logs -> logsLauncher.launch(
-                        Intent(context, LogsActivity::class.java)
-                            .putExtra(LogsActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Processes -> processesLauncher.launch(
-                        Intent(context, ProcessesActivity::class.java)
-                            .putExtra(ProcessesActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Flash -> flashLauncher.launch(
-                        Intent(context, FlashActivity::class.java)
-                            .putExtra(FlashActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.NetworkInterfaces -> networkInterfacesLauncher.launch(
-                        Intent(context, NetworkInterfacesActivity::class.java)
-                            .putExtra(NetworkInterfacesActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Crontab -> crontabLauncher.launch(
-                        Intent(context, CrontabActivity::class.java)
-                            .putExtra(CrontabActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.Startup -> startupLauncher.launch(
-                        Intent(context, StartupActivity::class.java)
-                            .putExtra(StartupActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    SecondaryPage.System -> systemLauncher.launch(
-                        Intent(context, SystemActivity::class.java)
-                            .putExtra(SystemActivity.EXTRA_DEVICE_ID, config.id)
-                    )
-                    is SecondaryPage.DeviceEditor -> return
-                }
+                val activity = secondaryActivities[page] ?: return  // 设备编辑器不在此路径
+                inlineLaunchers.getValue(page).launch(
+                    Intent(context, activity).putExtra(EXTRA_DEVICE_ID, config.id)
+                )
             }
         }
 
@@ -755,7 +617,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         }
                     }
                     if (selectedTab == TAB_TERMINAL) {
-                        val terminalState by viewModel.terminal.state.collectAsState()
+                        val terminalState by viewModel.terminal.state.collectAsStateWithLifecycle()
                         val terminalConnected = terminalState is SshTerminal.State.Connected
                         Surface(
                             onClick = {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,14 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.data.remote.CrontabClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
@@ -48,7 +50,9 @@ import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppIconButton
 import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.ConnectionMonitor
-import com.mmckb.openwrtstatus.ui.components.StackedAlertHost
+import com.mmckb.openwrtstatus.ui.components.StackedAlertOverlay
+import com.mmckb.openwrtstatus.ui.components.alertAnchor
+import com.mmckb.openwrtstatus.ui.components.rememberAlertAnchorState
 import com.mmckb.openwrtstatus.ui.components.rememberAlertStackState
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 import kotlinx.coroutines.CancellationException
@@ -85,21 +89,13 @@ fun CrontabScreen(
     val scope = rememberCoroutineScope()
     val client = remember { CrontabClient() }
     val sshOrNull = remember(config) {
-        if (sshEnabled) {
-            SshConfig(
-                host = config.sshHost.ifBlank { config.ip },
-                port = config.sshPort,
-                username = config.sshUsername,
-                password = config.sshPassword
-            )
-        } else null
+        config.toSshConfigOrNull(sshEnabled)
     }
 
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     val alertStack = rememberAlertStackState()
-    val density = LocalDensity.current
-    var alertTopPadding by remember { mutableStateOf(0.dp) }
+    val alertAnchor = rememberAlertAnchorState()
 
     var content by remember { mutableStateOf("") }
 
@@ -173,16 +169,13 @@ fun CrontabScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {
             // 标题区（提示栈锚定其底部）
             Column(
-                modifier = Modifier.onGloballyPositioned { coords ->
-                    alertTopPadding = with(density) {
-                        (coords.positionInParent().y + coords.size.height).toDp() + 19.dp
-                    }
-                }
+                modifier = Modifier.alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -197,10 +190,11 @@ fun CrontabScreen(
                         modifier = Modifier.weight(1f)
                     )
                     AppIconButton(onClick = { load() }, enabled = !loading && !busy) {
-                        Text(
-                            "⟳",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = colors.onSurface
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "刷新",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -264,16 +258,7 @@ fun CrontabScreen(
             }
         }
 
-        // 悬浮提示栈：锚定标题区底部；测量完成前不渲染
-        if (alertTopPadding > 0.dp) {
-            StackedAlertHost(
-                state = alertStack,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(top = alertTopPadding)
-            )
-        }
+        // 悬浮提示栈：锚定标题区下方（间隙/首帧 gate 统一在 StackedAlerts 组件内）
+        StackedAlertOverlay(alertStack, alertAnchor)
     }
 }

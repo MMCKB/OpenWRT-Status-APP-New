@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.data.remote.FirewallData
 import com.mmckb.openwrtstatus.data.remote.IptChain
 import com.mmckb.openwrtstatus.data.remote.NftChainSpec
@@ -145,14 +146,7 @@ fun NftablesScreen(
     val client = remember { RoutesClient() }
     val nftClient = remember { com.mmckb.openwrtstatus.data.remote.NftClient() }
     val sshOrNull = remember(config) {
-        if (sshEnabled) {
-            SshConfig(
-                host = config.sshHost.ifBlank { config.ip },
-                port = config.sshPort,
-                username = config.sshUsername,
-                password = config.sshPassword
-            )
-        } else null
+        config.toSshConfigOrNull(sshEnabled)
     }
 
     var loading by remember { mutableStateOf(true) }

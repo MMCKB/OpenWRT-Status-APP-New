@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.data.remote.ProcessInfo
 import com.mmckb.openwrtstatus.data.remote.ProcessSignal
 import com.mmckb.openwrtstatus.data.remote.ProcessesClient
@@ -102,14 +103,7 @@ fun ProcessesScreen(
     val scope = rememberCoroutineScope()
     val client = remember { ProcessesClient() }
     val sshOrNull = remember(config) {
-        if (sshEnabled) {
-            SshConfig(
-                host = config.sshHost.ifBlank { config.ip },
-                port = config.sshPort,
-                username = config.sshUsername,
-                password = config.sshPassword
-            )
-        } else null
+        config.toSshConfigOrNull(sshEnabled)
     }
 
     var loading by remember { mutableStateOf(true) }

@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.data.remote.ChannelAnalysisClient
 import com.mmckb.openwrtstatus.data.remote.RouterException
 import com.mmckb.openwrtstatus.ui.components.AppAlertType
@@ -103,14 +107,7 @@ fun ChannelAnalysisScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val client = remember { ChannelAnalysisClient() }
     val sshOrNull = remember(config) {
-        if (sshEnabled) {
-            SshConfig(
-                host = config.sshHost.ifBlank { config.ip },
-                port = config.sshPort,
-                username = config.sshUsername,
-                password = config.sshPassword
-            )
-        } else null
+        config.toSshConfigOrNull(sshEnabled)
     }
 
     var loading by remember { mutableStateOf(true) }
@@ -203,10 +200,11 @@ fun ChannelAnalysisScreen(
                         modifier = Modifier.weight(1f)
                     )
                     AppIconButton(onClick = { load() }, enabled = !busy) {
-                        Text(
-                            "⟳",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = colors.onSurface
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "刷新",
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }

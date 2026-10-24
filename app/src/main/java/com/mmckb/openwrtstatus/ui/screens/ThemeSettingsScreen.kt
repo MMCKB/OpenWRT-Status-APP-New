@@ -18,7 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +45,7 @@ fun ThemeSettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    val prefs by ThemePrefs.state.collectAsState()
+    val prefs by ThemePrefs.state.collectAsStateWithLifecycle()
 
     Column(
         modifier = modifier

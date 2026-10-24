@@ -26,8 +26,8 @@
 | S7 | 中 | 巨型单文件（最大 2409 行） | 🔴 |
 | S8 | 中 | 无 i18n，约 1552 处硬编码中文 | 🔴 |
 | S9 | 中 | `material-icons-extended` 被上游冻结 | 🔴 |
-| S10 | 低 | 死代码 `LuciRpcClient.kt` | 🔴 |
-| S11 | 低 | `UbusRpcClient.clients` 非线程安全 | 🔴 |
+| S10 | 低 | 死代码 `LuciRpcClient.kt` | 🟢 已修复（文件已删除） |
+| S11 | 低 | `UbusRpcClient.clients` 非线程安全 | 🟢 已修复（ConcurrentHashMap） |
 | S12 | 低 | 主线程 `runBlocking` 读 DataStore | 🔴 |
 | S13 | 低 | 未开启 Gradle 配置缓存 | 🔴 |
 | S14 | 低 | 无版本目录 `libs.versions.toml` | 🔴 |
@@ -37,7 +37,7 @@
 | S18 | 中 | `allowInsecureTls` 是完全信任（含 hostname），开启后可被 MITM | 🟡 设计取舍 |
 | S19 | 低 | TOFU 指纹不匹配时返回 `NOT_INCLUDED` 而非 `CHANGED` | 🔴 |
 | S20 | 低 | 敏感页未启用 `FLAG_SECURE`，可被截屏/录屏 | 🔴 |
-| S21 | 低 | DataStore 残留 `useMock` 死键 | 🔴 |
+| S21 | 低 | DataStore 残留 `useMock` 死键 | 🟢 已修复（死键已清） |
 | **S22** | **高** | **Shell 转义函数在 11 处重复定义** | 🔴 |
 | **S23** | **高** | **错误文案映射在 13 处复制，且已现行为分叉** | 🔴 |
 | **S24** | 中 | 超时常量分散 12 个文件，语义相近却取值不一 | 🔴 |
@@ -307,7 +307,7 @@ else -> HostKeyRepository.NOT_INCLUDED      // ← 应为 CHANGED
 
 ---
 
-### S21 🔴 DataStore 残留 `useMock` 死键
+### S21 🟢 DataStore 残留 `useMock` 死键 —— 已修复
 
 **证据**：真机 dump 的 `preferences_pb` 里有 `useMock`，但
 `grep -rni "mock" app/src` **零命中** —— 早期版本留下的键，代码已不再读写。
@@ -493,7 +493,7 @@ Nftables / Logs / Flash / NetworkInterfaces / Crontab / Startup / System / Devic
 
 ---
 
-### S10 🔴 死代码 `LuciRpcClient.kt`
+### S10 🟢 死代码 `LuciRpcClient.kt` —— 已修复（文件删除）
 
 **位置**：`data/remote/LuciRpcClient.kt`（旧 luci-rpc CGI 客户端）
 
@@ -504,7 +504,7 @@ README 也说明该接口在 OpenWrt 19.07+ 已被移除、现用 ubus。
 
 ---
 
-### S11 🔴 `UbusRpcClient.clients` 非线程安全
+### S11 🟢 `UbusRpcClient.clients` 非线程安全 —— 已修复（ConcurrentHashMap）
 
 **位置**：`data/remote/UbusRpcClient.kt:72`
 ```kotlin

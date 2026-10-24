@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -76,6 +77,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
 import com.mmckb.openwrtstatus.data.remote.LuciFeatures
 import com.mmckb.openwrtstatus.data.remote.ScanNet
 import com.mmckb.openwrtstatus.data.remote.WirelessClient
@@ -328,12 +330,7 @@ fun WirelessScreen(
             android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val client = remember { WirelessClient() }
     val ssh = remember(config) {
-        SshConfig(
-            host = config.sshHost.ifBlank { config.ip },
-            port = config.sshPort,
-            username = config.sshUsername,
-            password = config.sshPassword
-        )
+        config.toSshConfig()
     }
 
     var radios by remember { mutableStateOf<List<WirelessRadio>?>(null) }
@@ -888,6 +885,7 @@ fun WirelessScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {

@@ -90,6 +90,12 @@ object NftRenderer {
         "log" to "记录日志"
     )
 
+    /** 动作徽标文案；映射漏配时回退键名（渲染降级，不崩溃）。 */
+    private fun action(key: String): String = ACTIONS[key] ?: key
+
+    /** `flow add @f` 字符串表达式（编译一次，避免热路径逐条规则重复编译）。 */
+    private val FLOW_ADD = Regex("^flow add (@\\S+)$")
+
     /** 1024 进制人性化字节（LuCI %.1024mB 同款：236.2 MB）。 */
     fun humanBytes(bytes: Long): String {
         if (bytes < 1024) return "$bytes B"
@@ -111,13 +117,15 @@ object NftRenderer {
         exprs.forEach { se ->
             var e: JsonElement = se
             // `flow add @flowtable` 字符串 → flow 表达式（LuCI 同款还原）
-            if (se is JsonPrimitive && Regex("^flow add (@\\S+)$").containsMatchIn(se.content)) {
-                val flowtable = Regex("^flow add (@\\S+)$").find(se.content)!!.groupValues[1]
-                e = buildJsonObject {
-                    put("flow", buildJsonObject {
-                        put("op", JsonPrimitive("add"))
-                        put("flowtable", JsonPrimitive(flowtable))
-                    })
+            if (se is JsonPrimitive) {
+                FLOW_ADD.find(se.content)?.let { m ->
+                    val flowtable = m.groupValues[1]
+                    e = buildJsonObject {
+                        put("flow", buildJsonObject {
+                            put("op", JsonPrimitive("add"))
+                            put("flowtable", JsonPrimitive(flowtable))
+                        })
+                    }
                 }
             }
             val obj = e as? JsonObject
@@ -166,16 +174,16 @@ object NftRenderer {
                 if (op == "!=" && rightIsSet) opText = "不属于"
                 return "${exprToString(left, exprToKey(left))} $opText ${exprToString(right, exprToKey(left))}"
             }
-            "accept" -> return ACTIONS["accept"]!!
-            "drop" -> return ACTIONS["drop"]!!
-            "notrack" -> return ACTIONS["notrack"]!!
-            "return" -> return ACTIONS["return"]!!
-            "continue" -> return ACTIONS["continue"]!!
-            "masquerade" -> return ACTIONS["masquerade"]!!
+            "accept" -> return action("accept")
+            "drop" -> return action("drop")
+            "notrack" -> return action("notrack")
+            "return" -> return action("return")
+            "continue" -> return action("continue")
+            "masquerade" -> return action("masquerade")
             "log" -> {
                 val l = spec as? JsonObject
                 val prefix = l?.get("prefix")?.let { (it as? JsonPrimitive)?.content }
-                return prefix?.let { "记录日志「$it」…" } ?: ACTIONS["log"]!!
+                return prefix?.let { "记录日志「$it」…" } ?: action("log")
             }
             "reject" -> {
                 val r = spec as? JsonObject
@@ -198,7 +206,7 @@ object NftRenderer {
             "dnat" -> return renderNat(kind, spec, "改写目标为")
             "redirect" -> {
                 val port = (spec as? JsonObject)?.get("port")?.let { (it as? JsonPrimitive)?.content }
-                return port?.let { "重定向到本机端口 $it" } ?: ACTIONS["redirect"]!!
+                return port?.let { "重定向到本机端口 $it" } ?: action("redirect")
             }
             "limit" -> {
                 val l = spec as? JsonObject ?: return "限速"

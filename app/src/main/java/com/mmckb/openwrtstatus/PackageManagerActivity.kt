@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.rememberDeviceConfig
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
@@ -40,12 +41,7 @@ class PackageManagerActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     val config = rememberDeviceConfig(deviceId)
                     if (config != null) {
-                        val ssh = SshConfig(
-                            host = config.sshHost.ifBlank { config.ip },
-                            port = config.sshPort,
-                            username = config.sshUsername,
-                            password = config.sshPassword
-                        )
+                        val ssh = config.toSshConfig()
                         PackageManagerScreen(
                             ssh = ssh,
                             sshEnabled = config.sshEnabled,
