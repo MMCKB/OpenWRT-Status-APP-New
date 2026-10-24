@@ -316,14 +316,23 @@ fun SystemScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 0.dp)
         ) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方，滚动时随内容滑入状态栏后面（边到边）。
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.alertAnchor(alertAnchor)
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 2.dp)
+                    .alertAnchor(alertAnchor)
             ) {
                 AppBackButton(onBack = onBack)
                 Spacer(Modifier.width(10.dp))
@@ -367,13 +376,6 @@ fun SystemScreen(
                     color = colors.error
                 )
             } else {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
                     when (tab) {
                         "general" -> {
                             Row(verticalAlignment = Alignment.CenterVertically) {

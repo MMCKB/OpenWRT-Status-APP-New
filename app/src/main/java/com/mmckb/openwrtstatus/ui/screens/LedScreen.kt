@@ -315,14 +315,24 @@ fun LedScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 0.dp)
         ) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方，滚动时随内容滑入状态栏后面
+            //（边到边：内容从透明状态栏底下穿过；静止时顶部与原先完全一致）。
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
             // 标题区（提示栈锚定返回键行底部）
             Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 2.dp)
+                    .alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -367,13 +377,6 @@ fun LedScreen(
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
             } else {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     if (actions.isEmpty()) {
                         Text(
                             "尚无 LED 动作。点击下方「添加 LED 动作」创建。",

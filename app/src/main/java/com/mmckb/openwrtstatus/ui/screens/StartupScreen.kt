@@ -196,14 +196,21 @@ fun StartupScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
         ) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方（item），滚动时随内容滑入状态栏后面（边到边）。
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
             // 标题区（提示栈锚定返回键行底部）
             Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 2.dp)
+                    .alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -231,28 +238,27 @@ fun StartupScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            item {
             SmoothOptionSwitcher(
                 options = listOf("init" to "启动脚本", "rc" to "本地启动脚本"),
                 selected = tab,
                 onSelect = { tab = it },
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(10.dp))
+            }
 
             if (loading) {
+                item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
+                }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     if (tab == "init") {
                         item {
                             Text(

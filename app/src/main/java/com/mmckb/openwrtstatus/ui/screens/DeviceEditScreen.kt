@@ -78,9 +78,9 @@ fun DeviceEditScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
             .imePadding()
             .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(top = 2.dp)
             .padding(bottom = 0.dp),

@@ -210,14 +210,21 @@ fun NetworkInterfacesScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 0.dp)
         ) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方（item），滚动时随内容滑入状态栏后面（边到边）。
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
             // 标题区（提示栈锚定其底部）
             Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 2.dp)
+                    .alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -245,21 +252,20 @@ fun NetworkInterfacesScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
+                }
             }
             Spacer(Modifier.height(10.dp))
 
             if (loading) {
+                item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
+                }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     item {
                         Button(
                             onClick = { editSection = "" },
