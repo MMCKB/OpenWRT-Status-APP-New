@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.rememberDeviceConfig
 import com.mmckb.openwrtstatus.ui.screens.RealtimeScreen
@@ -39,12 +40,7 @@ class RealtimeActivity : ComponentActivity() {
                     if (config != null) {
                         RealtimeScreen(
                             config = config,
-                            ssh = if (config.sshEnabled) SshConfig(
-                                host = config.sshHost.ifBlank { config.ip },
-                                port = config.sshPort,
-                                username = config.sshUsername,
-                                password = config.sshPassword
-                            ) else null,
+                            ssh = config.toSshConfigOrNull(config.sshEnabled),
                             onBack = { finish() }
                         )
                     }

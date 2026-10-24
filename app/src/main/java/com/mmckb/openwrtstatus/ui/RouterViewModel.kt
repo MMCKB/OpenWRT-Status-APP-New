@@ -11,6 +11,7 @@ import com.mmckb.openwrtstatus.data.model.HistorySample
 import com.mmckb.openwrtstatus.data.model.LeaseInfo
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
 import com.mmckb.openwrtstatus.data.model.StatusUiState
 import com.mmckb.openwrtstatus.data.model.TrafficRate
 import com.mmckb.openwrtstatus.data.remote.RouterException
@@ -242,12 +243,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 _leaseError.value = null
                 return@launch
             }
-            val ssh = SshConfig(
-                host = cfg.sshHost.ifBlank { cfg.ip },
-                port = cfg.sshPort,
-                username = cfg.sshUsername,
-                password = cfg.sshPassword
-            )
+            val ssh = cfg.toSshConfig()
             runCatching { SshExec.run(ssh, "cat /tmp/dhcp.leases") }
                 .onSuccess { raw ->
                     _leases.value = repository.parseLeases(raw)
@@ -261,12 +257,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val cfg = _config.value
             terminal.connect(
-                SshConfig(
-                    host = cfg.sshHost.ifBlank { cfg.ip },
-                    port = cfg.sshPort,
-                    username = cfg.sshUsername,
-                    password = cfg.sshPassword
-                )
+                cfg.toSshConfig()
             )
         }
     }
@@ -332,12 +323,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private fun currentSsh(): SshConfig? {
         val cfg = _config.value
         if (!cfg.sshEnabled) return null
-        return SshConfig(
-            host = cfg.sshHost.ifBlank { cfg.ip },
-            port = cfg.sshPort,
-            username = cfg.sshUsername,
-            password = cfg.sshPassword
-        )
+        return cfg.toSshConfig()
     }
 
     /** 读取 CPU 温度（/sys/class/thermal 首个 thermal_zone；不支持时保持 null）。 */

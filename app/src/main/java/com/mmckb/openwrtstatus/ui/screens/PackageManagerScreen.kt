@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -353,6 +354,7 @@ fun PackageManagerScreen(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp)
             .padding(top = 2.dp, bottom = 0.dp)
     ) {

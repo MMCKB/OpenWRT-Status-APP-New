@@ -26,8 +26,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +77,7 @@ fun ConnectionToastHost(
     modifier: Modifier = Modifier,
     slideFromTop: Boolean = false
 ) {
-    val status by ConnectionMonitor.status.collectAsState()
+    val status by ConnectionMonitor.status.collectAsStateWithLifecycle()
     var toast by remember { mutableStateOf<ToastData?>(null) }
     var lastToast by remember { mutableStateOf(ToastData("路由器连接已断开", OfflineColor, true)) }
     var previous by remember { mutableStateOf(ConnectionMonitor.Status.Unknown) }

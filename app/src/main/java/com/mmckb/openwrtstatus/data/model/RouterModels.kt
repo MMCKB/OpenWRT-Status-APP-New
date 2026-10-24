@@ -44,6 +44,21 @@ data class SshConfig(
 )
 
 /**
+ * 从设备配置派生 SSH 连接参数（此前同样的四行构造在 18 个文件重复了 21 处）：
+ * SSH 主机为空时回落到 LuCI 地址，其余字段同名义透传。
+ */
+fun RouterConfig.toSshConfig(): SshConfig = SshConfig(
+    host = sshHost.ifBlank { ip },
+    port = sshPort,
+    username = sshUsername,
+    password = sshPassword
+)
+
+/** 未开启 SSH 时返回 null（调用侧的 `if (sshEnabled) … else null` 收敛于此）。 */
+fun RouterConfig.toSshConfigOrNull(sshEnabled: Boolean): SshConfig? =
+    if (sshEnabled) toSshConfig() else null
+
+/**
  * A logical network interface reported by `network.interface dump`.
  */
 data class InterfaceInfo(

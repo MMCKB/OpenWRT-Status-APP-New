@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -39,6 +40,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import com.mmckb.openwrtstatus.data.remote.SystemClient
 import com.mmckb.openwrtstatus.data.remote.SystemData
@@ -100,12 +103,7 @@ fun SystemScreen(
     val scope = rememberCoroutineScope()
     val client = remember { SystemClient() }
     val ssh = remember(config) {
-        SshConfig(
-            host = config.sshHost.ifBlank { config.ip },
-            port = config.sshPort,
-            username = config.sshUsername,
-            password = config.sshPassword
-        )
+        config.toSshConfig()
     }
 
     var loading by remember { mutableStateOf(true) }
@@ -319,6 +317,7 @@ fun SystemScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .padding(top = 2.dp, bottom = 0.dp)
         ) {

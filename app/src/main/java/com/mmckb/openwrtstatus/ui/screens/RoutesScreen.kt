@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfigOrNull
 import com.mmckb.openwrtstatus.data.remote.NeighEntry
 import com.mmckb.openwrtstatus.data.remote.RouteEntry
 import com.mmckb.openwrtstatus.data.remote.RouterException
@@ -101,14 +102,7 @@ fun RoutesScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val client = remember { RoutesClient() }
     val sshOrNull = remember(config) {
-        if (sshEnabled) {
-            SshConfig(
-                host = config.sshHost.ifBlank { config.ip },
-                port = config.sshPort,
-                username = config.sshUsername,
-                password = config.sshPassword
-            )
-        } else null
+        config.toSshConfigOrNull(sshEnabled)
     }
 
     var loading by remember { mutableStateOf(true) }

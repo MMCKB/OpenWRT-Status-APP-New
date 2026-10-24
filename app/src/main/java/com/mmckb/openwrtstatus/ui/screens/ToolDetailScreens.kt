@@ -45,6 +45,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -351,7 +352,7 @@ fun DetailScreen(
     viewModel: com.mmckb.openwrtstatus.ui.RouterViewModel,
     modifier: Modifier = Modifier
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     when (val s = state) {
         is com.mmckb.openwrtstatus.data.model.StatusUiState.Success ->
             DetailContent(s.data, viewModel, modifier)
@@ -386,11 +387,11 @@ private fun DetailContent(
     viewModel: com.mmckb.openwrtstatus.ui.RouterViewModel,
     modifier: Modifier = Modifier
 ) {
-    val leases by viewModel.leases.collectAsState()
-    val leaseError by viewModel.leaseError.collectAsState()
-    val temperatureC by viewModel.temperatureC.collectAsState()
-    val diagUnlocked by viewModel.hiddenDiagUnlocked.collectAsState()
-    val hiddenDiag by viewModel.hiddenDiag.collectAsState()
+    val leases by viewModel.leases.collectAsStateWithLifecycle()
+    val leaseError by viewModel.leaseError.collectAsStateWithLifecycle()
+    val temperatureC by viewModel.temperatureC.collectAsStateWithLifecycle()
+    val diagUnlocked by viewModel.hiddenDiagUnlocked.collectAsStateWithLifecycle()
+    val hiddenDiag by viewModel.hiddenDiag.collectAsStateWithLifecycle()
 
     // 解锁后进入设备页时读取一次扩展信息（端口状态/存储挂载）
     LaunchedEffect(diagUnlocked) {

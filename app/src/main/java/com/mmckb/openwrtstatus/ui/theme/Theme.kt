@@ -9,9 +9,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -119,7 +120,7 @@ object AppShapes {
  */
 @Composable
 fun OpenWrtStatusTheme(content: @Composable () -> Unit) {
-    val prefs by ThemePrefs.state.collectAsState()
+    val prefs by ThemePrefs.state.collectAsStateWithLifecycle()
     val darkTheme = when (prefs.mode) {
         AppThemeMode.SYSTEM -> isSystemInDarkTheme()
         AppThemeMode.LIGHT -> false
