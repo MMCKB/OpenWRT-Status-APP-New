@@ -2,11 +2,14 @@ package com.mmckb.openwrtstatus.data.ssh
 
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelShell
+import com.jcraft.jsch.HostKey
+import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
+import com.mmckb.openwrtstatus.data.local.SshHostKeys
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Properties
+import kotlin.coroutines.coroutineContext
 
 private const val CONNECT_TIMEOUT_MS = 10_000
 private const val MAX_OUTPUT_CHARS = 24_000
@@ -44,6 +48,82 @@ internal class PasswordUserInfo(private val password: String) : UserInfo, UIKeyb
         echo: BooleanArray?
     ): Array<String>? = prompts?.map { password }?.toTypedArray()
 }
+
+/**
+ * TOFU 主机密钥校验：首次连接记录服务器指纹（按 host:port 持久化于本地存储），
+ * 之后每次连接比对；不一致返回 NOT_INCLUDED，JSch 抛出的异常经 [hostKeyFriendly]
+ * 翻译为中文提示。回调是同步的：指纹读进程级内存缓存（SshHostKeys），首次记录写入
+ * 同时异步落盘。
+ */
+internal class TofuHostKeyRepository(private val hostPort: String) : HostKeyRepository {
+
+    // jsch 会以 null 参数回调（getHostKey(chost, null) 等），参数必须可空，
+    // 否则 Kotlin 入口处的隐式非空检查在 R8 包上抛 NPE
+    override fun check(host: String?, key: ByteArray?): Int {
+        if (key == null) return HostKeyRepository.NOT_INCLUDED
+        val fingerprint = fingerprintOf(key)
+        val known = SshHostKeys.fingerprint(hostPort)
+        return when {
+            known == null -> {
+                SshHostKeys.remember(hostPort, fingerprint)
+                HostKeyRepository.OK
+            }
+            fingerprint == known -> HostKeyRepository.OK
+            else -> HostKeyRepository.NOT_INCLUDED
+        }
+    }
+
+    override fun add(key: HostKey?, ui: UserInfo?) {}
+    override fun remove(host: String?, type: String?) {}
+    override fun remove(host: String?, type: String?, key: ByteArray?) {}
+    override fun getKnownHostsRepositoryID(): String = ""
+    override fun getHostKey(): Array<HostKey> = emptyArray()
+    override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
+
+    /** 标准 SSH MD5 指纹：冒号分隔的十六进制（TOFU 比对只需自洽）。 */
+    private fun fingerprintOf(key: ByteArray): String =
+        java.security.MessageDigest.getInstance("MD5").digest(key)
+            .joinToString(":") { String.format("%02x", it) }
+}
+
+/** 为 JSch 实例挂上 TOFU 主机密钥校验（配合 StrictHostKeyChecking=yes）。 */
+internal fun JSch.applyTofuHostKeyChecking(host: String, port: Int): JSch {
+    hostKeyRepository = TofuHostKeyRepository("$host:$port")
+    return this
+}
+
+/**
+ * 主机密钥与首次信任记录不一致（中间人风险）。
+ *
+ * 单独成类型，是为了让「SSH 失败就回退 ubus」的写配置路径能区分两类失败：
+ * 连接不可用 / 认证失败可以静默回退，这一类**必须上抛**——否则回退逻辑会把
+ * 「可能存在中间人风险」的告警一并吞掉，用户只看到「保存失败」。
+ */
+class HostKeyMismatchException(message: String) : JSchException(message)
+
+/**
+ * 只在「SSH 本身不可用」时返回 null；[HostKeyMismatchException] 原样上抛。
+ *
+ * 供「优先走 SSH、失败再回退 ubus」的路径使用：回退只该吞掉可用性问题，
+ * 不能连安全信号一起吞掉。
+ */
+internal inline fun <T> sshOrNull(block: () -> T): T? =
+    try {
+        block()
+    } catch (e: HostKeyMismatchException) {
+        throw e
+    } catch (_: Throwable) {
+        null
+    }
+
+/** 主机密钥被拒（指纹与记录不符）时给出中文说明，其余异常原样透传。 */
+internal fun hostKeyFriendly(e: JSchException): JSchException =
+    if (e.message?.contains("reject", ignoreCase = true) == true ||
+        e.message?.contains("hostkey", ignoreCase = true) == true
+    ) HostKeyMismatchException(
+        "路由器 SSH 指纹与首次连接记录不一致，可能存在中间人风险。" +
+            "若确认路由器重装或更换过，请在系统设置中清除本应用数据后重新信任。"
+    ) else e
 
 /**
  * Interactive SSH shell backed by JSch (`com.github.mwiede:jsch`, the maintained fork that
@@ -79,12 +159,15 @@ class SshTerminal {
         buffer.clear()
         _output.value = ""
         try {
-            val jsch = JSch()
+            val jsch = JSch().applyTofuHostKeyChecking(config.host, config.port)
             val newSession = jsch.getSession(config.username, config.host, config.port)
             newSession.setPassword(config.password)
             newSession.setConfig(Properties().apply {
-                put("StrictHostKeyChecking", "no")
+                put("StrictHostKeyChecking", "yes")
                 put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+                // 本应用不保存已知主机密钥：跳过 send_kexinit 的密钥类型重排，
+                // 避免其对 TofuHostKeyRepository 的 getHostKey(chost, null) 回调
+                put("prefer_known_host_key_types", "no")
             })
             newSession.userInfo = PasswordUserInfo(config.password)
             newSession.timeout = CONNECT_TIMEOUT_MS
@@ -101,8 +184,9 @@ class SshTerminal {
             append("已连接 ${config.username}@${config.host}:${config.port}\n")
             startReader(shell.inputStream)
         } catch (e: Exception) {
+            android.util.Log.e("SshTerminal", "SSH connect failed", e)
             closeQuietly()
-            _state.value = State.Failed(readableError(e))
+            _state.value = State.Failed(readableError(if (e is JSchException) hostKeyFriendly(e) else e))
         }
     }
 
@@ -189,17 +273,23 @@ object SshExec {
 
     suspend fun run(config: SshConfig, command: String, timeoutMs: Int = 10_000): String =
         withContext(Dispatchers.IO) {
-            val jsch = JSch()
+            val jsch = JSch().applyTofuHostKeyChecking(config.host, config.port)
             val session = jsch.getSession(config.username, config.host, config.port)
             try {
                 session.setPassword(config.password)
                 session.setConfig(Properties().apply {
-                    put("StrictHostKeyChecking", "no")
+                    put("StrictHostKeyChecking", "yes")
                     put("PreferredAuthentications", "publickey,keyboard-interactive,password")
+                    // 同 SshTerminal：跳过 send_kexinit 的已知主机密钥类型重排
+                    put("prefer_known_host_key_types", "no")
                 })
                 session.userInfo = PasswordUserInfo(config.password)
                 session.timeout = timeoutMs
-                session.connect(timeoutMs)
+                try {
+                    session.connect(timeoutMs)
+                } catch (e: JSchException) {
+                    throw hostKeyFriendly(e)
+                }
 
                 val channel = session.openChannel("exec") as ChannelExec
                 channel.setCommand(command)
@@ -209,15 +299,28 @@ object SshExec {
 
                 val result = StringBuilder()
                 val chunk = ByteArray(4096)
+                // 无数据（无响应）超时：半死连接上 available() 永远返回 0 且 channel 不关闭，
+                // 若无此上限循环会永不退出，界面一直停留在「正在应用」。
+                var lastDataAt = System.currentTimeMillis()
                 while (true) {
                     while (stdout.available() > 0) {
                         val count = stdout.read(chunk, 0, minOf(chunk.size, stdout.available()))
                         if (count < 0) break
                         result.append(String(chunk, 0, count, Charsets.UTF_8))
+                        lastDataAt = System.currentTimeMillis()
                     }
                     if (channel.isClosed) {
                         if (stdout.available() > 0) continue
                         break
+                    }
+                    // 连接断开/操作被取消时立即终止轮询，让按钮立刻恢复
+                    if (!coroutineContext.isActive) {
+                        throw java.io.InterruptedIOException("连接已断开，操作已终止。")
+                    }
+                    if (System.currentTimeMillis() - lastDataAt > timeoutMs) {
+                        throw java.net.SocketTimeoutException(
+                            "SSH ${timeoutMs / 1000} 秒无响应，连接可能已中断。"
+                        )
                     }
                     Thread.sleep(40)
                 }

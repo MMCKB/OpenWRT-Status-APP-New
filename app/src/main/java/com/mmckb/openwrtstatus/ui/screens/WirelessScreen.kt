@@ -6,7 +6,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
@@ -15,9 +18,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Wifi
@@ -38,9 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -50,22 +55,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
+import com.mmckb.openwrtstatus.data.remote.LuciFeatures
 import com.mmckb.openwrtstatus.data.remote.ScanNet
 import com.mmckb.openwrtstatus.data.remote.WirelessClient
 import com.mmckb.openwrtstatus.data.remote.WirelessIface
@@ -73,6 +86,9 @@ import com.mmckb.openwrtstatus.data.remote.WirelessRadio
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.AppDialog
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
+import com.mmckb.openwrtstatus.ui.components.AppTextField
+import com.mmckb.openwrtstatus.ui.components.OptionSwitcherEasing
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.SmoothOptionSwitcher
 import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
@@ -82,24 +98,75 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.ceil
 
 private const val UPLOAD_TMP_PATH = "/tmp/upload.apk"
 
-/** 加密方式（value to LuCI 中文标签）。 */
-private val SECURITY_OPTIONS = listOf(
-    "psk2" to "WPA2-PSK (强安全性)",
-    "sae" to "WPA3-SAE (强安全性)",
-    "sae-mixed" to "WPA2-PSK/WPA3-SAE 混合 (强安全性)",
-    "psk-mixed" to "WPA-PSK/WPA2-PSK 混合 (中等安全性)",
-    "psk" to "WPA-PSK (弱安全性)",
-    "none" to "无加密 (开放网络)"
+/** 加密方式清单：与 LuCI crypto_modes 同序同集（按特性裁剪，默认回退视为完整版 wpad）。 */
+private fun securityOptions(features: LuciFeatures?): List<Pair<String, String>> {
+    val f = features ?: LuciFeatures.FALLBACK
+    return buildList {
+        add("none" to "无加密")
+        if (f.hostapdEap) {
+            if (f.hostapdSuiteb192) add("wpa3-192" to "WPA3-EAP 192 位")
+            add("psk2" to "WPA2-PSK")
+            add("wpa2" to "WPA2-EAP")
+            add("wpa3" to "WPA3-EAP")
+            add("wpa3-mixed" to "WPA2-EAP/WPA3-EAP 混合")
+        }
+        if (f.hostapdSae) {
+            add("sae" to "WPA3-SAE")
+            add("sae-mixed" to "WPA2-PSK/WPA3-SAE 混合")
+            add("sae-compat" to "WPA2-PSK/WPA3-SAE 兼容模式")
+        }
+        add("psk-mixed" to "WPA-PSK/WPA2-PSK 混合")
+        add("wpa" to "WPA-EAP")
+        add("psk" to "WPA-PSK")
+        if (f.hostapdOwe) add("owe" to "OWE (增强开放)")
+    }
+}
+
+/** 需要填写 PSK 密码的加密方式。 */
+private val PSK_ENCRYPTIONS = setOf("psk", "psk2", "psk-mixed", "sae", "sae-mixed", "sae-compat")
+
+/** 企业级（EAP/RADIUS）加密方式。 */
+private val EAP_ENCRYPTIONS = setOf("wpa", "wpa2", "wpa3", "wpa3-mixed", "wpa3-192")
+
+/** 加密方式是否需要密码（含 802.11w/算法选择的家族，同 LuCI cipher 依赖）。 */
+private val CIPHER_ENCRYPTIONS = setOf("psk", "psk2", "psk-mixed", "sae", "wpa", "wpa2", "wpa3", "wpa3-mixed", "wpa3-192")
+
+/** 算法选项（LuCI 同款）。 */
+private val CIPHER_OPTIONS = listOf(
+    "auto" to "auto",
+    "ccmp" to "强制 CCMP (AES)",
+    "ccmp256" to "强制 CCMP-256 (AES)",
+    "gcmp" to "强制 GCMP (AES)",
+    "gcmp256" to "强制 GCMP-256 (AES)",
+    "tkip" to "强制 TKIP",
+    "tkip+ccmp" to "强制 TKIP + CCMP (AES)"
 )
 
 private val MACFILTER_OPTIONS = listOf(
-    "disable" to "已禁用",
+    "" to "已禁用",
     "allow" to "仅允许列表内",
     "deny" to "仅允许列表外"
 )
+
+/** 模式选项（含 WDS 组合；保存时拆为 uci 的 mode + wds=1；Mesh 仅在固件支持时出现，同 LuCI）。 */
+private val MODE_OPTIONS = listOf(
+    "ap" to "AP 接入点",
+    "sta" to "客户端 (STA)",
+    "adhoc" to "Ad-Hoc",
+    "mesh" to "802.11s (Mesh)",
+    "ap-wds" to "AP 接入点 (WDS)",
+    "sta-wds" to "客户端 (WDS)"
+)
+
+private fun modeOptions(meshAvailable: Boolean): List<Pair<String, String>> =
+    MODE_OPTIONS.filter { meshAvailable || it.first != "mesh" }
+
+private fun modeLabel(value: String): String =
+    MODE_OPTIONS.firstOrNull { it.first == value }?.second ?: value
 
 private fun bandLabel(band: String?): String = when (band) {
     "5g" -> "5 GHz"
@@ -109,7 +176,7 @@ private fun bandLabel(band: String?): String = when (band) {
 }
 
 private fun encryptionLabel(value: String?, live: String? = null): String =
-    live ?: (SECURITY_OPTIONS.firstOrNull { it.first == value }?.second ?: (value ?: "未设置"))
+    live ?: (securityOptions(null).firstOrNull { it.first == value }?.second ?: (value ?: "未设置"))
 
 /**
  * WiFi 分享二维码内容（安卓/iOS 相机通用格式）：
@@ -168,32 +235,60 @@ private fun channelOptions(band: String?): List<Pair<String, String>> {
     return list
 }
 
-private fun htmodeOptions(band: String?, hwmode: String?): List<Pair<String, String>> {
-    val mode = hwmode ?: when (band) {
-        "5g" -> "11ac"
-        else -> "11n"
+/**
+ * 频宽选项：按 LuCI CBIWifiFrequencyValue 的规则——每个工作频率只列该协议的频宽，
+ * 并按 iwinfo 实测支持的 htmodes 过滤，标签为纯 MHz（如 "80 MHz"），首项 "-" 表示仅 Legacy。
+ */
+private fun htmodeOptions(hwmode: String?, availableHtmodes: List<String>): List<Pair<String, String>> {
+    val entries = when (hwmode) {
+        "n" -> listOf("HT20" to "20 MHz", "HT40" to "40 MHz")
+        "ac" -> listOf("VHT20" to "20 MHz", "VHT40" to "40 MHz", "VHT80" to "80 MHz", "VHT160" to "160 MHz")
+        "ax" -> listOf("HE20" to "20 MHz", "HE40" to "40 MHz", "HE80" to "80 MHz", "HE160" to "160 MHz")
+        "be" -> listOf("EHT20" to "20 MHz", "EHT40" to "40 MHz", "EHT80" to "80 MHz", "EHT160" to "160 MHz", "EHT320" to "320 MHz")
+        else -> emptyList()
     }
-    val widths = when (mode) {
-        "11n" -> listOf(20, 40)
-        "11ac" -> listOf(20, 40, 80, 160)
-        "11ax" -> listOf(20, 40, 80, 160)
-        else -> listOf(20, 40)
-    }
-    val prefix = when (mode) {
-        "11n" -> "HT"
-        "11ac" -> "VHT"
-        "11ax" -> "HE"
-        else -> "HT"
-    }
-    return widths.map { w -> "$prefix$w" to "$w MHz" }
+    return listOf("" to "-") + entries.filter { it.first in availableHtmodes }
 }
 
 private fun htmodeLabel(htmode: String?): String = when {
-    htmode == null -> "-"
-    htmode.startsWith("HE") -> "${htmode.substring(2)} MHz (Wi-Fi 6)"
-    htmode.startsWith("VHT") -> "${htmode.substring(3)} MHz (Wi-Fi 5)"
-    htmode.startsWith("HT") -> "${htmode.substring(2)} MHz (Wi-Fi 4)"
+    htmode.isNullOrEmpty() -> "-"
+    htmode.startsWith("EHT") -> "${htmode.substring(3)} MHz"
+    htmode.startsWith("HE") -> "${htmode.substring(2)} MHz"
+    htmode.startsWith("VHT") -> "${htmode.substring(3)} MHz"
+    htmode.startsWith("HT") -> "${htmode.substring(2)} MHz"
     else -> htmode
+}
+
+/**
+ * 工作频率（hwmode）选项：按 iwinfo 实测的 hwmodes 与 hostapd 特性裁剪（同 LuCI）。
+ * uci 的 hwmode 值与 LuCI 一致为 ''/'n'/'ac'/'ax'/'be'。
+ */
+private fun hwmodeOptions(availableHwmodes: List<String>, features: LuciFeatures?): List<Pair<String, String>> {
+    val opts = mutableListOf<Pair<String, String>>()
+    if (availableHwmodes.any { it == "a" || it == "b" || it == "g" }) opts.add("" to "Legacy")
+    if ("n" in availableHwmodes) opts.add("n" to "N")
+    if ("ac" in availableHwmodes && features?.hostapd11ac != false) opts.add("ac" to "AC")
+    if ("ax" in availableHwmodes && features?.hostapd11ax != false) opts.add("ax" to "AX")
+    if ("be" in availableHwmodes && features?.hostapd11be == true) opts.add("be" to "BE")
+    return opts
+}
+
+/** 显示用工作频率：uci 未写 hwmode 时按 htmode 前缀推导（同 LuCI 的行为）。 */
+private fun effectiveHwmode(hwmode: String?, htmode: String?): String =
+    hwmode?.takeIf { it.isNotBlank() } ?: when {
+        htmode?.startsWith("HE") == true -> "ax"
+        htmode?.startsWith("VHT") == true -> "ac"
+        htmode?.startsWith("EHT") == true -> "be"
+        htmode?.startsWith("HT") == true -> "n"
+        else -> ""
+    }
+
+private fun hwmodeDisplay(hwmode: String?, htmode: String?): String = when (effectiveHwmode(hwmode, htmode)) {
+    "n" -> "N"
+    "ac" -> "AC"
+    "ax" -> "AX"
+    "be" -> "BE"
+    else -> "Legacy"
 }
 
 private val COUNTRY_OPTIONS = listOf(
@@ -235,12 +330,7 @@ fun WirelessScreen(
             android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val client = remember { WirelessClient() }
     val ssh = remember(config) {
-        SshConfig(
-            host = config.sshHost.ifBlank { config.ip },
-            port = config.sshPort,
-            username = config.sshUsername,
-            password = config.sshPassword
-        )
+        config.toSshConfig()
     }
 
     var radios by remember { mutableStateOf<List<WirelessRadio>?>(null) }
@@ -251,14 +341,14 @@ fun WirelessScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
     var showApplyConfirm by remember { mutableStateOf(false) }
-    var pendingApply by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     var editRadioFor by remember { mutableStateOf<String?>(null) }
     var radioChannel by remember { mutableStateOf("auto") }
     var radioHtmode by remember { mutableStateOf("") }
     var radioTxpower by remember { mutableStateOf("") }
     var radioCountry by remember { mutableStateOf("") }
-    var radioHwmode by remember { mutableStateOf("11ax") }
+    // uci hwmode 取值：''/n/ac/ax/be（LuCI 同款，不带 "11" 前缀）
+    var radioHwmode by remember { mutableStateOf("") }
 
     var editIfaceFor by remember { mutableStateOf<String?>(null) }
     var ifaceMode by remember { mutableStateOf("ap") }
@@ -270,20 +360,85 @@ fun WirelessScreen(
     var ifaceHidden by remember { mutableStateOf(false) }
     var ifaceWmm by remember { mutableStateOf(true) }
     var ifaceIsolate by remember { mutableStateOf(false) }
-    var ifaceMacfilter by remember { mutableStateOf("disable") }
+    var ifaceMacfilter by remember { mutableStateOf("") }
     var ifaceMaclist by remember { mutableStateOf("") }
     var ifaceBssid by remember { mutableStateOf("") }
-    var ifaceDtim by remember { mutableStateOf("") }
-    var ifaceBeaconInt by remember { mutableStateOf("") }
-    var ifaceFrag by remember { mutableStateOf("") }
-    var ifaceRts by remember { mutableStateOf("") }
     var ifaceShortPreamble by remember { mutableStateOf(true) }
     var ifaceSectionTab by remember { mutableStateOf("general") }
 
+    // 添加/编辑 WiFi 共用的弹窗状态：两级页签（网卡/接口）+ LuCI 全部选项。
+    var dlgGroup by remember { mutableStateOf("iface") }
+    var dlgDeviceTab by remember { mutableStateOf("general") }
+    var dlgKeyError by remember { mutableStateOf<String?>(null) }
+    var networkOptions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var features by remember { mutableStateOf<LuciFeatures?>(null) }
+    var txPowerChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var countryChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var channelChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var networkPickerOpen by remember { mutableStateOf(false) }
+    var networkPicked by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // 接口表单：常规（mesh）
+    var dlgMeshId by remember { mutableStateOf("") }
+    var dlgMeshFwding by remember { mutableStateOf(true) }
+    var dlgMeshRssi by remember { mutableStateOf("") }
+    // 接口表单：无线安全
+    var dlgPmf by remember { mutableStateOf("0") }
+    var dlgPmfMaxTimeout by remember { mutableStateOf("") }
+    var dlgPmfRetryTimeout by remember { mutableStateOf("") }
+    var dlgKrack by remember { mutableStateOf(false) }
+    var dlgWps by remember { mutableStateOf(false) }
+    var dlgAuthServer by remember { mutableStateOf("") }
+    var dlgAuthPort by remember { mutableStateOf("") }
+    var dlgAuthSecret by remember { mutableStateOf("") }
+    var dlgDynamicVlan by remember { mutableStateOf("") }
+    var dlgPerStaVif by remember { mutableStateOf(false) }
+    // 接口表单：高级
+    var dlgMulticastToUnicast by remember { mutableStateOf(false) }
+    var dlgBridgeIsolate by remember { mutableStateOf(false) }
+    var dlgIfname by remember { mutableStateOf("") }
+    var dlgMacaddr by remember { mutableStateOf("") }
+    var dlgGroupRekey by remember { mutableStateOf("") }
+    var dlgSkipInactivity by remember { mutableStateOf(false) }
+    var dlgMaxInactivity by remember { mutableStateOf("") }
+    var dlgMaxListenInterval by remember { mutableStateOf("") }
+    var dlgDisassocLowAck by remember { mutableStateOf(true) }
+    // 接口表单：WLAN 漫游（802.11r/k/v）
+    var dlgIeee80211r by remember { mutableStateOf(false) }
+    var dlgNasid by remember { mutableStateOf("") }
+    var dlgMobilityDomain by remember { mutableStateOf("") }
+    var dlgReassocDeadline by remember { mutableStateOf("") }
+    var dlgFtOverDs by remember { mutableStateOf("") }
+    var dlgFtPskLocal by remember { mutableStateOf(true) }
+    var dlgR0Lifetime by remember { mutableStateOf("") }
+    var dlgR1KeyHolder by remember { mutableStateOf("") }
+    var dlgPmkR1Push by remember { mutableStateOf(false) }
+    var dlgR0kh by remember { mutableStateOf("") }
+    var dlgR1kh by remember { mutableStateOf("") }
+    var dlgIeee80211k by remember { mutableStateOf(false) }
+    var dlgRrmNeighbor by remember { mutableStateOf(false) }
+    var dlgRrmBeacon by remember { mutableStateOf(false) }
+    var dlgTimeAdv by remember { mutableStateOf("") }
+    var dlgTimeZone by remember { mutableStateOf("") }
+    var dlgWnm by remember { mutableStateOf(false) }
+    var dlgWnmNoKeys by remember { mutableStateOf(false) }
+    var dlgBssTransition by remember { mutableStateOf(false) }
+    var dlgProxyArp by remember { mutableStateOf(false) }
+
+    // 设备表单（网卡页签，typed 字段沿用 radio*；高级项为 uci extra）
+    var radioCellDensity by remember { mutableStateOf("") }
+    var radioDistance by remember { mutableStateOf("") }
+    var radioFrag by remember { mutableStateOf("") }
+    var radioRts by remember { mutableStateOf("") }
+    var radioBeaconInt by remember { mutableStateOf("") }
+    var radioDtimPeriod by remember { mutableStateOf("") }
+    var radioNoscan by remember { mutableStateOf(false) }
+    var radioVendorVht by remember { mutableStateOf(false) }
+    var radioLegacyRates by remember { mutableStateOf(false) }
+    var radioRxldpc by remember { mutableStateOf(true) }
+    var radioLdpc by remember { mutableStateOf(true) }
+
     var addWifiFor by remember { mutableStateOf<String?>(null) }
-    var addSsid by remember { mutableStateOf("") }
-    var addKey by remember { mutableStateOf("") }
-    var addEncryption by remember { mutableStateOf("psk2") }
 
     var deleteIfaceFor by remember { mutableStateOf<String?>(null) }
     var shareIfaceFor by remember { mutableStateOf<WirelessIface?>(null) }
@@ -318,7 +473,10 @@ fun WirelessScreen(
         }
     }
 
-    LaunchedEffect(Unit) { if (sshEnabled) load() else loading = false }
+    LaunchedEffect(Unit) {
+        load()
+        features = client.features(config)
+    }
 
     fun updateRadio(section: String, transform: (WirelessRadio) -> WirelessRadio) {
         radios = radios.orEmpty().map { if (it.section == section) transform(it) else it }
@@ -327,6 +485,315 @@ fun WirelessScreen(
     fun updateIface(section: String, transform: (WirelessIface) -> WirelessIface) {
         radios = radios.orEmpty().map { radio ->
             radio.copy(ifaces = radio.ifaces.map { if (it.section == section) transform(it) else it })
+        }
+    }
+
+    // ---- 添加/编辑 WiFi 弹窗：表单填充与 uci 值构建 ----
+
+    /** 用网卡现有配置填充设备页签。 */
+    fun fillDeviceForm(radio: WirelessRadio) {
+        radioChannel = radio.channel ?: "auto"
+        radioHtmode = radio.htmode ?: ""
+        radioTxpower = radio.txpower ?: ""
+        radioCountry = radio.country ?: ""
+        // uci hwmode 与 LuCI 一致使用 ''/n/ac/ax/be；兼容旧式 11ax 写法。
+        radioHwmode = radio.hwmode?.removePrefix("11")?.takeIf { it.isNotBlank() } ?: ""
+        radioCellDensity = radio.extra["cell_density"] ?: "0"
+        radioDistance = radio.extra["distance"] ?: ""
+        radioFrag = radio.extra["frag"] ?: ""
+        radioRts = radio.extra["rts"] ?: ""
+        radioBeaconInt = radio.extra["beacon_int"] ?: ""
+        radioDtimPeriod = radio.extra["dtim_period"] ?: ""
+        radioNoscan = radio.extra["noscan"] == "1"
+        radioVendorVht = radio.extra["vendor_vht"] == "1"
+        radioLegacyRates = radio.extra["legacy_rates"] == "1"
+        radioRxldpc = radio.extra["rxldpc"] != "0"
+        radioLdpc = radio.extra["ldpc"] != "0"
+    }
+
+    /** 打开弹窗时拉取网络列表（uci get network），供「网络」选择器。 */
+    fun loadNetworkOptions() {
+        scope.launch {
+            networkOptions = runCatching {
+                withContext(Dispatchers.IO) { client.listNetworks(config) }
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    /** 用接口现有配置填充接口页签；null 时填 LuCI 默认值（添加模式）。 */
+    fun fillIfaceForm(iface: WirelessIface?) {
+        if (iface == null) {
+            ifaceMode = "ap"
+            ifaceSsid = ""
+            ifaceNetwork = "lan"
+            ifaceEncryption = "psk2"
+            ifaceCipher = "auto"
+            ifaceKey = ""
+            ifaceHidden = false
+            ifaceWmm = true
+            ifaceIsolate = false
+            ifaceMacfilter = ""
+            ifaceMaclist = ""
+            ifaceBssid = ""
+            ifaceShortPreamble = true
+            dlgMeshId = ""
+            dlgMeshFwding = true
+            dlgMeshRssi = ""
+            dlgPmf = "0"
+            dlgPmfMaxTimeout = ""
+            dlgPmfRetryTimeout = ""
+            dlgKrack = false
+            dlgWps = false
+            dlgAuthServer = ""
+            dlgAuthPort = ""
+            dlgAuthSecret = ""
+            dlgDynamicVlan = ""
+            dlgPerStaVif = false
+            dlgMulticastToUnicast = false
+            dlgBridgeIsolate = false
+            dlgIfname = ""
+            dlgMacaddr = ""
+            dlgGroupRekey = ""
+            dlgSkipInactivity = false
+            dlgMaxInactivity = ""
+            dlgMaxListenInterval = ""
+            dlgDisassocLowAck = true
+            dlgIeee80211r = false
+            dlgNasid = ""
+            dlgMobilityDomain = ""
+            dlgReassocDeadline = ""
+            dlgFtOverDs = ""
+            dlgFtPskLocal = true
+            dlgR0Lifetime = ""
+            dlgR1KeyHolder = ""
+            dlgPmkR1Push = false
+            dlgR0kh = ""
+            dlgR1kh = ""
+            dlgIeee80211k = false
+            dlgRrmNeighbor = false
+            dlgRrmBeacon = false
+            dlgTimeAdv = ""
+            dlgTimeZone = ""
+            dlgWnm = false
+            dlgWnmNoKeys = false
+            dlgBssTransition = false
+            dlgProxyArp = false
+        } else {
+            val wds = iface.extra["wds"] == "1"
+            ifaceMode = when (iface.mode) {
+                "ap" -> if (wds) "ap-wds" else "ap"
+                "sta" -> if (wds) "sta-wds" else "sta"
+                else -> iface.mode ?: "ap"
+            }
+            ifaceSsid = iface.ssid
+            ifaceNetwork = iface.network ?: "lan"
+            // uci 的 encryption 可能形如 psk2+ccmp：基础方式与算法拆开显示。
+            ifaceEncryption = iface.encryption?.substringBefore('+') ?: "none"
+            ifaceCipher = Regex("\\+([a-z0-9+]+)$").find(iface.encryption.orEmpty())
+                ?.groupValues?.get(1)?.takeIf { it != "aes" } ?: "auto"
+            ifaceKey = iface.key ?: ""
+            ifaceHidden = iface.hidden
+            ifaceWmm = iface.wmm
+            ifaceIsolate = iface.isolate
+            ifaceMacfilter = iface.macfilter ?: ""
+            ifaceMaclist = iface.maclist.joinToString("\n")
+            ifaceBssid = iface.bssid ?: ""
+            ifaceShortPreamble = iface.shortPreamble
+            dlgMeshId = iface.extra["mesh_id"] ?: ""
+            dlgMeshFwding = iface.extra["mesh_fwding"] != "0"
+            dlgMeshRssi = iface.extra["mesh_rssi_threshold"] ?: ""
+            dlgPmf = iface.extra["ieee80211w"] ?: "0"
+            dlgPmfMaxTimeout = iface.extra["ieee80211w_max_timeout"] ?: ""
+            dlgPmfRetryTimeout = iface.extra["ieee80211w_retry_timeout"] ?: ""
+            dlgKrack = iface.extra["wpa_disable_eapol_key_retries"] == "1"
+            dlgWps = iface.extra["wps_pushbutton"] == "1"
+            dlgAuthServer = iface.extra["auth_server"] ?: ""
+            dlgAuthPort = iface.extra["auth_port"] ?: ""
+            dlgAuthSecret = iface.extra["auth_secret"] ?: ""
+            dlgDynamicVlan = iface.extra["dynamic_vlan"] ?: ""
+            dlgPerStaVif = iface.extra["per_sta_vif"] == "1"
+            dlgMulticastToUnicast = iface.extra["multicast_to_unicast_all"] == "1"
+            dlgBridgeIsolate = iface.extra["bridge_isolate"] == "1"
+            dlgIfname = iface.extra["ifname"] ?: ""
+            dlgMacaddr = iface.extra["macaddr"] ?: ""
+            dlgGroupRekey = iface.extra["wpa_group_rekey"] ?: ""
+            dlgSkipInactivity = iface.extra["skip_inactivity_poll"] == "1"
+            dlgMaxInactivity = iface.extra["max_inactivity"] ?: ""
+            dlgMaxListenInterval = iface.extra["max_listen_interval"] ?: ""
+            dlgDisassocLowAck = iface.extra["disassoc_low_ack"] != "0"
+            dlgIeee80211r = iface.extra["ieee80211r"] == "1"
+            dlgNasid = iface.extra["nasid"] ?: ""
+            dlgMobilityDomain = iface.extra["mobility_domain"] ?: ""
+            dlgReassocDeadline = iface.extra["reassociation_deadline"] ?: ""
+            dlgFtOverDs = iface.extra["ft_over_ds"] ?: ""
+            dlgFtPskLocal = iface.extra["ft_psk_generate_local"] != "0"
+            dlgR0Lifetime = iface.extra["r0_key_lifetime"] ?: ""
+            dlgR1KeyHolder = iface.extra["r1_key_holder"] ?: ""
+            dlgPmkR1Push = iface.extra["pmk_r1_push"] == "1"
+            dlgR0kh = iface.extra["r0kh"] ?: ""
+            dlgR1kh = iface.extra["r1kh"] ?: ""
+            dlgIeee80211k = iface.extra["ieee80211k"] == "1"
+            dlgRrmNeighbor = iface.extra["rrm_neighbor_report"] != "0"
+            dlgRrmBeacon = iface.extra["rrm_beacon_report"] != "0"
+            dlgTimeAdv = iface.extra["time_advertisement"] ?: ""
+            dlgTimeZone = iface.extra["time_zone"] ?: ""
+            dlgWnm = iface.extra["wnm_sleep_mode"] == "1"
+            dlgWnmNoKeys = iface.extra["wnm_sleep_mode_no_keys"] == "1"
+            dlgBssTransition = iface.extra["bss_transition"] == "1"
+            dlgProxyArp = iface.extra["proxy_arp"] == "1"
+        }
+        dlgKeyError = null
+        dlgGroup = "iface"
+        dlgDeviceTab = "general"
+        ifaceSectionTab = "general"
+    }
+
+    /** 打开弹窗时拉取网络列表、该网卡的信道表/功率表/国家表（LuCI 同款数据源）。 */
+    fun loadDialogData(radioSection: String?) {
+        loadNetworkOptions()
+        if (radioSection == null) return
+        channelChoices = emptyList()
+        txPowerChoices = emptyList()
+        countryChoices = emptyList()
+        scope.launch {
+            val fr = runCatching {
+                withContext(Dispatchers.IO) { client.freqList(config, radioSection) }
+            }.getOrDefault(emptyList())
+            if (fr.isNotEmpty()) {
+                channelChoices = listOf("auto" to "auto") + fr.map { (ch, mhz, dfs) ->
+                    "$ch" to "$ch ($mhz MHz)" + if (dfs) "（DFS）" else ""
+                }
+            }
+            val tx = runCatching {
+                withContext(Dispatchers.IO) { client.txPowerList(config, radioSection) }
+            }.getOrDefault(emptyList())
+            if (tx.isNotEmpty()) txPowerChoices = tx.map { p -> p.toString() to "$p dBm" }
+            val co = runCatching {
+                withContext(Dispatchers.IO) { client.countryList(config, radioSection) }
+            }.getOrDefault(emptyList())
+            if (co.isNotEmpty()) countryChoices = co
+        }
+    }
+
+    /** 模式选择值（ap-wds/sta-wds）拆解为 uci 的 mode + wds。 */
+    fun dlgRealMode(): String = ifaceMode.removeSuffix("-wds")
+
+    /** 接口表单的 uci 选项（extra），空串表示删除该选项。 */
+    fun ifaceExtra(): Map<String, String> {
+        val m = mutableMapOf<String, String>()
+        val mode = dlgRealMode()
+        val eap = ifaceEncryption in EAP_ENCRYPTIONS
+        m["wds"] = if (ifaceMode.endsWith("-wds")) "1" else ""
+        m["mesh_id"] = if (mode == "mesh") dlgMeshId.trim() else ""
+        m["mesh_fwding"] = if (mode == "mesh" && dlgMeshFwding) "1" else "0"
+        m["mesh_rssi_threshold"] = if (mode == "mesh") dlgMeshRssi.trim() else ""
+        m["ieee80211w"] = dlgPmf
+        m["ieee80211w_max_timeout"] = if (dlgPmf == "1" || dlgPmf == "2") dlgPmfMaxTimeout.trim() else ""
+        m["ieee80211w_retry_timeout"] = if (dlgPmf == "1" || dlgPmf == "2") dlgPmfRetryTimeout.trim() else ""
+        m["wpa_disable_eapol_key_retries"] = if (dlgKrack) "1" else "0"
+        m["wps_pushbutton"] = if (dlgWps) "1" else "0"
+        m["auth_server"] = if (eap) dlgAuthServer.trim() else ""
+        m["auth_port"] = if (eap) dlgAuthPort.trim() else ""
+        m["auth_secret"] = if (eap) dlgAuthSecret.trim() else ""
+        m["dynamic_vlan"] = if (eap) dlgDynamicVlan else ""
+        m["per_sta_vif"] = if (eap && dlgPerStaVif) "1" else ""
+        m["multicast_to_unicast_all"] = if (dlgMulticastToUnicast) "1" else "0"
+        m["bridge_isolate"] = if (dlgBridgeIsolate) "1" else "0"
+        m["ifname"] = dlgIfname.trim()
+        m["macaddr"] = dlgMacaddr.trim()
+        m["wpa_group_rekey"] = dlgGroupRekey.trim()
+        m["skip_inactivity_poll"] = if (dlgSkipInactivity) "1" else "0"
+        m["max_inactivity"] = dlgMaxInactivity.trim()
+        m["max_listen_interval"] = dlgMaxListenInterval.trim()
+        m["disassoc_low_ack"] = if (dlgDisassocLowAck) "1" else "0"
+        m["ieee80211r"] = if (dlgIeee80211r) "1" else "0"
+        m["nasid"] = if (dlgIeee80211r) dlgNasid.trim() else ""
+        m["mobility_domain"] = if (dlgIeee80211r) dlgMobilityDomain.trim() else ""
+        m["reassociation_deadline"] = if (dlgIeee80211r) dlgReassocDeadline.trim() else ""
+        m["ft_over_ds"] = if (dlgIeee80211r) dlgFtOverDs else ""
+        m["ft_psk_generate_local"] = if (dlgIeee80211r) (if (dlgFtPskLocal) "1" else "0") else ""
+        m["r0_key_lifetime"] = if (dlgIeee80211r) dlgR0Lifetime.trim() else ""
+        m["r1_key_holder"] = if (dlgIeee80211r) dlgR1KeyHolder.trim() else ""
+        m["pmk_r1_push"] = if (dlgIeee80211r && dlgPmkR1Push) "1" else ""
+        m["r0kh"] = if (dlgIeee80211r) dlgR0kh.trim() else ""
+        m["r1kh"] = if (dlgIeee80211r) dlgR1kh.trim() else ""
+        m["ieee80211k"] = if (dlgIeee80211k) "1" else "0"
+        m["rrm_neighbor_report"] = if (dlgIeee80211k && dlgRrmNeighbor) "1" else ""
+        m["rrm_beacon_report"] = if (dlgIeee80211k && dlgRrmBeacon) "1" else ""
+        m["time_advertisement"] = dlgTimeAdv
+        m["time_zone"] = dlgTimeZone.trim()
+        m["wnm_sleep_mode"] = if (dlgWnm) "1" else "0"
+        m["wnm_sleep_mode_no_keys"] = if (dlgWnmNoKeys) "1" else "0"
+        m["bss_transition"] = if (dlgBssTransition) "1" else "0"
+        m["proxy_arp"] = if (dlgProxyArp) "1" else "0"
+        return m
+    }
+
+    /** uci 的 encryption 选项值：算法非 auto 时以 `加密+算法` 合并写入（LuCI 同款）。 */
+    fun dlgEncValue(): String =
+        if (ifaceCipher != "auto" && ifaceEncryption in CIPHER_ENCRYPTIONS) {
+            "$ifaceEncryption+$ifaceCipher"
+        } else {
+            ifaceEncryption
+        }
+
+    /** 添加 WiFi 时 `uci add` 的 values（与表单一致；空值跳过）。 */
+    fun addIfaceValues(): Map<String, Any> {
+        val mode = dlgRealMode()
+        val values = mutableMapOf<String, Any>()
+        values["mode"] = mode
+        if (mode == "mesh") values["mesh_id"] = dlgMeshId.trim() else values["ssid"] = ifaceSsid.trim()
+        val nets = ifaceNetwork.trim().split(Regex("[,，\\s]+")).filter { it.isNotBlank() }
+        if (nets.size == 1) values["network"] = nets[0] else if (nets.isNotEmpty()) values["network"] = nets
+        values["encryption"] = dlgEncValue()
+        if (ifaceEncryption in PSK_ENCRYPTIONS && ifaceKey.isNotEmpty()) values["key"] = ifaceKey
+        if (ifaceHidden) values["hidden"] = "1"
+        if (!ifaceWmm) values["wmm"] = "0"
+        if (ifaceIsolate) values["isolate"] = "1"
+        if (ifaceMacfilter == "allow" || ifaceMacfilter == "deny") values["macfilter"] = ifaceMacfilter
+        val macs = ifaceMaclist.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        if (macs.isNotEmpty()) values["maclist"] = macs
+        if (ifaceBssid.isNotBlank()) values["bssid"] = ifaceBssid.trim()
+        if (!ifaceShortPreamble) values["short_preamble"] = "0"
+        ifaceExtra().forEach { (k, v) ->
+            when {
+                v.isEmpty() -> {}
+                v == "1" && k in WirelessClient.DEFAULT_ON_FLAGS -> {}
+                v == "0" && k !in WirelessClient.DEFAULT_ON_FLAGS -> {}
+                v.contains('\n') -> values[k] = v.split('\n').filter { it.isNotBlank() }
+                else -> values[k] = v
+            }
+        }
+        return values
+    }
+
+    /** 设备表单的 uci 选项（extra），空串表示删除该选项。 */
+    fun radioExtra(): Map<String, String> = mapOf(
+        "cell_density" to radioCellDensity,
+        "distance" to radioDistance.trim(),
+        "frag" to radioFrag.trim(),
+        "rts" to radioRts.trim(),
+        "beacon_int" to radioBeaconInt.trim(),
+        "dtim_period" to radioDtimPeriod.trim(),
+        "noscan" to if (radioNoscan) "1" else "0",
+        "vendor_vht" to if (radioVendorVht) "1" else "0",
+        "legacy_rates" to if (radioLegacyRates) "1" else "0",
+        "rxldpc" to if (radioRxldpc) "1" else "0",
+        "ldpc" to if (radioLdpc) "1" else "0"
+    )
+
+    /**
+     * extra 选项 diff：值变化才写；空串表示删除该选项。原配置没有该选项且新值等于
+     * 固件默认时跳过写入（默认开启的开关见 WirelessClient.DEFAULT_ON_FLAGS——它们写 "1"
+     * 冗余、关 "0" 必须写；其余开关与选项写 "0" 冗余），保持 uci 配置干净。
+     */
+    fun diffExtra(section: String, put: (String, String, Any) -> Unit, oldExtra: Map<String, String>, newExtra: Map<String, String>) {
+        for (key in (newExtra.keys + oldExtra.keys)) {
+            val nv = newExtra[key] ?: ""
+            val ov = oldExtra[key] ?: ""
+            if (nv == ov) continue
+            if (ov.isEmpty() && nv == if (key in WirelessClient.DEFAULT_ON_FLAGS) "1" else "0") continue
+            put(section, key, nv)
         }
     }
 
@@ -355,6 +822,7 @@ fun WirelessScreen(
             if (radio.hwmode != old?.hwmode && !radio.hwmode.isNullOrBlank()) {
                 put(radio.section, "hwmode", radio.hwmode)
             }
+            diffExtra(radio.section, { s, k, v -> put(s, k, v) }, old?.extra ?: emptyMap(), radio.extra)
             for (iface in radio.ifaces) {
                 val o = old?.ifaces?.firstOrNull { it.section == iface.section }
                 if (iface.ssid != (o?.ssid ?: "")) put(iface.section, "ssid", iface.ssid)
@@ -395,8 +863,8 @@ fun WirelessScreen(
                 if (iface.shortPreamble != (o?.shortPreamble ?: true)) {
                     put(iface.section, "short_preamble", if (iface.shortPreamble) "1" else "0")
                 }
-                if (iface.macfilter != o?.macfilter && iface.macfilter != null) {
-                    put(iface.section, "macfilter", iface.macfilter)
+                if (iface.macfilter != o?.macfilter) {
+                    put(iface.section, "macfilter", iface.macfilter ?: "")
                 }
                 if (iface.maclist != (o?.maclist ?: emptyList<String>())) {
                     put(iface.section, "maclist", iface.maclist)
@@ -404,6 +872,7 @@ fun WirelessScreen(
                 if (iface.disabled != (o?.disabled ?: false)) {
                     put(iface.section, "disabled", if (iface.disabled) "1" else "0")
                 }
+                diffExtra(iface.section, { s, k, v -> put(s, k, v) }, o?.extra ?: emptyMap(), iface.extra)
             }
         }
         return changes
@@ -416,19 +885,23 @@ fun WirelessScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "无线设置",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
         }
-        Text(
-            "无线设置",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onSurface
-        )
 
         if (loading) {
             Row(
@@ -449,16 +922,9 @@ fun WirelessScreen(
             )
         }
 
-        if (!sshEnabled) {
-            AppCard {
-                Text(
-                    "无线设置通过路由器 SSH 应用，请先在设备设置中开启 SSH（读取仅需要 LuCI 访问）。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant
-                )
-            }
-        } else {
-            Column(
+        // 无线配置的读写与应用全部走路由器 ubus（uci/iwinfo/luci-rpc），无需 SSH；
+        // 仅网卡「重启」按钮使用 SSH，未配置 SSH 时该按钮禁用。
+        Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
@@ -529,8 +995,8 @@ fun WirelessScreen(
                                 Modifier.weight(1f)
                             )
                             StatCell(
-                                "底噪",
-                                radio.liveNoise?.let { "$it dBm" } ?: "-",
+                                "速率",
+                                radio.liveRateMbits?.let { "%.1f Mbit/s".format(java.util.Locale.US, it) } ?: "-",
                                 Modifier.weight(1f)
                             )
                         }
@@ -558,7 +1024,7 @@ fun WirelessScreen(
                                         }
                                     }
                                 },
-                                enabled = !busy,
+                                enabled = !busy && sshEnabled,
                                 modifier = Modifier.height(30.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp)
                             ) { Text("重启") }
@@ -585,9 +1051,9 @@ fun WirelessScreen(
                             ) { Text("扫描") }
                             TextButton(
                                 onClick = {
-                                    addSsid = ""
-                                    addKey = ""
-                                    addEncryption = "psk2"
+                                    fillIfaceForm(null)
+                                    fillDeviceForm(radio)
+                                    loadDialogData(radio.section)
                                     addWifiFor = radio.section
                                 },
                                 enabled = !busy,
@@ -699,24 +1165,10 @@ fun WirelessScreen(
                             ) { Text("删除", color = colors.error) }
                             Button(
                                 onClick = {
-                                    ifaceMode = iface.mode ?: "ap"
-                                    ifaceSsid = iface.ssid
-                                    ifaceNetwork = iface.network ?: "lan"
-                                    ifaceEncryption = iface.encryption ?: "psk2"
-                                    ifaceCipher = "auto"
-                                    ifaceKey = iface.key ?: ""
-                                    ifaceHidden = iface.hidden
-                                    ifaceWmm = iface.wmm
-                                    ifaceIsolate = iface.isolate
-                                    ifaceMacfilter = iface.macfilter ?: "disable"
-                                    ifaceMaclist = iface.maclist.joinToString("\n")
-                                    ifaceBssid = iface.bssid ?: ""
-                                    ifaceDtim = iface.dtim ?: ""
-                                    ifaceBeaconInt = iface.beaconInt ?: ""
-                                    ifaceFrag = iface.frag ?: ""
-                                    ifaceRts = iface.rts ?: ""
-                                    ifaceShortPreamble = iface.shortPreamble
-                                    ifaceSectionTab = "general"
+                                    fillIfaceForm(iface)
+                                    radios.orEmpty().firstOrNull { it.section == iface.device }
+                                        ?.let { fillDeviceForm(it) }
+                                    loadDialogData(iface.device)
                                     editIfaceFor = iface.section
                                 },
                                 enabled = !busy,
@@ -738,7 +1190,9 @@ fun WirelessScreen(
             ) {
                 Text(if (changes.isEmpty()) "无更改" else "应用更改（${changes.size} 段）")
             }
-        }
+
+            // 背景延伸到手势条区域，底部按钮垫在 inset 之上
+            Spacer(Modifier.navigationBarsPadding().height(6.dp))
         }
 
         // —— 横屏：WiFi 分享二维码从右侧滑出面板（竖屏为底部弹窗） ——
@@ -749,38 +1203,660 @@ fun WirelessScreen(
         }
     }
 
-    // ---- WiFi 编辑对话框（LuCI 分区：常规/安全/MAC 过滤/高级，顶部为方案选择器） ----
-    editIfaceFor?.let { section ->
+    // ---- 添加/编辑 WiFi 对话框（对齐 LuCI：设备配置[常规/高级] + 接口配置[常规/无线安全/MAC 过滤/高级/WLAN 漫游]） ----
+    val editingSection = editIfaceFor
+    val addingDevice = addWifiFor
+    if (editingSection != null || addingDevice != null) {
+        val editing = editingSection != null
+        val dialogRadio = radios.orEmpty().firstOrNull { r -> r.section == (addingDevice
+            ?: radios.orEmpty().firstOrNull { r2 -> r2.ifaces.any { it.section == editingSection } }?.section) }
+        val dialogRadioSection = dialogRadio?.section
+        val dialogBand = dialogRadio?.band
+        val dialogHtmodes = dialogRadio?.availableHtmodes ?: emptyList()
+        val dialogHwmodes = dialogRadio?.availableHwmodes ?: emptyList()
         AppDialog(
-            title = "编辑 $section",
-            confirmLabel = "保存",
+            title = if (editing) "编辑 $editingSection" else "添加 WiFi（$addingDevice）",
+            confirmLabel = if (editing) "保存" else "添加",
+            confirmEnabled = when {
+                editing -> true
+                dlgRealMode() == "mesh" -> dlgMeshId.isNotBlank()
+                else -> ifaceSsid.isNotBlank()
+            },
             onConfirm = {
-                updateIface(section) {
+                // 密码校验：PSK/SAE 家族必须 ≥8 位（WPA 规范），不通过则红字提示且不关闭弹窗。
+                if (ifaceEncryption in PSK_ENCRYPTIONS && ifaceKey.length < 8) {
+                    dlgKeyError = "WiFi 密码至少 8 位（当前 ${ifaceKey.length} 位）"
+                    // 提示显示在「接口 → 无线安全」子页签里；用户若停在其它页签上点保存
+                    // 会毫无反应，这里自动跳转过去并把错误同时发到全局提示条。
+                    dlgGroup = "iface"
+                    ifaceSectionTab = "security"
+                    setMsg("请先在「无线安全」中选择加密方式并填写不少于 8 位的密码。", true)
+                    return@AppDialog
+                }
+                dlgKeyError = null
+                val encValue = dlgEncValue()
+                val iface = editingSection?.let { sec ->
+                    radios.orEmpty().flatMap { it.ifaces }.firstOrNull { it.section == sec }
+                }
+                val radioSection = addingDevice ?: iface?.device
+                if (radioSection == null) return@AppDialog
+                if (iface != null) {
+                    updateIface(iface.section) {
+                        it.copy(
+                            mode = dlgRealMode(),
+                            ssid = ifaceSsid.trim(),
+                            // uci 的 network 是空格分隔的列表值；选择器里用逗号展示，这里转回。
+                            network = ifaceNetwork.split(Regex("[,，\\s]+"))
+                                .filter { it.isNotBlank() }.joinToString(" ").ifBlank { "lan" },
+                            encryption = encValue,
+                            key = if (ifaceEncryption in PSK_ENCRYPTIONS) ifaceKey else null,
+                            hidden = ifaceHidden,
+                            wmm = ifaceWmm,
+                            isolate = ifaceIsolate,
+                            macfilter = ifaceMacfilter.ifBlank { null },
+                            maclist = ifaceMaclist.lines().map { m -> m.trim() }.filter { m -> m.isNotEmpty() },
+                            bssid = ifaceBssid.trim(),
+                            shortPreamble = ifaceShortPreamble,
+                            extra = ifaceExtra()
+                        )
+                    }
+                }
+                updateRadio(radioSection) {
                     it.copy(
-                        mode = ifaceMode,
-                        ssid = ifaceSsid.trim(),
-                        network = ifaceNetwork.trim(),
-                        encryption = ifaceEncryption,
-                        key = ifaceKey,
-                        hidden = ifaceHidden,
-                        wmm = ifaceWmm,
-                        isolate = ifaceIsolate,
-                        macfilter = ifaceMacfilter,
-                        maclist = ifaceMaclist.lines().map { m -> m.trim() }
-                            .filter { m -> m.isNotEmpty() },
-                        bssid = ifaceBssid.trim(),
-                        dtim = ifaceDtim.trim(),
-                        beaconInt = ifaceBeaconInt.trim(),
-                        frag = ifaceFrag.trim(),
-                        rts = ifaceRts.trim(),
-                        shortPreamble = ifaceShortPreamble
+                        channel = radioChannel.trim(),
+                        htmode = radioHtmode.trim(),
+                        txpower = radioTxpower.trim(),
+                        country = radioCountry.trim(),
+                        hwmode = radioHwmode.trim(),
+                        extra = radioExtra()
                     )
                 }
                 editIfaceFor = null
+                addWifiFor = null
                 scope.launch {
                     busy = true
+                    message = null
                     try {
-                        withContext(Dispatchers.IO) { client.apply(config, buildChanges()) }
+                        if (addingDevice != null) {
+                            withContext(Dispatchers.IO) {
+                                client.addIface(config, addingDevice, addIfaceValues(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                            }
+                        }
+                        if (addingDevice != null) {
+                            withContext(Dispatchers.IO) {
+                                client.apply(config, buildChanges(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                            }
+                            setMsg("WiFi 已添加并重载无线。", false)
+                            load()
+                        } else {
+                            // 编辑：仅暂存到待应用更改，由底部「应用更改」统一生效
+                            setMsg("更改已暂存，点击下方「应用更改」生效。", false)
+                        }
+                    } catch (e: Exception) {
+                        setMsg(e.message ?: "操作失败。", true)
+                    } finally {
+                        busy = false
+                    }
+                }
+            },
+            onDismiss = { if (!busy) { editIfaceFor = null; addWifiFor = null } }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SmoothOptionSwitcher(
+                    options = listOf("device" to "网卡", "iface" to "接口"),
+                    selected = dlgGroup,
+                    onSelect = { dlgGroup = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (dlgGroup == "device") {
+                    SmoothOptionSwitcher(
+                        options = listOf("general" to "常规设置", "advanced" to "高级设置"),
+                        selected = dlgDeviceTab,
+                        onSelect = { dlgDeviceTab = it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    GroupedSectionSwitcher(
+                        options = listOf(
+                            "general" to "常规设置",
+                            "security" to "无线安全",
+                            "macfilter" to "MAC 过滤",
+                            "advanced" to "高级设置",
+                            "roaming" to "WLAN 漫游"
+                        ),
+                        selected = ifaceSectionTab,
+                        onSelect = { ifaceSectionTab = it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                // 正文固定高度；分区选择器展开时新增行把正文往下推，弹窗整体拉高
+                val sectionBodyHeight = minOf(
+                    360.dp,
+                    androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.44f
+                )
+                // 分区切换过渡（单份组合，比 AnimatedContent 轻）：key 变化时新内容
+                // 从 alpha 0 + 轻微下移淡入；动画值在 graphicsLayer lambda 内读取，
+                // 停留在绘制阶段——无双份组合、无过渡期重组。
+                val sectionKey = Triple(dlgGroup, dlgDeviceTab, ifaceSectionTab)
+                val sectionAnim = remember { Animatable(0f) }
+                LaunchedEffect(sectionKey) {
+                    sectionAnim.snapTo(0f)
+                    sectionAnim.animateTo(1f, tween(150, easing = OptionSwitcherEasing))
+                }
+                val (grp, devTab, ifaceTab) = sectionKey
+                ThinScrollbarColumn(
+                    modifier = Modifier.height(sectionBodyHeight)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = sectionAnim.value
+                                translationY = (1f - sectionAnim.value) * 20f
+                            },
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                    when {
+                        grp == "device" && devTab == "general" -> {
+                            SelectRow("工作频率", hwmodeDisplay(radioHwmode, radioHtmode)) {
+                                selectState = SelectState(
+                                    "选择工作频率", hwmodeOptions(dialogHwmodes, features), radioHwmode
+                                ) { v ->
+                                    radioHwmode = v
+                                    if (v.isBlank()) {
+                                        radioHtmode = ""
+                                    } else {
+                                        // 切换协议后保持频宽数值，前缀跟随协议。
+                                        val width = Regex("\\d+").find(radioHtmode)?.value ?: when (v) {
+                                            "ac", "ax", "be" -> "80"
+                                            else -> "20"
+                                        }
+                                        val prefix = when (v) {
+                                            "n" -> "HT"
+                                            "ac" -> "VHT"
+                                            "ax" -> "HE"
+                                            "be" -> "EHT"
+                                            else -> "HT"
+                                        }
+                                        radioHtmode = "$prefix$width"
+                                    }
+                                }
+                            }
+                            SelectRow("频宽", htmodeLabel(radioHtmode)) {
+                                selectState = SelectState(
+                                    "选择频宽",
+                                    htmodeOptions(effectiveHwmode(radioHwmode, radioHtmode), dialogHtmodes),
+                                    radioHtmode
+                                ) { v -> radioHtmode = v }
+                            }
+                            SelectRow("信道", radioChannel.ifBlank { "auto" }) {
+                                selectState = SelectState(
+                                    "选择信道",
+                                    if (channelChoices.isNotEmpty()) channelChoices else channelOptions(dialogBand),
+                                    radioChannel
+                                ) { v -> radioChannel = v }
+                            }
+                            SelectRow("最大发射功率", radioTxpower.ifBlank { "驱动默认" }) {
+                                selectState = SelectState(
+                                    "选择最大发射功率",
+                                    if (txPowerChoices.isNotEmpty()) listOf("" to "驱动默认") + txPowerChoices else txpowerOptions(),
+                                    radioTxpower
+                                ) { v -> radioTxpower = v }
+                            }
+                            SelectRow("国家代码", radioCountry.ifBlank { "驱动默认" }) {
+                                selectState = SelectState(
+                                    "选择国家代码",
+                                    listOf("" to "驱动默认") + if (countryChoices.isNotEmpty()) countryChoices else COUNTRY_OPTIONS,
+                                    radioCountry
+                                ) { v -> radioCountry = v }
+                            }
+                            if (dialogBand == "2g") {
+                                SettingRow("允许旧 802.11b 速率", radioLegacyRates) { radioLegacyRates = it }
+                            }
+                        }
+                        grp == "device" -> {
+                            SelectRow(
+                                "覆盖密度",
+                                when (radioCellDensity) {
+                                    "1" -> "普通"
+                                    "2" -> "高"
+                                    "3" -> "很高"
+                                    else -> "禁用"
+                                }
+                            ) {
+                                selectState = SelectState(
+                                    "选择覆盖密度",
+                                    listOf("0" to "禁用", "1" to "普通", "2" to "高", "3" to "很高"),
+                                    radioCellDensity
+                                ) { v -> radioCellDensity = v }
+                            }
+                            AppTextField(
+                                value = radioDistance,
+                                onValueChange = { radioDistance = it },
+                                singleLine = true,
+                                label = { Text("距离优化（米，留空=auto）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = radioFrag,
+                                onValueChange = { radioFrag = it },
+                                singleLine = true,
+                                label = { Text("分片阈值（留空=关闭）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = radioRts,
+                                onValueChange = { radioRts = it },
+                                singleLine = true,
+                                label = { Text("RTS/CTS 阈值（留空=关闭）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = radioBeaconInt,
+                                onValueChange = { radioBeaconInt = it },
+                                singleLine = true,
+                                label = { Text("信标间隔（默认 100）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = radioDtimPeriod,
+                                onValueChange = { radioDtimPeriod = it },
+                                singleLine = true,
+                                label = { Text("DTIM 间隔") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            SettingRow("强制 40MHz 模式", radioNoscan) { radioNoscan = it }
+                            if (dialogBand == "2g") {
+                                SettingRow("启用 256-QAM", radioVendorVht) { radioVendorVht = it }
+                            }
+                            SettingRow("Rx LDPC", radioRxldpc) { radioRxldpc = it }
+                            SettingRow("Tx LDPC", radioLdpc) { radioLdpc = it }
+                        }
+                        ifaceTab == "security" -> {
+                            SelectRow(
+                                "加密",
+                                securityOptions(features).firstOrNull { it.first == ifaceEncryption }?.second
+                                    ?: ifaceEncryption
+                            ) {
+                                selectState = SelectState(
+                                    "选择加密方式", securityOptions(features), ifaceEncryption
+                                ) { v -> ifaceEncryption = v }
+                            }
+                            if (ifaceEncryption in CIPHER_ENCRYPTIONS) {
+                                SelectRow(
+                                    "算法",
+                                    CIPHER_OPTIONS.firstOrNull { it.first == ifaceCipher }?.second ?: "auto"
+                                ) {
+                                    selectState = SelectState(
+                                        "选择算法", CIPHER_OPTIONS, ifaceCipher
+                                    ) { v -> ifaceCipher = v }
+                                }
+                            }
+                            if (ifaceEncryption in PSK_ENCRYPTIONS) {
+                                AppTextField(
+                                    value = ifaceKey,
+                                    onValueChange = {
+                                        ifaceKey = it
+                                        dlgKeyError = null
+                                    },
+                                    singleLine = true,
+                                    label = { Text("密码（至少 8 位）") },
+                                    isError = dlgKeyError != null,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (dlgKeyError != null) {
+                                    Text(
+                                        dlgKeyError.orEmpty(),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.error
+                                    )
+                                }
+                            }
+                            SelectRow(
+                                "管理帧保护 (802.11w)",
+                                when (dlgPmf) {
+                                    "1" -> "可选"
+                                    "2" -> "必需"
+                                    else -> "禁用"
+                                }
+                            ) {
+                                selectState = SelectState(
+                                    "选择管理帧保护",
+                                    listOf("0" to "禁用", "1" to "可选", "2" to "必需"),
+                                    dlgPmf
+                                ) { v -> dlgPmf = v }
+                            }
+                            if (dlgPmf == "1" || dlgPmf == "2") {
+                                AppTextField(
+                                    value = dlgPmfMaxTimeout,
+                                    onValueChange = { dlgPmfMaxTimeout = it },
+                                    singleLine = true,
+                                    label = { Text("802.11w 最大超时（默认 1000）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgPmfRetryTimeout,
+                                    onValueChange = { dlgPmfRetryTimeout = it },
+                                    singleLine = true,
+                                    label = { Text("802.11w 重试超时（默认 201）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            SettingRow("KRACK 对策（禁用 EAPOL 密钥重传）", dlgKrack) { dlgKrack = it }
+                            SettingRow("WPS 按钮模式", dlgWps) { dlgWps = it }
+                            if (ifaceEncryption in EAP_ENCRYPTIONS) {
+                                AppTextField(
+                                    value = dlgAuthServer,
+                                    onValueChange = { dlgAuthServer = it },
+                                    singleLine = true,
+                                    label = { Text("RADIUS 认证服务器") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgAuthPort,
+                                    onValueChange = { dlgAuthPort = it },
+                                    singleLine = true,
+                                    label = { Text("RADIUS 认证端口") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgAuthSecret,
+                                    onValueChange = { dlgAuthSecret = it },
+                                    singleLine = true,
+                                    label = { Text("RADIUS 认证密钥") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                SelectRow(
+                                    "RADIUS 动态 VLAN",
+                                    when (dlgDynamicVlan) {
+                                        "1" -> "可选"
+                                        "2" -> "必需"
+                                        else -> "禁用"
+                                    }
+                                ) {
+                                    selectState = SelectState(
+                                        "选择动态 VLAN",
+                                        listOf("" to "禁用", "1" to "可选", "2" to "必需"),
+                                        dlgDynamicVlan
+                                    ) { v -> dlgDynamicVlan = v }
+                                }
+                                SettingRow("RADIUS 每 STA VLAN", dlgPerStaVif) { dlgPerStaVif = it }
+                            }
+                        }
+                        ifaceTab == "macfilter" -> {
+                            SelectRow(
+                                "MAC 地址过滤",
+                                MACFILTER_OPTIONS.firstOrNull { it.first == ifaceMacfilter }?.second ?: "已禁用"
+                            ) {
+                                selectState = SelectState(
+                                    "选择 MAC 过滤", MACFILTER_OPTIONS, ifaceMacfilter
+                                ) { v -> ifaceMacfilter = v }
+                            }
+                            if (ifaceMacfilter == "allow" || ifaceMacfilter == "deny") {
+                                AppTextField(
+                                    value = ifaceMaclist,
+                                    onValueChange = { ifaceMaclist = it },
+                                    label = { Text("MAC 列表（每行一个）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                        ifaceTab == "roaming" -> {
+                            SettingRow("802.11r 快速切换", dlgIeee80211r) { dlgIeee80211r = it }
+                            if (dlgIeee80211r) {
+                                AppTextField(
+                                    value = dlgNasid,
+                                    onValueChange = { dlgNasid = it },
+                                    singleLine = true,
+                                    label = { Text("NAS ID") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgMobilityDomain,
+                                    onValueChange = { dlgMobilityDomain = it },
+                                    singleLine = true,
+                                    label = { Text("移动域（4 位十六进制）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgReassocDeadline,
+                                    onValueChange = { dlgReassocDeadline = it },
+                                    singleLine = true,
+                                    label = { Text("重关联期限（TU，默认 20000）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                SelectRow(
+                                    "FT 协议",
+                                    when (dlgFtOverDs) {
+                                        "0" -> "FT over the Air"
+                                        "1" -> "FT over DS"
+                                        else -> "默认"
+                                    }
+                                ) {
+                                    selectState = SelectState(
+                                        "选择 FT 协议",
+                                        listOf("" to "默认", "0" to "FT over the Air", "1" to "FT over DS"),
+                                        dlgFtOverDs
+                                    ) { v -> dlgFtOverDs = v }
+                                }
+                                SettingRow("本地生成 PMK", dlgFtPskLocal) { dlgFtPskLocal = it }
+                                AppTextField(
+                                    value = dlgR0Lifetime,
+                                    onValueChange = { dlgR0Lifetime = it },
+                                    singleLine = true,
+                                    label = { Text("R0 密钥生命周期（分钟，默认 10000）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgR1KeyHolder,
+                                    onValueChange = { dlgR1KeyHolder = it },
+                                    singleLine = true,
+                                    label = { Text("R1 密钥持有者（12 位十六进制）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                SettingRow("PMK R1 推送", dlgPmkR1Push) { dlgPmkR1Push = it }
+                                AppTextField(
+                                    value = dlgR0kh,
+                                    onValueChange = { dlgR0kh = it },
+                                    label = { Text("外部 R0KH 列表（每行：MAC,NAS-ID,密钥）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AppTextField(
+                                    value = dlgR1kh,
+                                    onValueChange = { dlgR1kh = it },
+                                    label = { Text("外部 R1KH 列表（每行：MAC,R1KH-ID,密钥）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            SettingRow("802.11k RRM（无线电资源测量）", dlgIeee80211k) { dlgIeee80211k = it }
+                            if (dlgIeee80211k) {
+                                SettingRow("邻居报告", dlgRrmNeighbor) { dlgRrmNeighbor = it }
+                                SettingRow("信标报告", dlgRrmBeacon) { dlgRrmBeacon = it }
+                            }
+                            SelectRow(
+                                "时间通告 (802.11v)",
+                                if (dlgTimeAdv == "2") "启用" else "禁用"
+                            ) {
+                                selectState = SelectState(
+                                    "选择时间通告",
+                                    listOf("" to "禁用", "2" to "启用"),
+                                    dlgTimeAdv
+                                ) { v -> dlgTimeAdv = v }
+                            }
+                            AppTextField(
+                                value = dlgTimeZone,
+                                onValueChange = { dlgTimeZone = it },
+                                singleLine = true,
+                                label = { Text("时区通告 (802.11v)") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            SettingRow("WNM 睡眠模式", dlgWnm) { dlgWnm = it }
+                            SettingRow("WNM 睡眠模式修复", dlgWnmNoKeys) { dlgWnmNoKeys = it }
+                            SettingRow("BSS 切换 (802.11v)", dlgBssTransition) { dlgBssTransition = it }
+                            SettingRow("ProxyARP (802.11v)", dlgProxyArp) { dlgProxyArp = it }
+                        }
+                        ifaceTab == "advanced" -> {
+                            SettingRow("隔离客户端", ifaceIsolate) { ifaceIsolate = it }
+                            SettingRow("多播转单播", dlgMulticastToUnicast) { dlgMulticastToUnicast = it }
+                            SettingRow("隔离网桥端口", dlgBridgeIsolate) { dlgBridgeIsolate = it }
+                            AppTextField(
+                                value = dlgIfname,
+                                onValueChange = { dlgIfname = it },
+                                singleLine = true,
+                                label = { Text("接口名（覆盖默认名）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = dlgMacaddr,
+                                onValueChange = { dlgMacaddr = it },
+                                singleLine = true,
+                                label = { Text("MAC 地址覆盖（留空=驱动默认）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            SettingRow("短前导码", ifaceShortPreamble) { ifaceShortPreamble = it }
+                            AppTextField(
+                                value = dlgGroupRekey,
+                                onValueChange = { dlgGroupRekey = it },
+                                singleLine = true,
+                                label = { Text("GTK 重装密钥间隔（秒，默认 600）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            SettingRow("禁用不活动轮询", dlgSkipInactivity) { dlgSkipInactivity = it }
+                            AppTextField(
+                                value = dlgMaxInactivity,
+                                onValueChange = { dlgMaxInactivity = it },
+                                singleLine = true,
+                                label = { Text("站点不活动限制（秒，默认 300）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            AppTextField(
+                                value = dlgMaxListenInterval,
+                                onValueChange = { dlgMaxListenInterval = it },
+                                singleLine = true,
+                                label = { Text("最大监听间隔（默认 65535）") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            SettingRow("低确认时断开客户端", dlgDisassocLowAck) { dlgDisassocLowAck = it }
+                        }
+                        else -> {
+                            SelectRow("模式", modeLabel(ifaceMode)) {
+                                selectState = SelectState(
+                                    "选择模式", modeOptions(features?.hostapdMesh == true), ifaceMode
+                                ) { v -> ifaceMode = v }
+                            }
+                            if (dlgRealMode() == "mesh") {
+                                AppTextField(
+                                    value = dlgMeshId,
+                                    onValueChange = { dlgMeshId = it },
+                                    singleLine = true,
+                                    label = { Text("Mesh ID") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                SettingRow("转发 Mesh 对端流量", dlgMeshFwding) { dlgMeshFwding = it }
+                                AppTextField(
+                                    value = dlgMeshRssi,
+                                    onValueChange = { dlgMeshRssi = it },
+                                    singleLine = true,
+                                    label = { Text("加入 Mesh 的 RSSI 阈值（0=不使用）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                AppTextField(
+                                    value = ifaceSsid,
+                                    onValueChange = { ifaceSsid = it },
+                                    singleLine = true,
+                                    label = { Text("SSID（Wi-Fi 名称）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            // LuCI 中 BSSID 仅在 Client/Ad-Hoc 模式下出现。
+                            if (dlgRealMode() == "sta" || dlgRealMode() == "adhoc") {
+                                AppTextField(
+                                    value = ifaceBssid,
+                                    onValueChange = { ifaceBssid = it },
+                                    singleLine = true,
+                                    label = { Text("BSSID（锁定对端 MAC）") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            SelectRow("网络", ifaceNetwork.ifBlank { "未选择" }) {
+                                networkPicked = ifaceNetwork.split(Regex("[,，\\s]+"))
+                                    .filter { it.isNotBlank() }.toSet()
+                                networkPickerOpen = true
+                            }
+                            SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
+                            SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
+                        }
+                    }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 网络选择器（多选，LuCI 网络下拉同源：uci get network 的 interface 段） ----
+    if (networkPickerOpen) {
+        AppDialog(
+            title = "选择网络（可多选）",
+            confirmLabel = "确定",
+            onConfirm = {
+                ifaceNetwork = networkPicked.toList().sorted().joinToString(",")
+                networkPickerOpen = false
+            },
+            onDismiss = { networkPickerOpen = false }
+        ) {
+            if (networkOptions.isEmpty()) {
+                Text(
+                    "未能读取网络列表，请稍后重试。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+            } else {
+                ThinScrollbarColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                    networkOptions.forEach { name ->
+                        val picked = name in networkPicked
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    networkPicked = if (picked) networkPicked - name else networkPicked + name
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (picked) "●" else "○",
+                                color = if (picked) colors.primary else colors.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(name, color = colors.onSurface)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 应用更改确认：列出将写入的段，应用走 SSH commit+wifi reload（无 SSH 时 uci apply） ----
+    if (showApplyConfirm) {
+        AppDialog(
+            title = "应用更改",
+            message = buildString {
+                append("将以下 ${changes.size} 个段的更改写入路由器并重载无线：\n\n")
+                append(changes.keys.joinToString("、"))
+                append("\n\n已开启 SSH 时通过 SSH 提交并立即重载（与 LuCI 保存应用一致）；")
+                append("未开启 SSH 时使用 uci apply，确认窗口 90 秒，超时未确认会自动回滚。")
+            },
+            confirmLabel = "应用",
+            onConfirm = {
+                showApplyConfirm = false
+                scope.launch {
+                    busy = true
+                    message = null
+                    try {
+                        withContext(Dispatchers.IO) {
+                            client.apply(config, buildChanges(), if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                        }
                         setMsg("已应用，Wi-Fi 正在重载。", false)
                         load()
                     } catch (e: Exception) {
@@ -790,132 +1866,8 @@ fun WirelessScreen(
                     }
                 }
             },
-            onDismiss = { if (!busy) editIfaceFor = null }
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SmoothOptionSwitcher(
-                    options = listOf(
-                        "general" to "常规设置",
-                        "security" to "无线安全",
-                        "macfilter" to "MAC 过滤",
-                        "advanced" to "高级设置"
-                    ),
-                    selected = ifaceSectionTab,
-                    onSelect = { ifaceSectionTab = it },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                // 分区内容固定高度 + 滚动：弹窗整体尺寸恒定，切换分区不再改变窗口
-                // 大小，也不会出现新旧内容交叠（交叉淡入淡出会把两份表单叠在一起）。
-                // 高度取 300dp 与屏幕高度的比例较小值，避免横屏时超出屏幕。
-                val sectionBodyHeight = minOf(
-                    300.dp,
-                    androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.45f
-                )
-                ThinScrollbarColumn(
-                    modifier = Modifier.height(sectionBodyHeight),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    when (ifaceSectionTab) {
-                    "security" -> {
-                        SelectRow("加密", encryptionLabel(ifaceEncryption)) {
-                            selectState = SelectState(
-                                "选择加密方式", SECURITY_OPTIONS, ifaceEncryption
-                            ) { v -> ifaceEncryption = v }
-                        }
-                        if (ifaceEncryption != "none") {
-                            OutlinedTextField(
-                                value = ifaceKey,
-                                onValueChange = { ifaceKey = it },
-                                singleLine = true,
-                                label = { Text("密码") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                    "macfilter" -> {
-                        SelectRow(
-                            "MAC 过滤",
-                            MACFILTER_OPTIONS.firstOrNull { it.first == ifaceMacfilter }?.second ?: "已禁用"
-                        ) {
-                            selectState = SelectState(
-                                "选择 MAC 过滤", MACFILTER_OPTIONS, ifaceMacfilter
-                            ) { v -> ifaceMacfilter = v }
-                        }
-                        OutlinedTextField(
-                            value = ifaceMaclist,
-                            onValueChange = { ifaceMaclist = it },
-                            label = { Text("MAC 列表（每行一个）") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    "advanced" -> {
-                        OutlinedTextField(
-                            value = ifaceBssid,
-                            onValueChange = { ifaceBssid = it },
-                            singleLine = true,
-                            label = { Text("BSSID（仅 STA 模式）") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = ifaceDtim,
-                            onValueChange = { ifaceDtim = it },
-                            singleLine = true,
-                            label = { Text("DTIM 间隔") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = ifaceBeaconInt,
-                            onValueChange = { ifaceBeaconInt = it },
-                            singleLine = true,
-                            label = { Text("信标间隔") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = ifaceFrag,
-                            onValueChange = { ifaceFrag = it },
-                            singleLine = true,
-                            label = { Text("分片阈值") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = ifaceRts,
-                            onValueChange = { ifaceRts = it },
-                            singleLine = true,
-                            label = { Text("RTS/CTS 阈值") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        SettingRow("短前导码", ifaceShortPreamble) { ifaceShortPreamble = it }
-                    }
-                    else -> {
-                        SelectRow("模式", if (ifaceMode == "ap") "AP 接入点" else ifaceMode.uppercase()) {
-                            selectState = SelectState(
-                                "选择模式",
-                                listOf("ap" to "AP 接入点", "sta" to "STA 客户端", "mesh" to "Mesh"),
-                                ifaceMode
-                            ) { v -> ifaceMode = v }
-                        }
-                        OutlinedTextField(
-                            value = ifaceSsid,
-                            onValueChange = { ifaceSsid = it },
-                            singleLine = true,
-                            label = { Text("SSID（Wi-Fi 名称）") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        SelectRow("网络", ifaceNetwork.ifBlank { "lan" }) {
-                            selectState = SelectState(
-                                "选择网络",
-                                listOf("lan" to "lan", "wan" to "wan", "wan6" to "wan6"),
-                                ifaceNetwork
-                            ) { v -> ifaceNetwork = v }
-                        }
-                        SettingRow("隐藏 ESSID", ifaceHidden) { ifaceHidden = it }
-                        SettingRow("WMM 模式", ifaceWmm) { ifaceWmm = it }
-                        SettingRow("隔离客户端", ifaceIsolate) { ifaceIsolate = it }
-                    }
-                    }
-                }
-            }
-        }
+            onDismiss = { if (!busy) showApplyConfirm = false }
+        )
     }
 
     // ---- 网卡编辑对话框（设备配置，全部选择项） ----
@@ -923,7 +1875,7 @@ fun WirelessScreen(
         val radio = radios.orEmpty().firstOrNull { it.section == section }
         val band = radio?.band
         val hwmode = if (radioHwmode.isBlank()) {
-            when (band) { "5g" -> "11ac"; else -> "11n" }
+            when (band) { "5g" -> "ac"; else -> "n" }
         } else radioHwmode
         AppDialog(
             title = "设备配置（$section）",
@@ -944,32 +1896,34 @@ fun WirelessScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SelectRow("工作频率", when (hwmode) {
-                    "11ax" -> "AX"
-                    "11ac" -> "AC"
-                    "11n" -> "N"
-                    "11g" -> "G"
-                    "11b" -> "B"
+                    "ax" -> "AX"
+                    "ac" -> "AC"
+                    "n" -> "N"
+                    "g" -> "G"
+                    "b" -> "B"
+                    "be" -> "BE"
+                    "" -> "自动"
                     else -> hwmode
                 }) {
                     selectState = SelectState(
                         "选择工作频率",
                         if (band == "5g") {
-                            listOf("11n" to "N", "11ac" to "AC", "11ax" to "AX")
+                            listOf("n" to "N", "ac" to "AC", "ax" to "AX")
                         } else {
-                            listOf("11b" to "B", "11g" to "G", "11n" to "N", "11ax" to "AX")
+                            listOf("b" to "B", "g" to "G", "n" to "N", "ax" to "AX")
                         },
                         hwmode
                     ) { v ->
                         radioHwmode = v
                         // 切换协议后保持频宽数值，前缀跟随协议。
                         val width = Regex("\\d+").find(radioHtmode)?.value ?: when (v) {
-                            "11ac" -> "80"
+                            "ac" -> "80"
                             else -> "20"
                         }
                         val prefix = when (v) {
-                            "11n" -> "HT"
-                            "11ac" -> "VHT"
-                            "11ax" -> "HE"
+                            "n" -> "HT"
+                            "ac" -> "VHT"
+                            "ax" -> "HE"
                             else -> "HT"
                         }
                         radioHtmode = "$prefix$width"
@@ -977,7 +1931,9 @@ fun WirelessScreen(
                 }
                 SelectRow("频宽", htmodeLabel(radioHtmode.ifBlank { null })) {
                     selectState = SelectState(
-                        "选择频宽", htmodeOptions(band, hwmode), radioHtmode
+                        "选择频宽",
+                        htmodeOptions(effectiveHwmode(hwmode, radioHtmode), radio?.availableHtmodes ?: emptyList()),
+                        radioHtmode
                     ) { v -> radioHtmode = v }
                 }
                 SelectRow("信道", "${radioChannel.ifBlank { "auto" }}") {
@@ -1002,60 +1958,6 @@ fun WirelessScreen(
         }
     }
 
-    // ---- 添加 WiFi 对话框 ----
-    addWifiFor?.let { device ->
-        AppDialog(
-            title = "添加 WiFi（$device）",
-            confirmLabel = "添加",
-            confirmEnabled = addSsid.isNotBlank(),
-            onConfirm = {
-                val dev = device
-                val ssid = addSsid.trim()
-                val key = addKey
-                val enc = addEncryption
-                addWifiFor = null
-                scope.launch {
-                    busy = true
-                    message = null
-                    try {
-                        withContext(Dispatchers.IO) { client.addIface(config, dev, ssid, key, enc) }
-                        setMsg("WiFi 已添加并重载无线。", false)
-                        load()
-                    } catch (e: Exception) {
-                        setMsg(e.message ?: "添加失败。", true)
-                    } finally {
-                        busy = false
-                    }
-                }
-            },
-            onDismiss = { if (!busy) addWifiFor = null }
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = addSsid,
-                    onValueChange = { addSsid = it },
-                    singleLine = true,
-                    label = { Text("SSID（Wi-Fi 名称）") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                SelectRow("加密", encryptionLabel(addEncryption)) {
-                    selectState = SelectState(
-                        "选择加密方式", SECURITY_OPTIONS, addEncryption
-                    ) { v -> addEncryption = v }
-                }
-                if (addEncryption != "none") {
-                    OutlinedTextField(
-                        value = addKey,
-                        onValueChange = { addKey = it },
-                        singleLine = true,
-                        label = { Text("密码") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-    }
-
     deleteIfaceFor?.let { section ->
         AppDialog(
             title = "删除接口",
@@ -1069,7 +1971,9 @@ fun WirelessScreen(
                     busy = true
                     message = null
                     try {
-                        withContext(Dispatchers.IO) { client.deleteIface(config, sec) }
+                        withContext(Dispatchers.IO) {
+                            client.deleteIface(config, sec, if (sshEnabled) ssh else null) { phase -> setMsg(phase, false) }
+                        }
                         setMsg("接口已删除并重载无线。", false)
                         load()
                     } catch (e: Exception) {
@@ -1214,11 +2118,103 @@ private fun StatCell(label: String, value: String, modifier: Modifier = Modifier
 /** 缩小版的开关：默认 M3 Switch 视觉上太大，整体缩放约 3/4。 */
 @Composable
 private fun SmallSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Switch(
+    AppSwitch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = Modifier.scale(0.75f)
     )
+}
+
+/**
+ * 分区选择器多行版：一行放不下全部选项时按文字宽度自适应拆成 2~3 行
+ * SmoothOptionSwitcher（每行独立实例，选中项所在行高亮、其余行无选中）。
+ * 收起时只显示选中项所在行（不留白）；末行右侧的圆形按钮展开/收起其余行。
+ * 展开/收起无动画、一步完成：不逐帧缩放 Dialog 窗口，不掉帧；
+ * 展开时弹窗整体拉高。
+ */
+@Composable
+private fun GroupedSectionSwitcher(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalAppColors.current
+    val rowH = 40.dp
+    val rowGap = 8.dp
+    val btnSize = 36.dp
+
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
+        val labelStyle = MaterialTheme.typography.labelMedium
+        // 选项文字的固有宽度（Dp），决定每行最多能放几个而不截断
+        val textWidths = remember(options, textMeasurer) {
+            options.map { (_, label) ->
+                with(density) {
+                    textMeasurer
+                        .measure(AnnotatedString(label), labelStyle, maxLines = 1, constraints = Constraints())
+                        .size.width.toDp()
+                }
+            }
+        }
+        val maxTextW = textWidths.maxOrNull() ?: 0.dp
+        val rowAvail = maxWidth - btnSize - 8.dp
+        val cap = ((rowAvail.value) / (maxTextW.value + 14f)).toInt().coerceAtLeast(1)
+        // 两行优先：每行放不下再增行数
+        var rowsCount = if (options.size <= cap) 1 else 2
+        while (rowsCount < options.size && ceil(options.size.toDouble() / rowsCount) > cap) rowsCount++
+        rowsCount = rowsCount.coerceAtMost(options.size)
+        val perRow = ceil(options.size.toDouble() / rowsCount).toInt()
+        val rows = options.chunked(perRow)
+
+        val selRow = rows.indexOfFirst { row -> row.any { it.first == selected } }
+        val anchorRow = if (selRow >= 0) selRow else 0
+        var expanded by rememberSaveable { mutableStateOf(false) }
+
+        // 展开/收起无动画：一步完成，不逐帧缩放 Dialog 窗口（不掉帧）。
+        // 收起态只占选中行，不留白；展开时弹窗整体拉高。
+        val lastVisible = if (expanded) rows.size - 1 else 0
+
+        Box {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(rowGap)) {
+                    rows.forEachIndexed { i, rowOpts ->
+                        if (expanded || i == anchorRow) {
+                            SmoothOptionSwitcher(
+                                options = rowOpts,
+                                selected = selected.takeIf { rowOpts.any { o -> o.first == selected } },
+                                onSelect = onSelect,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.width(btnSize)) {
+                    Surface(
+                        onClick = { expanded = !expanded },
+                        shape = CircleShape,
+                        color = colors.surfaceVariant,
+                        modifier = Modifier
+                            .size(btnSize)
+                            .offset(y = (rowH + rowGap) * lastVisible)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.ExpandMore,
+                                contentDescription = if (expanded) "收起更多分区" else "展开更多分区",
+                                tint = colors.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .rotate(if (expanded) 180f else 0f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** WiFi 分享二维码内容：标题 + 白底二维码 + WiFi 名称 + 灰字密码（竖屏/横屏共用）。 */
@@ -1243,9 +2239,24 @@ private fun WifiShareContent(shareIface: WirelessIface) {
         )
         Spacer(Modifier.height(16.dp))
         // 白底容器保证深色模式下二维码同样可被相机识别。
+        // 出现动画：缩放 0.8→1 + 淡入（260ms）。
+        val qrEnter = remember { androidx.compose.animation.core.Animatable(0f) }
+        LaunchedEffect(qrContent) {
+            qrEnter.snapTo(0f)
+            qrEnter.animateTo(
+                1f,
+                androidx.compose.animation.core.tween(260, easing = OptionSwitcherEasing)
+            )
+        }
         Surface(
             shape = AppShapes.block,
-            color = Color.White
+            color = Color.White,
+            modifier = Modifier.graphicsLayer {
+                val e = qrEnter.value
+                alpha = e
+                scaleX = 0.8f + 0.2f * e
+                scaleY = 0.8f + 0.2f * e
+            }
         ) {
             if (qrBitmap != null) {
                 Image(
@@ -1299,6 +2310,14 @@ private fun WifiShareSidePanel(iface: WirelessIface, onDismiss: () -> Unit) {
         }
     }
     val p = PredictiveBackEasing.transform(backProgress).coerceIn(0f, 1f)
+    // 入场动画：面板从右侧滑入 + 淡入（出现一次，280ms）
+    val enterAnim = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(Unit) {
+        enterAnim.animateTo(
+            0f,
+            androidx.compose.animation.core.tween(280, easing = OptionSwitcherEasing)
+        )
+    }
     Box(Modifier.fillMaxSize()) {
         // 半透明遮罩：点击空白关闭，随返回手势逐渐变透。
         Box(
@@ -1320,8 +2339,9 @@ private fun WifiShareSidePanel(iface: WirelessIface, onDismiss: () -> Unit) {
                 .fillMaxHeight()
                 .width(300.dp)
                 .graphicsLayer {
-                    alpha = 1f - 0.4f * p
-                    translationX = size.width * 0.3f * p
+                    val enter = enterAnim.value
+                    alpha = (1f - 0.4f * p) * (1f - enter)
+                    translationX = size.width * (0.3f * p + enter)
                 }
         ) {
             Column(

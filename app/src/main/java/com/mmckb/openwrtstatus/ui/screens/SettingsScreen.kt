@@ -1,6 +1,10 @@
 package com.mmckb.openwrtstatus.ui.screens
 
-import androidx.activity.ComponentActivity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,11 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,8 +29,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mmckb.openwrtstatus.notify.AppNotifier
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
@@ -33,25 +39,33 @@ import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
 /**
- * Settings offers the realtime speed-notification toggle and a single "关于" entry;
- * the version, repository and license details live behind the latter.
+ * Settings offers the realtime speed-notification toggle, a "主题设置" entry (dark/light
+ * mode and AMOLED) and a single "关于" entry; the version, repository and license details
+ * live behind the latter.
  */
 @Composable
 fun SettingsScreen(
     viewModel: RouterViewModel,
     onOpenAbout: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenThemeSettings: () -> Unit = {}
 ) {
     val colors = LocalAppColors.current
     val connNotify by viewModel.connNotifyEnabled.collectAsStateWithLifecycle()
+    val toolsGrid by viewModel.toolsGridEnabled.collectAsStateWithLifecycle()
+    val terminalInline by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val notifyPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = rememberTopBarPadding())
-            .padding(bottom = 12.dp),
+            .padding(bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         AppCard {
@@ -72,14 +86,89 @@ fun SettingsScreen(
                         color = colors.onSurfaceVariant
                     )
                 }
-                Switch(
+                AppSwitch(
                     checked = connNotify,
                     onCheckedChange = { enabled ->
                         viewModel.setConnectionNotifyEnabled(enabled)
-                        if (enabled) (context as? ComponentActivity)?.let {
-                            AppNotifier.requestPermission(it)
+                        if (enabled &&
+                            Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(
+                                context, Manifest.permission.POST_NOTIFICATIONS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     }
+                )
+            }
+        }
+        AppCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "工具页两列磁贴",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "开启后工具页以两列磁贴显示；关闭为列表卡片",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                AppSwitch(
+                    checked = toolsGrid,
+                    onCheckedChange = { viewModel.setToolsGridEnabled(it) }
+                )
+            }
+        }
+        AppCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "终端直接输入",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "开启后终端页去掉输入框与发送键，直接在输出区底部输入命令（回车发送）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                AppSwitch(
+                    checked = terminalInline,
+                    onCheckedChange = { viewModel.setTerminalInlineInput(it) }
+                )
+            }
+        }
+        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenThemeSettings)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "主题设置",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Text(
+                        "深浅色模式与 AMOLED 纯黑",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant
                 )
             }
         }
@@ -105,6 +194,7 @@ fun SettingsScreen(
                 )
             }
         }
-        Spacer(Modifier.height(0.dp))
+        // 与其他 tab 页一致：最后一张卡片避开悬浮 tab bar，不再滚到它底下
+        Spacer(Modifier.height(96.dp))
     }
 }

@@ -6,11 +6,13 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.mmckb.openwrtstatus.data.model.SshConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.Properties
 import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
+import kotlin.coroutines.coroutineContext
 
 /** Raised when the user cancels a transfer; the UI shows it as info, not an error. */
 class SshCancelledException(message: String = "传输已取消") : Exception(message)
@@ -380,6 +382,9 @@ object SshFiles {
             val err = StringBuilder()
             val chunk = ByteArray(65536)
             var lastProgressAt = 0L
+            // 无数据（无响应）超时：按「最近一次有数据进出的时间」计，长传输只要仍在
+            // 出数据就不会误杀；半死连接上循环不退出的问题由此兜底。
+            var lastDataAt = System.currentTimeMillis()
             while (true) {
                 if (cancelled()) throw SshCancelledException()
                 var progressed = false
@@ -392,15 +397,24 @@ object SshFiles {
                         lastProgressAt = now
                         runCatching { onProgress(out.size().toLong()) }
                     }
+                    lastDataAt = now
                     progressed = true
                 }
                 while (stderr.available() > 0) {
                     val count = stderr.read(chunk, 0, minOf(chunk.size, stderr.available()))
                     if (count < 0) break
                     err.append(String(chunk, 0, count, Charsets.UTF_8))
+                    lastDataAt = System.currentTimeMillis()
                     progressed = true
                 }
                 if (channel.isClosed && stdout.available() == 0 && stderr.available() == 0) break
+                // 连接断开/操作被取消时立即终止轮询，让按钮立刻恢复
+                if (!coroutineContext.isActive) {
+                    throw SshCancelledException("连接已断开，操作已终止。")
+                }
+                if (System.currentTimeMillis() - lastDataAt > timeoutMs) {
+                    throw SshFileException("SSH ${timeoutMs / 1000} 秒无数据传输，连接可能已中断。")
+                }
                 if (!progressed) Thread.sleep(30)
             }
             stdinDone.await()
@@ -418,16 +432,20 @@ object SshFiles {
 
     /** Creates and connects a session with password / keyboard-interactive auth. */
     private fun openSession(config: SshConfig, timeoutMs: Int): Session {
-        val jsch = JSch()
+        val jsch = JSch().applyTofuHostKeyChecking(config.host, config.port)
         val session = jsch.getSession(config.username, config.host, config.port)
         session.setPassword(config.password)
         session.setConfig(Properties().apply {
-            put("StrictHostKeyChecking", "no")
+            put("StrictHostKeyChecking", "yes")
             put("PreferredAuthentications", "publickey,keyboard-interactive,password")
         })
         session.userInfo = PasswordUserInfo(config.password)
         session.timeout = timeoutMs
-        session.connect(timeoutMs)
+        try {
+            session.connect(timeoutMs)
+        } catch (e: JSchException) {
+            throw hostKeyFriendly(e)
+        }
         return session
     }
 

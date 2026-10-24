@@ -1,7 +1,6 @@
 package com.mmckb.openwrtstatus.notify
 
 import android.Manifest
-import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -22,7 +21,6 @@ object AppNotifier {
 
     const val CHANNEL_STATUS = "realtime_status"
     const val ID_CONN_STATUS = 3001
-    private const val PERMISSION_REQUEST_CODE = 1001
 
     /** 应用启动时调用：创建通知渠道（API 26+ 必需，重复创建无副作用）。 */
     fun ensureChannels(context: Context) {
@@ -46,13 +44,6 @@ object AppNotifier {
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
-
-    /** Android 13+ 的运行时通知权限请求（设置页开关开启时调用）。 */
-    fun requestPermission(activity: Activity) {
-        if (Build.VERSION.SDK_INT >= 33 && !permissionGranted(activity)) {
-            activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), PERMISSION_REQUEST_CODE)
-        }
-    }
 
     /** 系统是否愿意把通知提升为 Live Update（Android 16+，含用户开关）。 */
     fun canPostPromoted(context: Context): Boolean =

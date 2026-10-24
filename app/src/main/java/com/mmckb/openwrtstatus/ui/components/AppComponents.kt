@@ -7,8 +7,11 @@ import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -20,11 +23,13 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,10 +37,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -81,10 +89,12 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
 import com.mmckb.openwrtstatus.ui.glass.DampedDragAnimation
 import com.mmckb.openwrtstatus.ui.glass.InteractiveHighlight
+import com.mmckb.openwrtstatus.ui.glass.LiquidButton
 import com.mmckb.openwrtstatus.ui.glass.LiquidTab
 import com.mmckb.openwrtstatus.ui.glass.LocalLiquidTabScale
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
+import com.mmckb.openwrtstatus.ui.theme.LocalDarkTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -165,6 +175,42 @@ fun MetricTile(
     }
 }
 
+/**
+ * 圆形图标按钮：按下时有明确的灰色圆底反馈（标准 IconButton 的水波
+ * 在浅色卡片上几乎不可见，这里改为确定性的灰色按压态）。
+ */
+@Composable
+fun AppIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val colors = LocalAppColors.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val background = if (pressed && enabled) {
+        colors.onSurfaceVariant.copy(alpha = 0.22f)
+    } else {
+        Color.Transparent
+    }
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(background)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
+}
+
 /** Minimal line chart used by the monitoring screen. */
 @Composable
 fun Sparkline(
@@ -218,7 +264,7 @@ fun AppTopBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(60.dp)
+            .height(44.dp)
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -279,7 +325,8 @@ fun FloatingTabBar(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
-    val isLight = !isSystemInDarkTheme()
+    // 明暗按 App 主题判定（主题设置可脱离系统外观），不能读系统日夜模式。
+    val isLight = !LocalDarkTheme.current
     val containerColor = if (isLight) {
         Color(0xFFFAFAFA).copy(alpha = 0.42f)
     } else {
@@ -540,6 +587,9 @@ fun AppDialog(
             color = colors.surface,
             border = androidx.compose.foundation.BorderStroke(1.dp, colors.outline),
             modifier = Modifier
+                // 弹窗窗口 decorFitsSystemWindows=false：键盘弹出时内容自行避让，
+                // 长表单弹窗底部的输入框不被软键盘遮挡。
+                .imePadding()
                 .widthIn(min = 280.dp, max = 360.dp)
                 .graphicsLayer {
                     scaleX = 1f - 0.1f * p
@@ -591,17 +641,27 @@ fun AppDialog(
 }
 
 /** 统一的二级页返回按钮：系统返回箭头图标，替代各页各自的文字“返回”。 */
+
 @Composable
 fun AppBackButton(onBack: () -> Unit) {
     val colors = LocalAppColors.current
-    IconButton(
+    // 空层 Backdrop：返回键位于页头，其后是纯色背景，用 surface 色呈现磨砂圆钮，
+    // 按压时由 InteractiveHighlight 提供果冻形变与高光
+    val backdrop = rememberLayerBackdrop()
+    LiquidButton(
         onClick = onBack,
-        modifier = Modifier.size(40.dp)
+        backdrop = backdrop,
+        modifier = Modifier.size(40.dp),
+        height = 40.dp,
+        contentPadding = PaddingValues(0.dp),
+        surfaceColor = colors.surfaceVariant.copy(alpha = 0.55f),
+        pressScaleDp = 0.4.dp,   // 果冻幅度 0.1x：几乎不可察觉的微妙形变
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "返回",
-            tint = colors.onSurface
+            tint = colors.onSurface,
+            modifier = Modifier.size(20.dp)
         )
     }
 }
@@ -609,7 +669,7 @@ fun AppBackButton(onBack: () -> Unit) {
 /** Top inset consumed by the translucent blurred top bar: status bar + bar height + gap. */
 @Composable
 fun rememberTopBarPadding(): Dp =
-    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp + 12.dp
+    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 44.dp + 12.dp
 
 /**
  * Interpolator mandated by the Material predictive back spec (0.1, 0.1, 0, 1) - matches
@@ -617,3 +677,28 @@ fun rememberTopBarPadding(): Dp =
  * same way system surfaces do.
  */
 val PredictiveBackEasing: CubicBezierEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)
+
+/**
+ * 统一开关：关闭态轨道为纯白（不沿用 M3 默认的灰轨道），滑块用灰色并带浅描边，
+ * 在白色卡片上仍有清晰边界；选中态沿用主题 primary。
+ */
+@Composable
+fun AppSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            uncheckedTrackColor = Color.White,
+            uncheckedThumbColor = Color(0xFFB4B2A9),
+            uncheckedBorderColor = Color(0xFFD9DDE3),
+            uncheckedIconColor = Color.Transparent
+        )
+    )
+}

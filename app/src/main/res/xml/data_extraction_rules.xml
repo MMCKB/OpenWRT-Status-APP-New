@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+（API 31+）的备份/设备迁移规则：
+    设备配置（含路由器密码）与 SSH 指纹不入云备份、不随设备迁移。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="openwrt_status_prefs.xml" />
+        <exclude domain="file" path="datastore/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="openwrt_status_prefs.xml" />
+        <exclude domain="file" path="datastore/" />
+    </device-transfer>
+</data-extraction-rules>

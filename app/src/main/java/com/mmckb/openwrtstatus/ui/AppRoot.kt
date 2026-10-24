@@ -1,21 +1,28 @@
 package com.mmckb.openwrtstatus.ui
 
+import android.Manifest
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -34,8 +41,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.ExperimentalComposeApi
-import androidx.compose.runtime.collectAsState
+
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,27 +52,55 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import android.os.Build
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.runtimeShaderEffect
 import com.kyant.backdrop.highlight.Highlight
 import com.mmckb.openwrtstatus.AboutActivity
+import com.mmckb.openwrtstatus.AdminActivity
 import com.mmckb.openwrtstatus.DeviceEditActivity
 import com.mmckb.openwrtstatus.FileManagerActivity
+import com.mmckb.openwrtstatus.ChannelAnalysisActivity
+import com.mmckb.openwrtstatus.LedActivity
+import com.mmckb.openwrtstatus.RealtimeActivity
+import com.mmckb.openwrtstatus.ui.screens.RealtimeScreen
+import com.mmckb.openwrtstatus.ui.screens.ChannelAnalysisScreen
+import com.mmckb.openwrtstatus.LogsActivity
+import com.mmckb.openwrtstatus.NftablesActivity
 import com.mmckb.openwrtstatus.PackageManagerActivity
+import com.mmckb.openwrtstatus.ProcessesActivity
+import com.mmckb.openwrtstatus.CrontabActivity
+import com.mmckb.openwrtstatus.NetworkInterfacesActivity
+import com.mmckb.openwrtstatus.StartupActivity
+import com.mmckb.openwrtstatus.RoutesActivity
+import com.mmckb.openwrtstatus.FlashActivity
+import com.mmckb.openwrtstatus.SystemActivity
+import com.mmckb.openwrtstatus.ThemeSettingsActivity
 import com.mmckb.openwrtstatus.WirelessActivity
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.components.AppTopBar
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
@@ -71,13 +108,25 @@ import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
+import com.mmckb.openwrtstatus.ui.screens.AdminScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
 import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
 import com.mmckb.openwrtstatus.ui.screens.DetailScreen
 import com.mmckb.openwrtstatus.ui.screens.DevicesScreen
 import com.mmckb.openwrtstatus.ui.screens.FileManagerScreen
+import com.mmckb.openwrtstatus.ui.screens.LedScreen
+import com.mmckb.openwrtstatus.ui.screens.LogsScreen
+import com.mmckb.openwrtstatus.ui.screens.NftablesScreen
 import com.mmckb.openwrtstatus.ui.screens.PackageManagerScreen
+import com.mmckb.openwrtstatus.ui.screens.ProcessesScreen
+import com.mmckb.openwrtstatus.ui.screens.CrontabScreen
+import com.mmckb.openwrtstatus.ui.screens.NetworkInterfacesScreen
+import com.mmckb.openwrtstatus.ui.screens.StartupScreen
+import com.mmckb.openwrtstatus.ui.screens.RoutesScreen
+import com.mmckb.openwrtstatus.ui.screens.FlashScreen
 import com.mmckb.openwrtstatus.ui.screens.SettingsScreen
+import com.mmckb.openwrtstatus.ui.screens.SystemScreen
+import com.mmckb.openwrtstatus.ui.screens.ThemeSettingsScreen
 import com.mmckb.openwrtstatus.ui.screens.WirelessScreen
 import com.mmckb.openwrtstatus.ui.screens.TerminalOutputPane
 import com.mmckb.openwrtstatus.ui.screens.TerminalScreen
@@ -92,12 +141,34 @@ private const val TAB_TERMINAL = 3
 private const val TAB_TOOL = 4
 private const val TAB_SETTINGS = 5
 
+/**
+ * 二级 Activity 交接标记与设备 id extra。各 Activity companion 里的常量值均为这两个
+ * 字面量（"openInline" / "deviceId"），通用启动器直接取同一字面量，与任一 Activity 的
+ * 常量保持等值。
+ */
+private const val EXTRA_OPEN_INLINE = "openInline"
+private const val EXTRA_DEVICE_ID = "deviceId"
+
 /** 横屏右栏可承载的二级页面。 */
 private sealed interface SecondaryPage {
     data object FileManager : SecondaryPage
     data object PackageManager : SecondaryPage
+    data object System : SecondaryPage
     data object Wireless : SecondaryPage
+    data object Admin : SecondaryPage
+    data object Led : SecondaryPage
+    data object Routes : SecondaryPage
+    data object Nftables : SecondaryPage
+    data object Logs : SecondaryPage
+    data object Processes : SecondaryPage
+    data object Flash : SecondaryPage
+    data object Startup : SecondaryPage
+    data object Crontab : SecondaryPage
+    data object NetworkInterfaces : SecondaryPage
     data object About : SecondaryPage
+    data object ThemeSettings : SecondaryPage
+    data object Realtime : SecondaryPage
+    data object ChannelAnalysis : SecondaryPage
     data class DeviceEditor(val initial: RouterConfig, val isNew: Boolean) : SecondaryPage
 }
 
@@ -105,8 +176,10 @@ private sealed interface SecondaryPage {
 @Composable
 fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     var selectedTab by remember { mutableIntStateOf(TAB_DASHBOARD) }
-    val config by viewModel.config.collectAsState()
-    val devices by viewModel.devices.collectAsState()
+    val config by viewModel.config.collectAsStateWithLifecycle()
+    val devices by viewModel.devices.collectAsStateWithLifecycle()
+    val toolsGrid by viewModel.toolsGridEnabled.collectAsStateWithLifecycle()
+    val terminalInlineInput by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
@@ -115,62 +188,99 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     // 横屏时自行退出并把页面交回右栏（见各二级 Activity 的旋转交接）。
     var secondary by remember { mutableStateOf<SecondaryPage?>(null) }
 
+    // 添加设备展开层：设备页右下角「添加」按钮 → 面板从按钮位置生长到全屏（两种朝向都盖住整窗）。
+    // 预测性返回手绘为沿原路缩回按钮位置，与关闭动画一致。
+    val rootScope = rememberCoroutineScope()
+    var addSheetFabRect by remember { mutableStateOf<Rect?>(Rect.Zero) }
+    var addSheetOpen by remember { mutableStateOf(false) }
+    val addSheetProgress = remember { Animatable(1f) }
+    val addSheetEasing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
+    // 收起/回弹动画挂 rootScope（不随手势回调被取消而中断）：
+    // 收起进行中再来侧滑，手势从当前进度相对接管，提交后从当前位置继续收起——
+    // 不回弹全屏、不重播收起动画（多次侧滑只连续推进）。
+    var addSheetCloseJob by remember { mutableStateOf<Job?>(null) }
+    var addSheetReboundJob by remember { mutableStateOf<Job?>(null) }
+
     val editLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val data = result.data
         // 设备编辑页旋转到横屏的交接：转成右栏内联编辑器，继续编辑同一设备。
+        // 设备配置本身走进程内交接（含明文凭据，不进 Intent），Intent 只带交接标记位。
         if (data != null && data.getBooleanExtra(DeviceEditActivity.EXTRA_OPEN_INLINE, false)) {
-            val initial = data.getSerializableExtra(DeviceEditActivity.EXTRA_DEVICE) as? RouterConfig
-            if (initial != null) {
-                secondary = SecondaryPage.DeviceEditor(
-                    initial,
-                    data.getBooleanExtra(DeviceEditActivity.EXTRA_IS_NEW, false)
-                )
+            DeviceEditResult.consumeHandoff()?.let { handoff ->
+                secondary = SecondaryPage.DeviceEditor(handoff.device, handoff.isNew)
             }
             return@rememberLauncherForActivityResult
         }
-        val deletedId = data?.getStringExtra(DeviceEditActivity.EXTRA_DELETE_ID)
-        if (deletedId != null) {
-            viewModel.deleteDevice(deletedId)
-            return@rememberLauncherForActivityResult
-        }
-        val saved = data?.getSerializableExtra(DeviceEditActivity.EXTRA_SAVED) as? RouterConfig
-        if (saved != null) {
-            val isNew = data?.getBooleanExtra(DeviceEditActivity.EXTRA_IS_NEW, false) ?: false
-            if (isNew) viewModel.addDevice(saved) else viewModel.updateDevice(saved)
+        val outcome = DeviceEditResult.consumeOutcome() ?: return@rememberLauncherForActivityResult
+        val deletedId = outcome.deletedId
+        val saved = outcome.saved
+        when {
+            deletedId != null -> viewModel.deleteDevice(deletedId)
+            saved != null -> if (outcome.savedIsNew) {
+                viewModel.addDevice(saved)
+            } else {
+                viewModel.updateDevice(saved)
+            }
         }
     }
 
-    // 竖屏独立二级页的启动器：旋转到横屏时 Activity 带着交接标记退出，在这里转成右栏内联。
-    val fileManagerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(FileManagerActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.FileManager
+    // 竖屏独立二级页的启动器：旋转到横屏时 Activity 带着交接标记（EXTRA_OPEN_INLINE，
+    // 各 Activity companion 常量值一致）退出，在这里转成右栏内联。除设备编辑器（回传
+    // 保存/删除结果）外全部同构，收敛为一个通用启动器 + 两张映射表。
+    @Composable
+    fun inlineLauncher(page: SecondaryPage, onResult: () -> Unit = {}) =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            onResult()
+            if (result.data?.getBooleanExtra(EXTRA_OPEN_INLINE, false) == true) {
+                secondary = page
+            }
         }
-    }
-    val packageManagerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(PackageManagerActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.PackageManager
-        }
-    }
-    val aboutLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(AboutActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.About
-        }
-    }
-    val wirelessLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.data?.getBooleanExtra(WirelessActivity.EXTRA_OPEN_INLINE, false) == true) {
-            secondary = SecondaryPage.Wireless
-        }
-    }
+
+    val inlineLaunchers = mapOf(
+        SecondaryPage.FileManager to inlineLauncher(SecondaryPage.FileManager),
+        SecondaryPage.PackageManager to inlineLauncher(SecondaryPage.PackageManager),
+        SecondaryPage.About to inlineLauncher(SecondaryPage.About) {
+            // 从关于页（独立 Activity）返回：重读解锁状态，详情页立即出现扩展信息卡
+            viewModel.refreshHiddenDiagUnlocked()
+        },
+        SecondaryPage.ThemeSettings to inlineLauncher(SecondaryPage.ThemeSettings),
+        SecondaryPage.Wireless to inlineLauncher(SecondaryPage.Wireless),
+        SecondaryPage.Admin to inlineLauncher(SecondaryPage.Admin),
+        SecondaryPage.Realtime to inlineLauncher(SecondaryPage.Realtime),
+        SecondaryPage.ChannelAnalysis to inlineLauncher(SecondaryPage.ChannelAnalysis),
+        SecondaryPage.Led to inlineLauncher(SecondaryPage.Led),
+        SecondaryPage.Routes to inlineLauncher(SecondaryPage.Routes),
+        SecondaryPage.Nftables to inlineLauncher(SecondaryPage.Nftables),
+        SecondaryPage.Logs to inlineLauncher(SecondaryPage.Logs),
+        SecondaryPage.Processes to inlineLauncher(SecondaryPage.Processes),
+        SecondaryPage.Flash to inlineLauncher(SecondaryPage.Flash),
+        SecondaryPage.NetworkInterfaces to inlineLauncher(SecondaryPage.NetworkInterfaces),
+        SecondaryPage.Crontab to inlineLauncher(SecondaryPage.Crontab),
+        SecondaryPage.Startup to inlineLauncher(SecondaryPage.Startup)
+    )
+
+    // 竖屏启动目标（设备编辑器走 openEditor，不在此表；关于/主题设置两页忽略设备 id）。
+    val secondaryActivities = mapOf(
+        SecondaryPage.FileManager to FileManagerActivity::class.java,
+        SecondaryPage.PackageManager to PackageManagerActivity::class.java,
+        SecondaryPage.About to AboutActivity::class.java,
+        SecondaryPage.ThemeSettings to ThemeSettingsActivity::class.java,
+        SecondaryPage.Wireless to WirelessActivity::class.java,
+        SecondaryPage.Admin to AdminActivity::class.java,
+        SecondaryPage.Realtime to RealtimeActivity::class.java,
+        SecondaryPage.ChannelAnalysis to ChannelAnalysisActivity::class.java,
+        SecondaryPage.Led to LedActivity::class.java,
+        SecondaryPage.Routes to RoutesActivity::class.java,
+        SecondaryPage.Nftables to NftablesActivity::class.java,
+        SecondaryPage.Logs to LogsActivity::class.java,
+        SecondaryPage.Processes to ProcessesActivity::class.java,
+        SecondaryPage.Flash to FlashActivity::class.java,
+        SecondaryPage.NetworkInterfaces to NetworkInterfacesActivity::class.java,
+        SecondaryPage.Crontab to CrontabActivity::class.java,
+        SecondaryPage.Startup to StartupActivity::class.java
+    )
 
     // Records the page layer: pages extend edge to edge, so the translucent top bar and
     // the bottom tab strip blur the live content behind them.
@@ -182,12 +292,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         movableContentOf<SecondaryPage> { page ->
             Box(Modifier.fillMaxSize()) {
                 val cfg = config
-                val ssh = SshConfig(
-                    host = cfg.sshHost.ifBlank { cfg.ip },
-                    port = cfg.sshPort,
-                    username = cfg.sshUsername,
-                    password = cfg.sshPassword
-                )
+                val ssh = cfg.toSshConfig()
                 when (page) {
                     SecondaryPage.FileManager -> FileManagerScreen(
                         ssh = ssh,
@@ -198,8 +303,80 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
                     )
-                    SecondaryPage.About -> AboutScreen(onBack = { secondary = null })
+                    SecondaryPage.About -> AboutScreen(
+                        onBack = { secondary = null },
+                        hiddenDiagUnlocked = viewModel.hiddenDiagUnlocked.collectAsStateWithLifecycle().value,
+                        onUnlockHiddenDiag = { viewModel.unlockHiddenDiag() }
+                    )
+                    SecondaryPage.ThemeSettings -> ThemeSettingsScreen(
+                        onBack = { secondary = null }
+                    )
                     SecondaryPage.Wireless -> WirelessScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.System -> SystemScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Admin -> AdminScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Realtime -> RealtimeScreen(
+                        config = cfg,
+                        ssh = if (cfg.sshEnabled) ssh else null,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.ChannelAnalysis -> ChannelAnalysisScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Led -> LedScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Routes -> RoutesScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Nftables -> NftablesScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Logs -> LogsScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Processes -> ProcessesScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Flash -> FlashScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.NetworkInterfaces -> NetworkInterfacesScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Crontab -> CrontabScreen(
+                        config = cfg,
+                        sshEnabled = cfg.sshEnabled,
+                        onBack = { secondary = null }
+                    )
+                    SecondaryPage.Startup -> StartupScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
                         onBack = { secondary = null }
@@ -233,28 +410,27 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         // 逐级返回/弹层处理组合在后、优先级更高，不冲突。
         BackHandler(enabled = secondary != null) { secondary = null }
 
+        // 旋转/窗口尺寸变化：添加面板锚定的按钮坐标随窗口失效——按双轨惯例关闭面板，
+        // 把添加页移交内联渲染（竖屏全屏/横屏右栏），与其他二级页的旋转交接一致。
+        LaunchedEffect(constraints.maxWidth, constraints.maxHeight) {
+            if (addSheetOpen) {
+                addSheetCloseJob?.cancel()
+                addSheetReboundJob?.cancel()
+                addSheetOpen = false
+                addSheetFabRect = null
+                addSheetProgress.snapTo(1f)
+                secondary = SecondaryPage.DeviceEditor(RouterConfig(), isNew = true)
+            }
+        }
+
         fun openSecondary(page: SecondaryPage) {
             if (isLandscape) {
                 secondary = page
             } else {
-                when (page) {
-                    SecondaryPage.FileManager -> fileManagerLauncher.launch(
-                        Intent(context, FileManagerActivity::class.java)
-                            .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
-                    )
-                    SecondaryPage.PackageManager -> packageManagerLauncher.launch(
-                        Intent(context, PackageManagerActivity::class.java)
-                            .putExtra(FileManagerActivity.EXTRA_CONFIG, config)
-                    )
-                    SecondaryPage.About -> aboutLauncher.launch(
-                        Intent(context, AboutActivity::class.java)
-                    )
-                    SecondaryPage.Wireless -> wirelessLauncher.launch(
-                        Intent(context, WirelessActivity::class.java)
-                            .putExtra(WirelessActivity.EXTRA_CONFIG, config)
-                    )
-                    is SecondaryPage.DeviceEditor -> return
-                }
+                val activity = secondaryActivities[page] ?: return  // 设备编辑器不在此路径
+                inlineLaunchers.getValue(page).launch(
+                    Intent(context, activity).putExtra(EXTRA_DEVICE_ID, config.id)
+                )
             }
         }
 
@@ -262,15 +438,52 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             if (isLandscape) {
                 secondary = SecondaryPage.DeviceEditor(device, isNew)
             } else {
-                val intent = Intent(context, DeviceEditActivity::class.java).apply {
-                    putExtra(DeviceEditActivity.EXTRA_DEVICE, device)
-                    putExtra(DeviceEditActivity.EXTRA_IS_NEW, isNew)
-                    putStringArrayListExtra(
-                        DeviceEditActivity.EXTRA_EXISTING,
-                        ArrayList(devices.filterNot { it.id == device.id }.map { it.displayName })
-                    )
+                // 只传设备 id 与「是否新增」——配置本身由编辑页从本地读取，
+                // 凭据不进 Intent（新增设备没有 id，缺省即为空）。
+                val intent = Intent(context, DeviceEditActivity::class.java)
+                    .putExtra(DeviceEditActivity.EXTRA_IS_NEW, isNew)
+                if (device.id.isNotEmpty()) {
+                    intent.putExtra(DeviceEditActivity.EXTRA_DEVICE_ID, device.id)
                 }
                 editLauncher.launch(intent)
+            }
+        }
+
+        // 添加面板：竖屏从设备页「添加」按钮展开到全屏；横屏保持原路径（右栏内联编辑器）。
+        fun onAddClicked(bounds: Rect) {
+            if (addSheetOpen) return
+            if (isLandscape) {
+                openEditor(RouterConfig(), isNew = true)
+                return
+            }
+            addSheetCloseJob?.cancel()
+            addSheetReboundJob?.cancel()
+            addSheetFabRect = bounds
+            addSheetOpen = true
+            rootScope.launch {
+                addSheetProgress.snapTo(0f)
+                addSheetProgress.animateTo(1f, tween(650, easing = addSheetEasing))
+            }
+        }
+
+        fun closeAddSheet(releaseVelocity: Float = 0f) {
+            // 已在收起（收起动画活跃）时忽略新的收起请求：动画从当前位置继续，
+            // 不重播——这是「动画没播完时多次侧滑重复播放」的防重入关键。
+            if (addSheetCloseJob?.isActive == true) return
+            addSheetReboundJob?.cancel()
+            addSheetCloseJob = rootScope.launch {
+                // 弹簧从当前进度与释放速度继续收拢（临界阻尼）：松手即顺势、交接不断速；
+                // 按钮触发的收起初速度为 0，同样平滑落位。
+                addSheetProgress.animateTo(
+                    0f,
+                    // 静止全屏时（按钮/返回键）与 HTML 一致：同曲线 650ms；
+                    // 手势中途松手（进度 < 1）仍用弹簧接住松手速度，不断速。
+                    if (addSheetProgress.value >= 0.999f) tween<Float>(650, easing = addSheetEasing)
+                    else spring<Float>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
+                    initialVelocity = releaseVelocity.coerceIn(-3f, 0f)
+                )
+                addSheetOpen = false
+                addSheetFabRect = null
             }
         }
 
@@ -285,6 +498,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     TAB_DEVICES -> DevicesScreen(
                         viewModel = viewModel,
                         onOpenEditor = ::openEditor,
+                        onAddClicked = ::onAddClicked,
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_TERMINAL -> TerminalScreen(
@@ -292,12 +506,27 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         // 横屏双栏且未开二级页时，输出区渲染在右栏，左侧只保留输入。
                         hideOutput = isLandscape && secondary == null,
                         bottomSpacer = if (isLandscape) 40.dp else 76.dp,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        inlineInput = terminalInlineInput,
                     )
                     TAB_TOOL -> ToolScreen(
+                        grid = toolsGrid,
                         onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
                         onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
                         onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
+                        onOpenSystem = { openSecondary(SecondaryPage.System) },
+                        onOpenAdmin = { openSecondary(SecondaryPage.Admin) },
+                        onOpenLed = { openSecondary(SecondaryPage.Led) },
+                        onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
+                        onOpenFirewall = { openSecondary(SecondaryPage.Nftables) },
+                        onOpenLogs = { openSecondary(SecondaryPage.Logs) },
+                        onOpenProcesses = { openSecondary(SecondaryPage.Processes) },
+                        onOpenFlash = { openSecondary(SecondaryPage.Flash) },
+                        onOpenStartup = { openSecondary(SecondaryPage.Startup) },
+                        onOpenCrontab = { openSecondary(SecondaryPage.Crontab) },
+                        onOpenNetworkInterfaces = { openSecondary(SecondaryPage.NetworkInterfaces) },
+                        onOpenRealtime = { openSecondary(SecondaryPage.Realtime) },
+                        onOpenChannelAnalysis = { openSecondary(SecondaryPage.ChannelAnalysis) },
                         modifier = Modifier.fillMaxSize()
                     )
                     TAB_DETAIL -> DetailScreen(
@@ -307,6 +536,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     else -> SettingsScreen(
                         viewModel = viewModel,
                         onOpenAbout = { openSecondary(SecondaryPage.About) },
+                        onOpenThemeSettings = { openSecondary(SecondaryPage.ThemeSettings) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -315,14 +545,58 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
 
         @Composable
         fun MainTopBar(modifier: Modifier) {
-            AppTopBar(
-                modifier = modifier
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { RectangleShape },
-                        effects = { blur(18.dp.toPx()) },
-                        highlight = { Highlight(alpha = 0f) }
-                    ),
+            val topBarColors = LocalAppColors.current
+            // 模糊效果区域 = 状态栏 + 44dp 标题栏 + 15dp 渐隐延伸区
+            val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val fadeExtension = 15.dp
+            Box(
+                modifier
+                    .fillMaxWidth()
+                    .height(statusBarHeight + 44.dp + fadeExtension)
+                    .then(
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            // 真模糊：高斯 + 渐进遮罩（AGSL）——顶栏全强度，延伸区内平滑渐隐
+                            Modifier.drawPlainBackdrop(
+                                backdrop = backdrop,
+                                shape = { RectangleShape },
+                                effects = {
+                                    blur(20.dp.toPx())
+                                    runtimeShaderEffect(
+                                        "MainTopBarProgressive",
+                                        """
+                                        uniform shader content;
+                                        uniform float2 size;
+                                        uniform float fadeStart;
+                                        layout(color) uniform half4 tint;
+                                        uniform float tintIntensity;
+
+                                        half4 main(float2 coord) {
+                                            float fade = 1.0 - smoothstep(fadeStart, size.y, coord.y);
+                                            half4 src = content.eval(coord);
+                                            return mix(src, tint, tintIntensity) * fade;
+                                        }
+                                        """,
+                                        "content"
+                                    ) {
+                                        setFloatUniform("size", size.width, size.height)
+                                        setFloatUniform("fadeStart", (statusBarHeight + 44.dp).toPx())
+                                        setColorUniform("tint", topBarColors.surface)
+                                        setFloatUniform("tintIntensity", 0.6f)
+                                    }
+                                }
+                            )
+                        } else {
+                            Modifier.drawBackdrop(
+                                backdrop = backdrop,
+                                shape = { RectangleShape },
+                                effects = { blur(18.dp.toPx()) },
+                                highlight = { Highlight(alpha = 0f) }
+                            )
+                        }
+                    )
+            ) {
+                AppTopBar(
+
                 title = when (selectedTab) {
                     TAB_DASHBOARD -> "概览"
                     TAB_DEVICES -> "设备"
@@ -343,7 +617,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         }
                     }
                     if (selectedTab == TAB_TERMINAL) {
-                        val terminalState by viewModel.terminal.state.collectAsState()
+                        val terminalState by viewModel.terminal.state.collectAsStateWithLifecycle()
                         val terminalConnected = terminalState is SshTerminal.State.Connected
                         Surface(
                             onClick = {
@@ -364,6 +638,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     }
                 }
             )
+            }
         }
 
         @Composable
@@ -427,6 +702,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                     if (selectedTab == TAB_TERMINAL && secondary == null) {
                         TerminalOutputPane(
                             viewModel = viewModel,
+                            inlineInput = terminalInlineInput,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -537,6 +813,118 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                             Modifier.align(Alignment.CenterEnd),
                             slideFromTop = false
                         )
+                    }
+                }
+            }
+
+            // 添加设备展开层：从设备页「添加」按钮位置生长到全屏（两种朝向都盖住整窗）。
+            // 面板颜色 = 页面本色；表单内容随展开进度淡入。手绘预测性返回见面板内的 handler。
+            if (addSheetOpen) {
+                val fab = addSheetFabRect ?: Rect.Zero
+                // 真 clip-path：内容整屏布局、从不缩放，只在绘制阶段按进度裁出
+                // 「按钮矩形 → 全屏」的圆角窗口（等价 HTML 的 clip-path + border-radius）。
+                // 圆角在未缩放的坐标系里直接给，两轴恒等——收拢末端与胶囊按钮精确吻合；
+                // 绘制阶段读取进度 → 动画帧内零重组、零重测量。
+                val startCorner = fab.height / 2f
+                // 复用同一个 Path，避免每帧新建（变量名刻意避开 DrawScope.clipPath()）
+                val sheetPath = remember { Path() }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawWithContent {
+                            val p = addSheetProgress.value.coerceIn(0f, 1f)
+                            val corner = lerp(startCorner, 0f, p)
+                            sheetPath.reset()
+                            sheetPath.addRoundRect(
+                                RoundRect(
+                                    lerp(fab.left, 0f, p),
+                                    lerp(fab.top, 0f, p),
+                                    lerp(fab.right, size.width, p),
+                                    lerp(fab.bottom, size.height, p),
+                                    corner,
+                                    corner
+                                )
+                            )
+                            clipPath(sheetPath) { this@drawWithContent.drawContent() }
+                        }
+                        // 裁剪窗口内的不透明底：中间进度时主色层 alpha < 1，
+                        // 没有它会透出背后的设备列表。
+                        .background(colors.background)
+                ) {
+                    // 按钮色 → 页面色：与 HTML 的 background-color 过渡同一进度 p
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = 1f - addSheetProgress.value.coerceIn(0f, 1f) }
+                            .background(colors.primary)
+                    )
+                    DeviceEditScreen(
+                        initial = RouterConfig(),
+                        isNew = true,
+                        existingNames = devices.map { it.displayName },
+                        onCancel = { closeAddSheet() },
+                        onSave = { saved ->
+                            viewModel.addDevice(saved)
+                            closeAddSheet()
+                        },
+                        onDelete = { },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val p = addSheetProgress.value.coerceIn(0f, 1f)
+                                // 内容晚一点出现（p > 0.65 才淡入）并从下方 40dp 浮上来
+                                val c = ((p - 0.65f) / 0.35f).coerceIn(0f, 1f)
+                                alpha = c
+                                translationY = (1f - c) * 40.dp.toPx()
+                            }
+                    )
+                }
+
+                // 手绘预测性返回：跟手把面板缩向按钮位置——进度从手势开始时的
+                // 当前值相对跟踪（多次侧滑不回弹全屏、不重播收起动画），提交后
+                // 从当前位置继续收起；只有未提交的取消才回弹全屏。
+                // 松手速度逐事件估计（指数平滑），提交/回弹都带初速度——交接不断速。
+                androidx.activity.compose.PredictiveBackHandler { events ->
+                    var base = Float.NaN
+                    var p0 = 0f
+                    var lastMs = 0L
+                    var lastP = 0f
+                    var releaseV = 0f
+                    try {
+                        events.collect { ev ->
+                            // 手势接管：停掉进行中的收起/回弹动画（逐帧零动画竞争）
+                            addSheetCloseJob?.cancel()
+                            addSheetCloseJob = null
+                            addSheetReboundJob?.cancel()
+                            addSheetReboundJob = null
+                            val nowMs = android.os.SystemClock.elapsedRealtime()
+                            val p = com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
+                                .transform(ev.progress).coerceIn(0f, 1f)
+                            if (base.isNaN()) {
+                                base = addSheetProgress.value
+                                p0 = p
+                            }
+                            val target = (base - (p - p0)).coerceIn(0f, 1f)
+                            if (lastMs > 0L) {
+                                val instV = (target - lastP) / (nowMs - lastMs).coerceAtLeast(1L) * 1000f
+                                releaseV = if (releaseV == 0f) instV else releaseV + (instV - releaseV) * 0.45f
+                            }
+                            lastMs = nowMs
+                            lastP = target
+                            addSheetProgress.snapTo(target)
+                        }
+                        closeAddSheet(releaseV.coerceIn(-3f, 0f))
+                    } catch (_: java.util.concurrent.CancellationException) {
+                        // 收起动画进行中被新手势打断时不回弹（新手势会接管进度）
+                        if (addSheetCloseJob?.isActive != true) {
+                            addSheetReboundJob = rootScope.launch {
+                                addSheetProgress.animateTo(
+                                    1f,
+                                    spring(stiffness = Spring.StiffnessMediumLow),
+                                    initialVelocity = releaseV.coerceIn(-3f, 3f)
+                                )
+                            }
+                        }
                     }
                 }
             }

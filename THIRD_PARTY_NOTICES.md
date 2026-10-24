@@ -24,6 +24,17 @@
   - `app/src/main/java/com/mmckb/openwrtstatus/ui/glass/LiquidTab.kt`
 - 许可文本：[licenses/apache-2.0.txt](./licenses/apache-2.0.txt)
 
+### LiquidButton — Apache License 2.0
+
+- 来源：<https://github.com/Kyant0/AndroidLiquidGlass>（`kmp` 分支，对应 release 2.0.1，
+  commit `65ab177`，文件 `app/src/commonMain/kotlin/com/kyant/backdrop/catalog/components/LiquidButton.kt`）
+- 用途：二级页页头的液态玻璃返回按钮（按压果冻形变 + 交互高光）
+- 修改声明：复制并适配——包名调整、高度与内边距参数化（40dp 圆形返回键）、
+  移除 `vibrancy()` 调用（该效果不在已发布的 2.0.1 构件中）。
+  涉及文件（保留来源与许可注释）：
+  - `app/src/main/java/com/mmckb/openwrtstatus/ui/glass/LiquidButton.kt`
+- 许可文本：[licenses/apache-2.0.txt](./licenses/apache-2.0.txt)
+
 > 说明：这些文件在上游位于 catalog（示例应用）模块，未随 `io.github.kyant0:backdrop` 构件发布，
 > 因此无法以依赖方式引入，只能随源码复制并声明修改——这正是 Apache-2.0 第 4 条所要求的形式。
 
@@ -39,31 +50,51 @@
 - 来源：<https://github.com/Kyant0/Shapes>
 - 用途：`Capsule()` 等形状
 
-### JSch（`com.github.mwiede:jsch:2.28.7`）— BSD-3-Clause（Revised BSD）
+### JSch（`com.github.mwiede:jsch:2.28.8`）— BSD-3-Clause（Revised BSD）
 
-- 来源：<https://github.com/mwiede/jsch>（tag `jsch-2.28.7`）
+- 来源：<https://github.com/mwiede/jsch>（tag `jsch-2.28.8`）
 - 用途：SSH 远程终端（PTY Shell）、读取 `/tmp/dhcp.leases` 获取 DHCP 租约
 - 版权声明（BSD-3-Clause 要求二进制再分发时保留）：
   **Copyright (c) 2002-2015 Atsuhiko Yamanaka, JCraft,Inc. All rights reserved.**
 - 许可文本全文：[licenses/bsd-3-clause.txt](./licenses/bsd-3-clause.txt)
 
-### OkHttp（`com.squareup.okhttp3:okhttp:5.5.0`）— Apache License 2.0
+### OkHttp（`com.squareup.okhttp3:okhttp:5.5.1`）— Apache License 2.0
 
 - 来源：<https://github.com/square/okhttp>
 - 用途：rpcd ubus JSON-RPC 的 HTTP 通信
+
+### ZXing Core（`com.google.zxing:core:3.5.4`）— Apache License 2.0
+
+- 来源：<https://github.com/zxing/zxing>（tag `zxing-3.5.4`）
+- 用途：无线设置页的 WiFi 分享二维码生成（`QRCodeWriter` 编码为 `BitMatrix`，
+  见 `ui/screens/WirelessScreen.kt`）
+- 版权声明（Apache-2.0 第 4 条要求保留）：
+  **Copyright (C) 2010 ZXing authors**
+  （构件 `core-3.5.4.pom` 文件头；源码各文件按年份标注，均为 ZXing authors）
+- 许可文本：[licenses/apache-2.0.txt](./licenses/apache-2.0.txt)
+- 备注：该构件的 `META-INF/` 内**未附带** LICENSE / NOTICE 文件（只有 `MANIFEST.MF`
+  的 `Bundle-License` 字段声明为 Apache-2.0），因此许可全文由本项目随仓库提供。
 
 ### Jetpack Compose / AndroidX — Apache License 2.0
 
 - 组件：`androidx.compose:compose-bom:2026.09.00`（ui / ui-graphics / material3 /
   material-icons-extended）、`androidx.activity:activity-compose:1.13.0`、
-  `androidx.core:core-ktx:1.19.0`、`androidx.lifecycle:lifecycle-*:2.11.0`
+  `androidx.core:core-ktx:1.19.1`、`androidx.lifecycle:lifecycle-*:2.11.0`
 - 来源：<https://developer.android.com/jetpack>
+
+### DataStore（`androidx.datastore:datastore-preferences:1.3.0`）— Apache License 2.0
+
+- 来源：<https://developer.android.com/jetpack/androidx/releases/datastore>
+- 用途：本地设置与设备配置的持久化（Preferences DataStore），含旧 SharedPreferences 数据迁移
+- 备注：随该依赖传递引入的 proto DataStore 构件（`androidx.datastore:datastore`）
+  提供 `androidx.datastore.migrations.SharedPreferencesMigration`（本项目的迁移逻辑即用此类），
+  同属 Apache-2.0，一并覆盖在本条目下。
 
 ### Kotlin 及官方库 — Apache License 2.0
 
-- 组件：`org.jetbrains.kotlin:*`（Kotlin 2.4.20）、
+- 组件：`org.jetbrains.kotlin:*`（Kotlin 2.4.21）、
   `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0`、
-  `org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0`
+  `org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0`
 
 ## 三、义务摘要（非法律意见）
 

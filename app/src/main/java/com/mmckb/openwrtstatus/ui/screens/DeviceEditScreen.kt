@@ -8,16 +8,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,10 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
 import com.mmckb.openwrtstatus.ui.components.AppCard
+import com.mmckb.openwrtstatus.ui.components.AppTextField
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
@@ -62,6 +69,8 @@ fun DeviceEditScreen(
     var allowInsecureTls by remember { mutableStateOf(initial.allowInsecureTls) }
     var sshPort by remember { mutableStateOf(initial.sshPort.toString()) }
     var sshPassword by remember { mutableStateOf(initial.sshPassword) }
+    var showPassword by remember { mutableStateOf(false) }
+    var showSshPassword by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf<String?>(null) }
 
     val colors = LocalAppColors.current
@@ -74,7 +83,7 @@ fun DeviceEditScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = 2.dp)
-            .padding(bottom = 16.dp),
+            .padding(bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -91,7 +100,7 @@ fun DeviceEditScreen(
         AppCard {
             CardSectionTitle("路由器配置")
             Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = name,
                 onValueChange = {
                     name = it
@@ -107,7 +116,7 @@ fun DeviceEditScreen(
                 Text(nameError!!, style = MaterialTheme.typography.bodySmall, color = colors.error)
             }
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = ip,
                 onValueChange = { ip = it },
                 label = { Text("路由器地址（IP 或域名）") },
@@ -115,7 +124,7 @@ fun DeviceEditScreen(
                 singleLine = true
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = port,
                 onValueChange = { port = it.filter { c -> c.isDigit() } },
                 label = { Text("端口（LuCI 管理页面端口）") },
@@ -124,7 +133,7 @@ fun DeviceEditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = username,
                 onValueChange = { username = it },
                 label = { Text("用户名") },
@@ -132,19 +141,32 @@ fun DeviceEditScreen(
                 singleLine = true
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("密码") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
+                visualTransformation = if (showPassword) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(onClick = { showPassword = !showPassword }) {
+                        Icon(
+                            imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = if (showPassword) "隐藏密码" else "显示密码",
+                            tint = colors.onSurfaceVariant
+                        )
+                    }
+                }
             )
             Spacer(Modifier.height(12.dp))
             SwitchRow("使用 HTTPS", useHttps) { useHttps = it }
             SwitchRow("忽略证书校验（自签名证书）", allowInsecureTls) { allowInsecureTls = it }
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = sshPort,
                 onValueChange = { sshPort = it.filter { c -> c.isDigit() } },
                 label = { Text("SSH 端口") },
@@ -153,13 +175,26 @@ fun DeviceEditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = sshPassword,
                 onValueChange = { sshPassword = it },
                 label = { Text("SSH 密码（留空则使用路由器密码）") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
+                visualTransformation = if (showSshPassword) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(onClick = { showSshPassword = !showSshPassword }) {
+                        Icon(
+                            imageVector = if (showSshPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = if (showSshPassword) "隐藏密码" else "显示密码",
+                            tint = colors.onSurfaceVariant
+                        )
+                    }
+                }
             )
         }
 
@@ -207,6 +242,9 @@ fun DeviceEditScreen(
                 Text("删除该设备", color = colors.error)
             }
         }
+
+        // 背景延伸到手势条区域，底部按钮垫在 inset 之上
+        Spacer(Modifier.navigationBarsPadding().height(6.dp))
     }
 }
 
@@ -217,6 +255,6 @@ private fun SwitchRow(label: String, checked: Boolean, onChanged: (Boolean) -> U
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
         Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChanged)
+        AppSwitch(checked = checked, onCheckedChange = onChanged)
     }
 }
