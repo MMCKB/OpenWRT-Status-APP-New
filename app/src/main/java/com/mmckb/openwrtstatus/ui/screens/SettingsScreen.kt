@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +34,7 @@ import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
+import com.mmckb.openwrtstatus.ui.components.tileExpandClickable
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
@@ -150,7 +150,7 @@ fun SettingsScreen(
                 )
             }
         }
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenThemeSettings)) {
+        AppCard(modifier = Modifier.clip(AppShapes.card).tileExpandClickable(onClick = onOpenThemeSettings)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -172,7 +172,7 @@ fun SettingsScreen(
                 )
             }
         }
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenAbout)) {
+        AppCard(modifier = Modifier.clip(AppShapes.card).tileExpandClickable(onClick = onOpenAbout)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

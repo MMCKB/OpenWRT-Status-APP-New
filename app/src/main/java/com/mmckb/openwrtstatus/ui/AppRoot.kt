@@ -41,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.ExperimentalComposeApi
 
@@ -54,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,8 +68,10 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -107,6 +111,8 @@ import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
+import com.mmckb.openwrtstatus.ui.components.LocalTileExpandOrigin
+import com.mmckb.openwrtstatus.ui.components.TileExpandOrigin
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.screens.AdminScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
@@ -182,6 +188,10 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val terminalInlineInput by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val colors = LocalAppColors.current
     val context = LocalContext.current
+    val hostView = LocalView.current
+    // 磁贴点击起点：工具页/设置页的磁贴在点击瞬间登记自己的窗口矩形，openSecondary 取走它，
+    // 作为二级页「从磁贴位置放大展开」转场的起点。
+    val tileOrigin = remember { TileExpandOrigin() }
 
     // 二级页状态：横屏内联在右栏；竖屏打开走独立 Activity（保留系统预测性返回）。
     // 旋转跨越两种布局时页面跟随：横屏 -> 竖屏保持内联渲染（全屏），竖屏 Activity 转到
@@ -424,12 +434,26 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         }
 
         fun openSecondary(page: SecondaryPage) {
+            // 取走磁贴点击登记的起点矩形（横屏不用也要清掉，避免残留到下一次）。
+            val origin = tileOrigin.take()
             if (isLandscape) {
                 secondary = page
             } else {
                 val activity = secondaryActivities[page] ?: return  // 设备编辑器不在此路径
+                // 磁贴放大：新页面从被点磁贴的位置向外展开到全屏（系统 clip-reveal 转场）。
+                // 只改「打开」的转场；返回仍是各 Activity 自带的系统预测性返回，保持不变。
+                val options = origin?.let {
+                    ActivityOptionsCompat.makeClipRevealAnimation(
+                        hostView,
+                        it.left.roundToInt(),
+                        it.top.roundToInt(),
+                        it.width.roundToInt(),
+                        it.height.roundToInt()
+                    )
+                }
                 inlineLaunchers.getValue(page).launch(
-                    Intent(context, activity).putExtra(EXTRA_DEVICE_ID, config.id)
+                    Intent(context, activity).putExtra(EXTRA_DEVICE_ID, config.id),
+                    options
                 )
             }
         }
@@ -489,56 +513,58 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
 
         @Composable
         fun MainPage(modifier: Modifier) {
-            Box(modifier.layerBackdrop(backdrop)) {
-                when (selectedTab) {
-                    TAB_DASHBOARD -> DashboardScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    TAB_DEVICES -> DevicesScreen(
-                        viewModel = viewModel,
-                        onOpenEditor = ::openEditor,
-                        onAddClicked = ::onAddClicked,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    TAB_TERMINAL -> TerminalScreen(
-                        viewModel = viewModel,
-                        // 横屏双栏且未开二级页时，输出区渲染在右栏，左侧只保留输入。
-                        hideOutput = isLandscape && secondary == null,
-                        bottomSpacer = if (isLandscape) 40.dp else 76.dp,
-                        modifier = Modifier.fillMaxSize(),
-                        inlineInput = terminalInlineInput,
-                    )
-                    TAB_TOOL -> ToolScreen(
-                        grid = toolsGrid,
-                        onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
-                        onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
-                        onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
-                        onOpenSystem = { openSecondary(SecondaryPage.System) },
-                        onOpenAdmin = { openSecondary(SecondaryPage.Admin) },
-                        onOpenLed = { openSecondary(SecondaryPage.Led) },
-                        onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
-                        onOpenFirewall = { openSecondary(SecondaryPage.Nftables) },
-                        onOpenLogs = { openSecondary(SecondaryPage.Logs) },
-                        onOpenProcesses = { openSecondary(SecondaryPage.Processes) },
-                        onOpenFlash = { openSecondary(SecondaryPage.Flash) },
-                        onOpenStartup = { openSecondary(SecondaryPage.Startup) },
-                        onOpenCrontab = { openSecondary(SecondaryPage.Crontab) },
-                        onOpenNetworkInterfaces = { openSecondary(SecondaryPage.NetworkInterfaces) },
-                        onOpenRealtime = { openSecondary(SecondaryPage.Realtime) },
-                        onOpenChannelAnalysis = { openSecondary(SecondaryPage.ChannelAnalysis) },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    TAB_DETAIL -> DetailScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    else -> SettingsScreen(
-                        viewModel = viewModel,
-                        onOpenAbout = { openSecondary(SecondaryPage.About) },
-                        onOpenThemeSettings = { openSecondary(SecondaryPage.ThemeSettings) },
-                        modifier = Modifier.fillMaxSize()
-                    )
+            CompositionLocalProvider(LocalTileExpandOrigin provides tileOrigin) {
+                Box(modifier.layerBackdrop(backdrop)) {
+                    when (selectedTab) {
+                        TAB_DASHBOARD -> DashboardScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TAB_DEVICES -> DevicesScreen(
+                            viewModel = viewModel,
+                            onOpenEditor = ::openEditor,
+                            onAddClicked = ::onAddClicked,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TAB_TERMINAL -> TerminalScreen(
+                            viewModel = viewModel,
+                            // 横屏双栏且未开二级页时，输出区渲染在右栏，左侧只保留输入。
+                            hideOutput = isLandscape && secondary == null,
+                            bottomSpacer = if (isLandscape) 40.dp else 76.dp,
+                            modifier = Modifier.fillMaxSize(),
+                            inlineInput = terminalInlineInput,
+                        )
+                        TAB_TOOL -> ToolScreen(
+                            grid = toolsGrid,
+                            onOpenPackageManager = { openSecondary(SecondaryPage.PackageManager) },
+                            onOpenFileManager = { openSecondary(SecondaryPage.FileManager) },
+                            onOpenWireless = { openSecondary(SecondaryPage.Wireless) },
+                            onOpenSystem = { openSecondary(SecondaryPage.System) },
+                            onOpenAdmin = { openSecondary(SecondaryPage.Admin) },
+                            onOpenLed = { openSecondary(SecondaryPage.Led) },
+                            onOpenRoutes = { openSecondary(SecondaryPage.Routes) },
+                            onOpenFirewall = { openSecondary(SecondaryPage.Nftables) },
+                            onOpenLogs = { openSecondary(SecondaryPage.Logs) },
+                            onOpenProcesses = { openSecondary(SecondaryPage.Processes) },
+                            onOpenFlash = { openSecondary(SecondaryPage.Flash) },
+                            onOpenStartup = { openSecondary(SecondaryPage.Startup) },
+                            onOpenCrontab = { openSecondary(SecondaryPage.Crontab) },
+                            onOpenNetworkInterfaces = { openSecondary(SecondaryPage.NetworkInterfaces) },
+                            onOpenRealtime = { openSecondary(SecondaryPage.Realtime) },
+                            onOpenChannelAnalysis = { openSecondary(SecondaryPage.ChannelAnalysis) },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        TAB_DETAIL -> DetailScreen(
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        else -> SettingsScreen(
+                            viewModel = viewModel,
+                            onOpenAbout = { openSecondary(SecondaryPage.About) },
+                            onOpenThemeSettings = { openSecondary(SecondaryPage.ThemeSettings) },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }

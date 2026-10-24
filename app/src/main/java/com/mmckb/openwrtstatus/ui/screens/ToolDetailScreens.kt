@@ -2,7 +2,6 @@ package com.mmckb.openwrtstatus.ui.screens
 
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import com.mmckb.openwrtstatus.ui.components.AppCard
 import com.mmckb.openwrtstatus.ui.components.CardSectionTitle
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
+import com.mmckb.openwrtstatus.ui.components.tileExpandClickable
 import com.mmckb.openwrtstatus.ui.formatBytes
 import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
@@ -281,7 +281,7 @@ fun ToolScreen(
 @Composable
 private fun ToolEntryCard(icon: ImageVector, title: String, desc: String, onClick: () -> Unit) {
     val colors = LocalAppColors.current
-    AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onClick)) {
+    AppCard(modifier = Modifier.clip(AppShapes.card).tileExpandClickable(onClick = onClick)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = icon,
@@ -322,7 +322,7 @@ private fun ToolTile(
 ) {
     val colors = LocalAppColors.current
     AppCard(
-        modifier = modifier.clip(AppShapes.card).clickable(enabled = onClick != null) { onClick?.invoke() },
+        modifier = modifier.clip(AppShapes.card).tileExpandClickable(enabled = onClick != null) { onClick?.invoke() },
         contentPadding = 16.dp
     ) {
         Icon(
