@@ -55,7 +55,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,10 +67,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
-import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -113,6 +110,8 @@ import com.mmckb.openwrtstatus.ui.components.FloatingTabBar
 import com.mmckb.openwrtstatus.ui.components.TabItem
 import com.mmckb.openwrtstatus.ui.components.LocalTileExpandOrigin
 import com.mmckb.openwrtstatus.ui.components.TileExpandOrigin
+import com.mmckb.openwrtstatus.ui.components.TileExpandOverlay
+import com.mmckb.openwrtstatus.ui.components.TileExpandState
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.screens.AdminScreen
 import com.mmckb.openwrtstatus.ui.screens.DashboardScreen
@@ -188,7 +187,6 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val terminalInlineInput by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val colors = LocalAppColors.current
     val context = LocalContext.current
-    val hostView = LocalView.current
     // 磁贴点击起点：工具页/设置页的磁贴在点击瞬间登记自己的窗口矩形，openSecondary 取走它，
     // 作为二级页「从磁贴位置放大展开」转场的起点。
     val tileOrigin = remember { TileExpandOrigin() }
@@ -210,6 +208,18 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     // 不回弹全屏、不重播收起动画（多次侧滑只连续推进）。
     var addSheetCloseJob by remember { mutableStateOf<Job?>(null) }
     var addSheetReboundJob by remember { mutableStateOf<Job?>(null) }
+
+    // 工具页/设置页磁贴的「放大展开」：竖屏下由磁贴进入的二级页不再另起 Activity
+    // （系统转场在不少 ROM 上会被忽略，只剩一闪），而是在主界面内联展开——
+    // 与「添加设备」展开层同一套 clip-path 做法，返回时沿原路缩回磁贴。
+    // 页面内容复用 secondaryPane（与横屏右栏、旋转交接是同一份 movable 内容）。
+    val expand = remember { TileExpandState(rootScope) }
+    var expandPage by remember { mutableStateOf<SecondaryPage?>(null) }
+
+    // 二级页的统一关闭入口：展开层打开时走缩回动画，否则（横屏右栏/旋转交接的内联页）直接清空。
+    fun dismissSecondary() {
+        if (expand.isOpen) expand.close() else secondary = null
+    }
 
     val editLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -251,6 +261,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val inlineLaunchers = mapOf(
         SecondaryPage.FileManager to inlineLauncher(SecondaryPage.FileManager),
         SecondaryPage.PackageManager to inlineLauncher(SecondaryPage.PackageManager),
+        SecondaryPage.System to inlineLauncher(SecondaryPage.System),
         SecondaryPage.About to inlineLauncher(SecondaryPage.About) {
             // 从关于页（独立 Activity）返回：重读解锁状态，详情页立即出现扩展信息卡
             viewModel.refreshHiddenDiagUnlocked()
@@ -275,6 +286,7 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
     val secondaryActivities = mapOf(
         SecondaryPage.FileManager to FileManagerActivity::class.java,
         SecondaryPage.PackageManager to PackageManagerActivity::class.java,
+        SecondaryPage.System to SystemActivity::class.java,
         SecondaryPage.About to AboutActivity::class.java,
         SecondaryPage.ThemeSettings to ThemeSettingsActivity::class.java,
         SecondaryPage.Wireless to WirelessActivity::class.java,
@@ -306,90 +318,90 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                 when (page) {
                     SecondaryPage.FileManager -> FileManagerScreen(
                         ssh = ssh,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.PackageManager -> PackageManagerScreen(
                         ssh = ssh,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.About -> AboutScreen(
-                        onBack = { secondary = null },
+                        onBack = { dismissSecondary() },
                         hiddenDiagUnlocked = viewModel.hiddenDiagUnlocked.collectAsStateWithLifecycle().value,
                         onUnlockHiddenDiag = { viewModel.unlockHiddenDiag() }
                     )
                     SecondaryPage.ThemeSettings -> ThemeSettingsScreen(
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Wireless -> WirelessScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.System -> SystemScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Admin -> AdminScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Realtime -> RealtimeScreen(
                         config = cfg,
                         ssh = if (cfg.sshEnabled) ssh else null,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.ChannelAnalysis -> ChannelAnalysisScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Led -> LedScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Routes -> RoutesScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Nftables -> NftablesScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Logs -> LogsScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Processes -> ProcessesScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Flash -> FlashScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.NetworkInterfaces -> NetworkInterfacesScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Crontab -> CrontabScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     SecondaryPage.Startup -> StartupScreen(
                         config = cfg,
                         sshEnabled = cfg.sshEnabled,
-                        onBack = { secondary = null }
+                        onBack = { dismissSecondary() }
                     )
                     is SecondaryPage.DeviceEditor -> DeviceEditScreen(
                         initial = page.initial,
@@ -423,6 +435,12 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
         // 旋转/窗口尺寸变化：添加面板锚定的按钮坐标随窗口失效——按双轨惯例关闭面板，
         // 把添加页移交内联渲染（竖屏全屏/横屏右栏），与其他二级页的旋转交接一致。
         LaunchedEffect(constraints.maxWidth, constraints.maxHeight) {
+            // 磁贴展开层同理：无动画收起，页面交给内联渲染（竖屏全屏/横屏右栏），状态不丢。
+            if (expand.isOpen) {
+                val page = expandPage
+                expand.snapClose()
+                if (page != null) secondary = page
+            }
             if (addSheetOpen) {
                 addSheetCloseJob?.cancel()
                 addSheetReboundJob?.cancel()
@@ -438,22 +456,16 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
             val origin = tileOrigin.take()
             if (isLandscape) {
                 secondary = page
+            } else if (origin != null) {
+                // 磁贴入口：从磁贴位置放大展开（展开中/收起中忽略重复点击）。
+                if (!expand.isOpen) {
+                    expandPage = page
+                    expand.open(origin)
+                }
             } else {
                 val activity = secondaryActivities[page] ?: return  // 设备编辑器不在此路径
-                // 磁贴放大：新页面从被点磁贴的位置向外展开到全屏（系统 clip-reveal 转场）。
-                // 只改「打开」的转场；返回仍是各 Activity 自带的系统预测性返回，保持不变。
-                val options = origin?.let {
-                    ActivityOptionsCompat.makeClipRevealAnimation(
-                        hostView,
-                        it.left.roundToInt(),
-                        it.top.roundToInt(),
-                        it.width.roundToInt(),
-                        it.height.roundToInt()
-                    )
-                }
                 inlineLaunchers.getValue(page).launch(
-                    Intent(context, activity).putExtra(EXTRA_DEVICE_ID, config.id),
-                    options
+                    Intent(context, activity).putExtra(EXTRA_DEVICE_ID, config.id)
                 )
             }
         }
@@ -841,6 +853,20 @@ fun AppRoot(viewModel: RouterViewModel = viewModel()) {
                         )
                     }
                 }
+            }
+
+            // 磁贴放大展开层：工具页/设置页磁贴 → 二级页。盖在主界面（含 tab 栏）之上。
+            TileExpandOverlay(
+                state = expand,
+                background = colors.background,
+                tileColor = colors.surface,
+                cornerRadius = 24.dp // 与磁贴圆角 AppShapes.card 一致
+            ) {
+                expandPage?.let { page -> secondaryPane(page) }
+                ConnectionToastHost(
+                    Modifier.align(Alignment.CenterEnd),
+                    slideFromTop = false
+                )
             }
 
             // 添加设备展开层：从设备页「添加」按钮位置生长到全屏（两种朝向都盖住整窗）。
