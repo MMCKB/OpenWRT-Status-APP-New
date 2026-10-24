@@ -884,12 +884,23 @@ fun WirelessScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 0.dp)
         ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方，滚动时随内容滑入状态栏后面（边到边）。
+        Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(top = 2.dp)
+        ) {
             AppBackButton(onBack = onBack)
             Spacer(Modifier.width(10.dp))
             Text(
@@ -924,13 +935,6 @@ fun WirelessScreen(
 
         // 无线配置的读写与应用全部走路由器 ubus（uci/iwinfo/luci-rpc），无需 SSH；
         // 仅网卡「重启」按钮使用 SSH，未配置 SSH 时该按钮禁用。
-        Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
                 // —— 网卡 ——
                 Text(
                     "网卡",

@@ -295,13 +295,21 @@ fun RealtimeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 0.dp)
         ) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方，滚动时随内容滑入状态栏后面（边到边）。
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
             // 标题区（提示栈锚定其底部，含描述行）
             Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 2.dp)
+                    .alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -340,12 +348,6 @@ fun RealtimeScreen(
                         CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                     }
                 } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     // 设备/接口选择行
                     when (tab) {
                         "traffic" -> SelectorCard(

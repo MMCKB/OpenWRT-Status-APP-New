@@ -50,8 +50,8 @@ fun ThemeSettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(top = 2.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)

@@ -166,13 +166,21 @@ fun RoutesScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 0.dp)
         ) {
+            // 滚动区从屏幕顶端开始：标题垫在状态栏下方（item），滚动时随内容滑入状态栏后面（边到边）。
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
             // 标题区（提示栈锚定返回键行底部；浏览后右侧出现回到顶部按钮）
             Column(
-                modifier = Modifier.alertAnchor(alertAnchor)
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 2.dp)
+                    .alertAnchor(alertAnchor)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppBackButton(onBack = onBack)
@@ -228,37 +236,37 @@ fun RoutesScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            item {
             SmoothOptionSwitcher(
                 options = listOf("ipv4" to "IPv4 路由", "ipv6" to "IPv6 路由"),
                 selected = tab,
                 onSelect = { tab = it },
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(10.dp))
+            }
 
             if (loading) {
+                item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 }
+                }
             } else {
                 val d = data
                 if (d == null) {
-                    Text(
-                        "暂无数据，点击右上角刷新重试。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
+                    item {
+                        Text(
+                            "暂无数据，点击右上角刷新重试。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
                         if (tab == "ipv4") {
                             item { RoutesGroupCard("IPv4 邻居", d.v4Neigh.size) {
                                 if (d.v4Neigh.isEmpty()) RoutesEmpty()
