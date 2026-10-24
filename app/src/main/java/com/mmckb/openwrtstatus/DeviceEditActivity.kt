@@ -10,75 +10,85 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.mmckb.openwrtstatus.data.model.RouterConfig
+import androidx.lifecycle.lifecycleScope
+import com.mmckb.openwrtstatus.ui.DeviceEditResult
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
+import com.mmckb.openwrtstatus.ui.loadDeviceContext
+import com.mmckb.openwrtstatus.ui.rememberDeviceContext
 import com.mmckb.openwrtstatus.ui.screens.DeviceEditScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
+import kotlinx.coroutines.launch
 
 /**
  * 设备添加/编辑页（二级页，独立 Activity）：系统返回手势自带 Activity 预测性返回动画。
- * 保存/删除通过 setResult 把结果回传给主界面，由主界面的 ViewModel 落库。
+ *
+ * 只接收设备 id 与「是否新增」两个不含凭据的参数，配置本身从本地读取（见
+ * [rememberDeviceContext]）——保存结果同样经 [DeviceEditResult] 进程内交接而非
+ * `setResult`，凭据不会出现在任何 Intent 里。落库由主界面的 ViewModel 完成。
  */
 class DeviceEditActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val initial = intent.getSerializableExtra(EXTRA_DEVICE) as? RouterConfig ?: RouterConfig()
+        val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID)
         val isNew = intent.getBooleanExtra(EXTRA_IS_NEW, true)
-        val existingNames = intent.getStringArrayListExtra(EXTRA_EXISTING) ?: arrayListOf()
 
         // 旋转到横屏：正在编辑的设备交回主界面右栏内联编辑器继续编辑，本页退出。
-        // 进程被杀后直接在横屏恢复时同样交接。
+        // 进程被杀后直接在横屏恢复时同样交接。配置是异步读的，读完再交接。
         if (savedInstanceState != null &&
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         ) {
-            handOffToInline(initial, isNew)
+            lifecycleScope.launch {
+                val context = loadDeviceContext(
+                    context = applicationContext,
+                    deviceId = deviceId,
+                    fallbackToActive = !isNew
+                )
+                DeviceEditResult.putHandoff(context.config, isNew)
+                handOffToInline()
+            }
             return
         }
         setupEdgeToEdge()
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
-                    DeviceEditScreen(
-                        initial = initial,
-                        isNew = isNew,
-                        existingNames = existingNames,
-                        onCancel = { finish() },
-                        onSave = { saved ->
-                            setResult(RESULT_OK, Intent().apply {
-                                putExtra(EXTRA_SAVED, saved)
-                                putExtra(EXTRA_IS_NEW, isNew)
-                            })
-                            finish()
-                        },
-                        onDelete = {
-                            setResult(RESULT_OK, Intent().apply {
-                                putExtra(EXTRA_DELETE_ID, initial.id)
-                            })
-                            finish()
-                        }
-                    )
+                    val deviceContext = rememberDeviceContext(deviceId, fallbackToActive = !isNew)
+                    if (deviceContext != null) {
+                        val initial = deviceContext.config
+                        DeviceEditScreen(
+                            initial = initial,
+                            isNew = isNew,
+                            existingNames = deviceContext.devices
+                                .filterNot { it.id == initial.id }
+                                .map { it.displayName },
+                            onCancel = { finish() },
+                            onSave = { saved ->
+                                DeviceEditResult.putSaved(saved, isNew)
+                                setResult(RESULT_OK)
+                                finish()
+                            },
+                            onDelete = {
+                                DeviceEditResult.putDeleted(initial.id)
+                                setResult(RESULT_OK)
+                                finish()
+                            }
+                        )
+                    }
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
                 }
             }
         }
     }
 
-    private fun handOffToInline(initial: RouterConfig, isNew: Boolean) {
-        setResult(RESULT_OK, Intent().apply {
-            putExtra(EXTRA_OPEN_INLINE, true)
-            putExtra(EXTRA_DEVICE, initial)
-            putExtra(EXTRA_IS_NEW, isNew)
-        })
+    private fun handOffToInline() {
+        setResult(RESULT_OK, Intent().putExtra(EXTRA_OPEN_INLINE, true))
         finish()
     }
 
     companion object {
-        const val EXTRA_DEVICE = "device"
+        const val EXTRA_DEVICE_ID = "deviceId"
         const val EXTRA_IS_NEW = "isNew"
-        const val EXTRA_EXISTING = "existingNames"
-        const val EXTRA_SAVED = "saved"
-        const val EXTRA_DELETE_ID = "deleteId"
         const val EXTRA_OPEN_INLINE = "openInline"
     }
 }

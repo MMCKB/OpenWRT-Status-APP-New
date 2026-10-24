@@ -4,11 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mmckb.openwrtstatus.data.local.SettingsStore
+import com.mmckb.openwrtstatus.data.local.SshHostKeys
 import com.mmckb.openwrtstatus.data.model.DashboardData
+import com.mmckb.openwrtstatus.data.model.HiddenDiagData
 import com.mmckb.openwrtstatus.data.model.HistorySample
 import com.mmckb.openwrtstatus.data.model.LeaseInfo
 import com.mmckb.openwrtstatus.data.model.RouterConfig
 import com.mmckb.openwrtstatus.data.model.SshConfig
+import com.mmckb.openwrtstatus.data.model.toSshConfig
 import com.mmckb.openwrtstatus.data.model.StatusUiState
 import com.mmckb.openwrtstatus.data.model.TrafficRate
 import com.mmckb.openwrtstatus.data.remote.RouterException
@@ -32,21 +35,19 @@ private const val HISTORY_LIMIT = 60
  */
 class RouterViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val settingsStore = SettingsStore(application)
+    private val settingsStore = SettingsStore(application).also { SshHostKeys.init(it) }
     private val repository = OpenWrtRepository()
 
     /** Interactive SSH shell used by the terminal screen. */
     val terminal = SshTerminal()
 
-    private val initialDevices = settingsStore.loadDevices()
-
-    private val _devices = MutableStateFlow(initialDevices)
+    private val _devices = MutableStateFlow<List<RouterConfig>>(emptyList())
     val devices: StateFlow<List<RouterConfig>> = _devices
 
-    private val _activeId = MutableStateFlow(settingsStore.loadActiveId(initialDevices))
+    private val _activeId = MutableStateFlow("")
     val activeId: StateFlow<String> = _activeId
 
-    private val _config = MutableStateFlow(configFor(initialDevices, _activeId.value))
+    private val _config = MutableStateFlow(RouterConfig(id = SettingsStore.ID_LEGACY))
     val config: StateFlow<RouterConfig> = _config
 
     private fun configFor(devices: List<RouterConfig>, id: String): RouterConfig =
@@ -66,9 +67,28 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val _history = MutableStateFlow<List<HistorySample>>(emptyList())
     val history: StateFlow<List<HistorySample>> = _history
 
-    private val _connNotifyEnabled =
-        MutableStateFlow(settingsStore.isConnectionNotifyEnabled())
+    private val _connNotifyEnabled = MutableStateFlow(true)
     val connNotifyEnabled: StateFlow<Boolean> = _connNotifyEnabled
+
+    /** 工具页排版：true = 两列磁贴，false = 列表卡片（默认）。 */
+    private val _toolsGridEnabled = MutableStateFlow(false)
+    val toolsGridEnabled: StateFlow<Boolean> = _toolsGridEnabled
+
+    /** 终端直接输入：true = 输出区底部内联输入（无独立输入框/发送键）。 */
+    private val _terminalInlineInput = MutableStateFlow(false)
+    val terminalInlineInput: StateFlow<Boolean> = _terminalInlineInput
+
+    /** 隐藏的设备扩展信息（内存/存储/端口状态）：关于页图标连点 7 次解锁。 */
+    private val _hiddenDiagUnlocked = MutableStateFlow(false)
+    val hiddenDiagUnlocked: StateFlow<Boolean> = _hiddenDiagUnlocked
+
+    /** CPU 温度（°C）；设备无 thermal_zone 或未开 SSH 时为 null。 */
+    private val _temperatureC = MutableStateFlow<Double?>(null)
+    val temperatureC: StateFlow<Double?> = _temperatureC
+
+    /** 扩展信息数据：端口状态 + 存储挂载点。 */
+    private val _hiddenDiag = MutableStateFlow<HiddenDiagData?>(null)
+    val hiddenDiag: StateFlow<HiddenDiagData?> = _hiddenDiag
 
     // Used to compute per-interface throughput from two consecutive samples.
     private val previousTraffic = mutableMapOf<String, Pair<Long, Long>>()
@@ -76,9 +96,23 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
     private val refreshMutex = Mutex()
 
     init {
-        refresh()
-        // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
+        // 本地状态异步加载（DataStore）：设备/开关就绪后才首刷并启动轮询，
+        // 避免用默认配置发起请求；SSH 主机指纹（TOFU）同期载入内存。
         viewModelScope.launch {
+            val devices = settingsStore.loadDevices()
+            val activeId = settingsStore.loadActiveId(devices)
+            _devices.value = devices
+            _activeId.value = activeId
+            _config.value = configFor(devices, activeId)
+            publishSnapshot()
+            _connNotifyEnabled.value = settingsStore.isConnectionNotifyEnabled()
+            _toolsGridEnabled.value = settingsStore.isToolsGridEnabled()
+            _terminalInlineInput.value = settingsStore.isTerminalInlineInput()
+            _hiddenDiagUnlocked.value = settingsStore.isHiddenDiagUnlocked()
+            SshHostKeys.load()
+
+            refresh()
+            // 轮询在 ViewModel 层常驻（不随页面切换启停），断连监控因此始终有效。
             while (true) {
                 delay(_config.value.refreshIntervalSec.coerceAtLeast(2) * 1000L)
                 refresh()
@@ -183,7 +217,11 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
 
-                if (cfg.sshEnabled) refreshLeases()
+                if (cfg.sshEnabled) {
+                    refreshLeases()
+                    refreshTemperature()
+                    if (_hiddenDiagUnlocked.value) refreshHiddenDiag()
+                }
                 ConnectionMonitor.status.value = ConnectionMonitor.Status.Online
             } catch (e: RouterException) {
                 _uiState.value = StatusUiState.Error(e.message ?: "连接失败", e.hint)
@@ -205,12 +243,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
                 _leaseError.value = null
                 return@launch
             }
-            val ssh = SshConfig(
-                host = cfg.sshHost.ifBlank { cfg.ip },
-                port = cfg.sshPort,
-                username = cfg.sshUsername,
-                password = cfg.sshPassword
-            )
+            val ssh = cfg.toSshConfig()
             runCatching { SshExec.run(ssh, "cat /tmp/dhcp.leases") }
                 .onSuccess { raw ->
                     _leases.value = repository.parseLeases(raw)
@@ -224,12 +257,7 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val cfg = _config.value
             terminal.connect(
-                SshConfig(
-                    host = cfg.sshHost.ifBlank { cfg.ip },
-                    port = cfg.sshPort,
-                    username = cfg.sshUsername,
-                    password = cfg.sshPassword
-                )
+                cfg.toSshConfig()
             )
         }
     }
@@ -244,11 +272,133 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 开关实时网速 Live Update 通知；关闭时立即撤回常驻通知。 */
     fun setConnectionNotifyEnabled(enabled: Boolean) {
-        settingsStore.saveConnectionNotifyEnabled(enabled)
         _connNotifyEnabled.value = enabled
+        viewModelScope.launch { settingsStore.saveConnectionNotifyEnabled(enabled) }
         if (!enabled) {
             AppNotifier.cancel(getApplication(), AppNotifier.ID_CONN_STATUS)
         }
+    }
+
+    /** 工具页排版切换（设置页开关），持久化到本地。 */
+    fun setToolsGridEnabled(enabled: Boolean) {
+        _toolsGridEnabled.value = enabled
+        viewModelScope.launch { settingsStore.saveToolsGridEnabled(enabled) }
+    }
+
+    /** 终端直接输入切换（设置页开关），持久化到本地。 */
+    fun setTerminalInlineInput(enabled: Boolean) {
+        _terminalInlineInput.value = enabled
+        viewModelScope.launch { settingsStore.saveTerminalInlineInput(enabled) }
+    }
+
+    /** 关于页图标连点 7 次后解锁隐藏的扩展信息，并立即读取一次。 */
+    fun unlockHiddenDiag() {
+        _hiddenDiagUnlocked.value = true
+        viewModelScope.launch { settingsStore.saveHiddenDiagUnlocked(true) }
+        refreshHiddenDiag()
+    }
+
+    /**
+     * 重读解锁状态：关于页是独立 Activity（独立 ViewModelStore），从关于页返回
+     * 主界面时由 aboutLauncher 回调调用。
+     */
+    fun refreshHiddenDiagUnlocked() {
+        viewModelScope.launch {
+            val unlocked = settingsStore.isHiddenDiagUnlocked()
+            if (unlocked != _hiddenDiagUnlocked.value) {
+                _hiddenDiagUnlocked.value = unlocked
+                if (unlocked) refreshHiddenDiag()
+            }
+        }
+    }
+
+    /** 通知运行时权限是否已向用户请求过（首次进主界面只请求一次）。 */
+    suspend fun isNotifPermissionAsked(): Boolean = settingsStore.isNotifPermissionAsked()
+
+    fun markNotifPermissionAsked() {
+        viewModelScope.launch { settingsStore.saveNotifPermissionAsked() }
+    }
+
+    /** 当前设备的 SSH 配置；未开启 SSH 时返回 null。 */
+    private fun currentSsh(): SshConfig? {
+        val cfg = _config.value
+        if (!cfg.sshEnabled) return null
+        return cfg.toSshConfig()
+    }
+
+    /** 读取 CPU 温度（/sys/class/thermal 首个 thermal_zone；不支持时保持 null）。 */
+    private fun refreshTemperature() {
+        viewModelScope.launch {
+            val ssh = currentSsh() ?: return@launch
+            runCatching {
+                SshExec.run(
+                    ssh,
+                    "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | head -n 1",
+                    10_000
+                )
+            }.onSuccess { raw ->
+                val milli = raw.trim().toLongOrNull()
+                _temperatureC.value =
+                    if (milli != null && milli in 1..150_000) milli / 1000.0 else null
+            }.onFailure { _temperatureC.value = null }
+        }
+    }
+
+    /** 读取扩展信息：端口状态（/sys/class/net）+ 存储挂载点（df -k）。 */
+    fun refreshHiddenDiag() {
+        viewModelScope.launch {
+            val ssh = currentSsh() ?: return@launch
+            val script = "echo __PORTS__; " +
+                "for d in /sys/class/net/*; do n=\${d##*/}; [ \"\$n\" = lo ] && continue; " +
+                "c=\$(cat \"\$d/carrier\" 2>/dev/null || echo 0); " +
+                "s=\$(cat \"\$d/speed\" 2>/dev/null || echo -1); " +
+                "echo \"\$n|\$c|\$s\"; done; " +
+                "echo __DF__; df -k 2>/dev/null | tail -n +2"
+            runCatching { SshExec.run(ssh, script, 20_000) }.onSuccess { raw ->
+                _hiddenDiag.value = parseHiddenDiag(raw)
+            }
+        }
+    }
+
+    /** 解析隐藏信息脚本的标记分段输出。 */
+    private fun parseHiddenDiag(raw: String): HiddenDiagData {
+        val ports = mutableListOf<com.mmckb.openwrtstatus.data.model.PortStatus>()
+        val mounts = mutableListOf<com.mmckb.openwrtstatus.data.model.StorageMount>()
+        var section = ""
+        for (line in raw.lineSequence()) {
+            val t = line.trim()
+            when (t) {
+                "__PORTS__" -> { section = "ports"; continue }
+                "__DF__" -> { section = "df"; continue }
+            }
+            if (t.isEmpty()) continue
+            if (section == "ports") {
+                val p = t.split('|')
+                if (p.size >= 3) {
+                    ports.add(
+                        com.mmckb.openwrtstatus.data.model.PortStatus(
+                            name = p[0].trim(),
+                            up = p[1].trim() == "1",
+                            speedMbps = p[2].trim().toIntOrNull()?.takeIf { it > 0 }
+                        )
+                    )
+                }
+            } else if (section == "df") {
+                val f = t.split(Regex("\\s+"))
+                if (f.size >= 6) {
+                    mounts.add(
+                        com.mmckb.openwrtstatus.data.model.StorageMount(
+                            fs = f[0],
+                            mount = f[5],
+                            totalKB = f[1].toLongOrNull() ?: 0L,
+                            usedKB = f[2].toLongOrNull() ?: 0L,
+                            availKB = f[3].toLongOrNull() ?: 0L
+                        )
+                    )
+                }
+            }
+        }
+        return HiddenDiagData(ports, mounts)
     }
 
     /** Adds a device and makes it the active one. */
@@ -302,8 +452,18 @@ class RouterViewModel(application: Application) : AndroidViewModel(application) 
         _config.value = configFor(_devices.value, _activeId.value)
     }
 
+    /**
+     * 发布设备快照给二级页（见 [DeviceSnapshot]）。二级页只收设备 id、按 id 取配置，
+     * 快照保证它们拿到的是与主界面同一时刻的内存状态，不依赖 DataStore 写入完成。
+     * 所有会改动设备列表或活动设备的路径都会走到 [persist]，因此在这里统一发布。
+     */
+    private fun publishSnapshot() {
+        DeviceSnapshot.publish(_devices.value, _activeId.value)
+    }
+
     private fun persist() {
-        settingsStore.saveDevices(_devices.value, _activeId.value)
+        publishSnapshot()
+        viewModelScope.launch { settingsStore.saveDevices(_devices.value, _activeId.value) }
     }
 
     private fun resetSessionState() {

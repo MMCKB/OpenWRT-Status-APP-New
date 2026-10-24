@@ -6,9 +6,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,20 +21,42 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.SettingsEthernet
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.WifiTethering
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,12 +68,29 @@ import com.mmckb.openwrtstatus.ui.formatUptime
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
-/** 工具页：工具入口列表，提供路由器文件管理、软件包管理与无线设置。 */
+/**
+ * 工具页：工具入口（文件管理 / 软件包 / 无线设置 / 系统管理）。
+ * [grid] = true 时两列磁贴排版（设置页可切换），false 为默认的列表卡片。
+ */
 @Composable
 fun ToolScreen(
+    grid: Boolean,
     onOpenFileManager: () -> Unit,
     onOpenPackageManager: () -> Unit,
     onOpenWireless: () -> Unit,
+    onOpenSystem: () -> Unit,
+    onOpenAdmin: () -> Unit,
+    onOpenLed: () -> Unit,
+    onOpenRoutes: () -> Unit,
+    onOpenFirewall: () -> Unit,
+    onOpenLogs: () -> Unit,
+    onOpenProcesses: () -> Unit,
+    onOpenFlash: () -> Unit,
+    onOpenStartup: () -> Unit,
+    onOpenNetworkInterfaces: () -> Unit,
+    onOpenCrontab: () -> Unit,
+    onOpenRealtime: () -> Unit,
+    onOpenChannelAnalysis: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -62,90 +103,246 @@ fun ToolScreen(
             .padding(top = rememberTopBarPadding(), bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenFileManager)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Folder,
-                    contentDescription = null,
-                    tint = colors.primary
+        if (grid) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Folder, "文件管理", "浏览 · 上传 · 传输",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFileManager
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "文件管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Text(
-                        "浏览路由器文件，支持查看、上传、下载、重命名与删除",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant
+                ToolTile(
+                    Icons.Filled.Inventory2, "软件包", "安装 · 升级",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenPackageManager
                 )
             }
-        }
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenPackageManager)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Inventory2,
-                    contentDescription = null,
-                    tint = colors.primary
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Wifi, "无线设置", "SSID · 信道",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenWireless
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "软件包",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Text(
-                        "已安装/可用软件包，支持安装、删除、升级与更新列表",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant
+                ToolTile(
+                    Icons.Filled.Settings, "系统管理", "主机名 · 时区 · 日志",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenSystem
                 )
             }
-        }
-        AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onOpenWireless)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Wifi,
-                    contentDescription = null,
-                    tint = colors.primary
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.AdminPanelSettings, "管理权", "密码 · SSH · 密钥",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenAdmin
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "无线设置",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.onSurface
-                    )
-                    Text(
-                        "SSID、密码、信道与开关，应用后重载无线",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant
+                ToolTile(
+                    Icons.Filled.Lightbulb, "LED 配置", "触发器 · 闪烁",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenLed
                 )
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.AltRoute, "路由表", "邻居 · 路由 · 规则",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenRoutes
+                )
+                ToolTile(
+                    Icons.Filled.Security, "防火墙", "nftables · iptables",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFirewall
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Description, "日志", "系统日志 · 内核日志",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenLogs
+                )
+                ToolTile(
+                    Icons.Filled.Memory, "系统进程", "进程 · 挂起 · 终止",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenProcesses
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Backup, "备份与更新", "备份 · 恢复 · 刷机",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenFlash
+                )
+                ToolTile(
+                    Icons.Filled.PlayCircle, "启动项", "开机自启 · rc.local",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenStartup
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Schedule, "计划任务", "crontab 定时",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenCrontab
+                )
+                ToolTile(
+                    Icons.Filled.SettingsEthernet, "网络接口", "协议 · 地址 · 网关",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenNetworkInterfaces
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ToolTile(
+                    Icons.Filled.Speed, "实时监控", "负载 · 流量 · 连接",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenRealtime
+                )
+                ToolTile(
+                    Icons.Filled.WifiTethering, "信道分析", "信道占用 · 邻近网络",
+                    Modifier.weight(1f).fillMaxHeight(), onOpenChannelAnalysis
+                )
+            }
+        } else {
+            ToolEntryCard(
+                Icons.Filled.Folder, "文件管理",
+                "浏览路由器文件，支持查看、上传、下载、重命名与删除", onOpenFileManager
+            )
+            ToolEntryCard(
+                Icons.Filled.Inventory2, "软件包",
+                "已安装/可用软件包，支持安装、删除、升级与更新列表", onOpenPackageManager
+            )
+            ToolEntryCard(
+                Icons.Filled.Wifi, "无线设置",
+                "SSID、密码、信道与开关，应用后重载无线", onOpenWireless
+            )
+            ToolEntryCard(
+                Icons.Filled.Settings, "系统管理",
+                "主机名、时区、日志、NTP 与 ZRam，保存后自动应用", onOpenSystem
+            )
+            ToolEntryCard(
+                Icons.Filled.AdminPanelSettings, "管理权",
+                "路由器密码、SSH 访问、SSH 密钥、HTTP(S) 访问与仓库公钥", onOpenAdmin
+            )
+            ToolEntryCard(
+                Icons.Filled.Lightbulb, "LED 配置",
+                "自定义设备 LED 的触发行为，支持常亮、闪烁、心跳与网络活动", onOpenLed
+            )
+            ToolEntryCard(
+                Icons.Filled.AltRoute, "路由表",
+                "当前生效的邻居表、活动路由与路由策略规则", onOpenRoutes
+            )
+            ToolEntryCard(
+                Icons.Filled.Security, "防火墙",
+                "nftables 规则集与旧版 iptables 规则概况", onOpenFirewall
+            )
+            ToolEntryCard(
+                Icons.Filled.Description, "日志",
+                "系统日志（logread）与内核日志（dmesg），支持复制", onOpenLogs
+            )
+            ToolEntryCard(
+                Icons.Filled.Memory, "系统进程",
+                "运行中的系统进程，支持挂起、关闭与强制关闭", onOpenProcesses
+            )
+            ToolEntryCard(
+                Icons.Filled.PlayCircle, "启动项",
+                "启停/启禁 init 脚本与本地启动脚本编辑", onOpenStartup
+            )
+            ToolEntryCard(
+                Icons.Filled.Schedule, "计划任务",
+                "系统 crontab 定时任务编辑，保存后重载 cron", onOpenCrontab
+            )
+            ToolEntryCard(
+                Icons.Filled.SettingsEthernet, "网络接口",
+                "逻辑接口的协议、地址、网关与在线时长", onOpenNetworkInterfaces
+            )
+            ToolEntryCard(
+                Icons.Filled.Speed, "实时监控",
+                "负载、流量、连接数与无线信号的实时曲线", onOpenRealtime
+            )
+            ToolEntryCard(
+                Icons.Filled.WifiTethering, "信道分析",
+                "邻近网络信道占用与信号强度分布", onOpenChannelAnalysis
+            )
+            ToolEntryCard(
+                Icons.Filled.Backup, "备份与更新",
+                "配置备份、出厂重置、恢复配置与固件刷写", onOpenFlash
+            )
         }
+    }
+}
+
+/** 列表卡片排版（默认）：与历史版本完全一致的整卡入口。 */
+@Composable
+private fun ToolEntryCard(icon: ImageVector, title: String, desc: String, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    AppCard(modifier = Modifier.clip(AppShapes.card).clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.primary
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
+                Text(
+                    desc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** 两列磁贴：大图标 + 名称 + 短语；[onClick] 为空时不可点。 */
+@Composable
+private fun ToolTile(
+    icon: ImageVector,
+    title: String,
+    tagline: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val colors = LocalAppColors.current
+    AppCard(
+        modifier = modifier.clip(AppShapes.card).clickable(enabled = onClick != null) { onClick?.invoke() },
+        contentPadding = 16.dp
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = colors.primary,
+            modifier = Modifier.size(30.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Text(
+            tagline,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurfaceVariant
+        )
     }
 }
 
@@ -155,7 +352,7 @@ fun DetailScreen(
     viewModel: com.mmckb.openwrtstatus.ui.RouterViewModel,
     modifier: Modifier = Modifier
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     when (val s = state) {
         is com.mmckb.openwrtstatus.data.model.StatusUiState.Success ->
             DetailContent(s.data, viewModel, modifier)
@@ -190,8 +387,16 @@ private fun DetailContent(
     viewModel: com.mmckb.openwrtstatus.ui.RouterViewModel,
     modifier: Modifier = Modifier
 ) {
-    val leases by viewModel.leases.collectAsState()
-    val leaseError by viewModel.leaseError.collectAsState()
+    val leases by viewModel.leases.collectAsStateWithLifecycle()
+    val leaseError by viewModel.leaseError.collectAsStateWithLifecycle()
+    val temperatureC by viewModel.temperatureC.collectAsStateWithLifecycle()
+    val diagUnlocked by viewModel.hiddenDiagUnlocked.collectAsStateWithLifecycle()
+    val hiddenDiag by viewModel.hiddenDiag.collectAsStateWithLifecycle()
+
+    // 解锁后进入设备页时读取一次扩展信息（端口状态/存储挂载）
+    LaunchedEffect(diagUnlocked) {
+        if (diagUnlocked) viewModel.refreshHiddenDiag()
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -203,7 +408,8 @@ private fun DetailContent(
             bottom = 96.dp
         )
     ) {
-        item { SystemCard(data) }
+        item { SystemCard(data, temperatureC) }
+        if (diagUnlocked) item { HiddenDiagCard(data, hiddenDiag) }
         if (data.interfaceDetails.isNotEmpty()) item { InterfaceCard(data.interfaceDetails) }
         if (data.wireless.isNotEmpty()) item { WirelessCard(data.wireless) }
         item { LeaseCard(leases, leaseError) }
@@ -211,7 +417,10 @@ private fun DetailContent(
 }
 
 @Composable
-private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
+private fun SystemCard(
+    data: com.mmckb.openwrtstatus.data.model.DashboardData,
+    temperatureC: Double?
+) {
     val colors = LocalAppColors.current
     AppCard {
         CardSectionTitle("系统信息")
@@ -236,6 +445,10 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
                 data.loadAverage.take(3).joinToString(" / ") { String.format(java.util.Locale.US, "%.2f", it) }
             )
         }
+        DetailRow(
+            "温度",
+            temperatureC?.let { String.format(java.util.Locale.US, "%.1f °C", it) } ?: "未获取"
+        )
         if (data.warnings.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -243,6 +456,99 @@ private fun SystemCard(data: com.mmckb.openwrtstatus.data.model.DashboardData) {
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )
+        }
+    }
+}
+
+/**
+ * 隐藏的设备扩展信息卡（关于页图标连点 7 次解锁）：内存、存储挂载点与端口状态。
+ */
+@Composable
+private fun HiddenDiagCard(
+    data: com.mmckb.openwrtstatus.data.model.DashboardData,
+    diag: com.mmckb.openwrtstatus.data.model.HiddenDiagData?
+) {
+    val colors = LocalAppColors.current
+    AppCard {
+        CardSectionTitle("扩展信息")
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            "内存",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        val memTotal = data.memoryTotalBytes
+        val memUsed = (memTotal - data.memoryAvailableBytes).coerceAtLeast(0L)
+        DetailRow(
+            "已用 / 总量",
+            formatBytes(memUsed) + " / " + formatBytes(memTotal)
+        )
+        if (memTotal > 0) {
+            LinearProgressIndicator(
+                progress = { (memUsed.toFloat() / memTotal).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "存储",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        val mounts = diag?.mounts.orEmpty()
+        if (mounts.isEmpty()) {
+            DetailRow("存储", "未获取（请确认设备已开启 SSH）")
+        } else {
+            mounts.forEach { m ->
+                val pct = if (m.totalKB > 0) (m.usedKB * 100 / m.totalKB).coerceIn(0, 100) else 0L
+                DetailRow(
+                    m.mount,
+                    formatBytes(m.usedKB * 1024) + " / " + formatBytes(m.totalKB * 1024) +
+                        "（" + pct + "%）"
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "端口状态",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.onSurface
+        )
+        Spacer(Modifier.height(4.dp))
+        val ports = diag?.ports.orEmpty()
+        if (ports.isEmpty()) {
+            DetailRow("端口", "未获取（请确认设备已开启 SSH）")
+        } else {
+            ports.forEach { p ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        p.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        p.speedMbps?.let { it.toString() + " Mbps" } ?: "—",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        if (p.up) "已连接" else "未连接",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (p.up) colors.success else colors.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
         }
     }
 }

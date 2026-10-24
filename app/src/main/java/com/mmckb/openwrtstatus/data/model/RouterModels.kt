@@ -6,6 +6,10 @@ package com.mmckb.openwrtstatus.data.model
  * The router is reached over the rpcd ubus endpoint (`http(s)://host:port/ubus`).
  * Multiple [RouterConfig] entries are kept in the device list; `id` is the stable key
  * used for selection and `name` is the user-facing label (falls back to the address).
+ *
+ * 刻意**不实现 `Serializable`/`Parcelable`**：这个对象带着明文凭据，一旦可序列化就
+ * 容易被塞进 Intent/Bundle，凭据会经 Binder 落到 system_server。二级页改为只收设备 id
+ * 并按 id 从本地读取（见 `ui/DeviceHandoff.kt`）。
  */
 data class RouterConfig(
     val id: String = "",
@@ -24,7 +28,7 @@ data class RouterConfig(
     val sshPort: Int = 22,
     val sshUsername: String = "root",
     val sshPassword: String = ""
-) : java.io.Serializable {
+) {
     /** Label shown in device lists. */
     val displayName: String get() = name.ifBlank { ip }
 }
@@ -38,6 +42,21 @@ data class SshConfig(
     val username: String,
     val password: String
 )
+
+/**
+ * 从设备配置派生 SSH 连接参数（此前同样的四行构造在 18 个文件重复了 21 处）：
+ * SSH 主机为空时回落到 LuCI 地址，其余字段同名义透传。
+ */
+fun RouterConfig.toSshConfig(): SshConfig = SshConfig(
+    host = sshHost.ifBlank { ip },
+    port = sshPort,
+    username = sshUsername,
+    password = sshPassword
+)
+
+/** 未开启 SSH 时返回 null（调用侧的 `if (sshEnabled) … else null` 收敛于此）。 */
+fun RouterConfig.toSshConfigOrNull(sshEnabled: Boolean): SshConfig? =
+    if (sshEnabled) toSshConfig() else null
 
 /**
  * A logical network interface reported by `network.interface dump`.
@@ -127,6 +146,31 @@ data class RouterStatus(
     val tmpTotalBytes: Long = 0L,
     val tmpFreeBytes: Long = 0L,
     val warnings: List<String> = emptyList()
+)
+
+/** 端口状态（来自 /sys/class/net，lo 除外）。 */
+data class PortStatus(
+    val name: String,
+    val up: Boolean,
+    val speedMbps: Int? = null
+)
+
+/** 存储挂载点（df -k 行）。 */
+data class StorageMount(
+    val fs: String,
+    val mount: String,
+    val totalKB: Long,
+    val usedKB: Long,
+    val availKB: Long
+)
+
+/**
+ * 隐藏区（关于页图标连点 7 次解锁）的扩展信息：端口状态 + 存储挂载点；
+ * 内存信息直接复用 [DashboardData] 的字段。
+ */
+data class HiddenDiagData(
+    val ports: List<PortStatus> = emptyList(),
+    val mounts: List<StorageMount> = emptyList()
 )
 
 /**

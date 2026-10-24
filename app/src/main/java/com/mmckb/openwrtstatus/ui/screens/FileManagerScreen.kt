@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -103,6 +104,7 @@ import com.mmckb.openwrtstatus.data.ssh.SshCancelledException
 import com.mmckb.openwrtstatus.data.ssh.SshFileException
 import com.mmckb.openwrtstatus.data.ssh.SshFiles
 import com.mmckb.openwrtstatus.ui.components.AppBackButton
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.AppDialog
 import com.mmckb.openwrtstatus.ui.components.PredictiveBackEasing
 import com.mmckb.openwrtstatus.ui.components.ThinScrollbarColumn
@@ -774,12 +776,22 @@ fun FileManagerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
-                .padding(top = 2.dp, bottom = 12.dp)
+                .padding(top = 2.dp, bottom = 0.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppBackButton(onBack = onBack)
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "文件管理",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(
                     onClick = {
                         selectionMode = !selectionMode
@@ -791,14 +803,7 @@ fun FileManagerScreen(
                     onClick = { uploadLauncher.launch(arrayOf("*/*")) },
                     enabled = !busy
                 ) { Text("上传") }
-            }
-            Text(
-                "文件管理",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
-            // Breadcrumb: every segment is a tap target back up the tree; pencil jumps to a path.
+            }            // Breadcrumb: every segment is a tap target back up the tree; pencil jumps to a path.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -1062,6 +1067,8 @@ fun FileManagerScreen(
                             }
                             HorizontalDivider(color = colors.outline)
                         }
+                        // 背景延伸到手势条区域，最后一行垫在 inset 之上
+                        item { Spacer(Modifier.navigationBarsPadding()) }
                     }
                 }
                 else -> {
@@ -1151,6 +1158,8 @@ fun FileManagerScreen(
                                     )
                                     HorizontalDivider(color = colors.outline)
                                 }
+                                // 背景延伸到手势条区域，最后一行垫在 inset 之上
+                                item { Spacer(Modifier.navigationBarsPadding()) }
                             }
                         }
                     }
@@ -1300,7 +1309,13 @@ fun FileManagerScreen(
         val fraction = if (t.total > 0) (t.sent.toFloat() / t.total).coerceIn(0f, 1f) else 0f
         Dialog(
             onDismissRequest = {},
-            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+            // 边到边（同 AppDialog）：不加 decorFitsSystemWindows=false 时，
+            // 弹窗期间顶部状态栏与底部手势区会变成不透明色块。
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                decorFitsSystemWindows = false
+            )
         ) {
             Surface(
                 shape = AppShapes.card,
@@ -1495,7 +1510,7 @@ fun FileManagerScreen(
             },
             onDismiss = { renameTarget = null }
         ) {
-            OutlinedTextField(
+            AppTextField(
                 value = renameText,
                 onValueChange = { renameText = it },
                 singleLine = true,
@@ -1527,7 +1542,7 @@ fun FileManagerScreen(
             },
             onDismiss = { newFolderDialog = false }
         ) {
-            OutlinedTextField(
+            AppTextField(
                 value = folderText,
                 onValueChange = { folderText = it },
                 singleLine = true,
@@ -1593,7 +1608,7 @@ fun FileManagerScreen(
                     color = colors.onSurfaceVariant
                 )
             }
-            OutlinedTextField(
+            AppTextField(
                 value = permsText,
                 onValueChange = { permsText = it.filter { c -> c.isDigit() }.take(4) },
                 singleLine = true,
@@ -1602,7 +1617,7 @@ fun FileManagerScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
+            AppTextField(
                 value = ownerText,
                 onValueChange = { ownerText = it },
                 singleLine = true,
@@ -1644,7 +1659,7 @@ fun FileManagerScreen(
             },
             onDismiss = { mtimeTarget = null }
         ) {
-            OutlinedTextField(
+            AppTextField(
                 value = mtimeText,
                 onValueChange = {
                     mtimeText = it

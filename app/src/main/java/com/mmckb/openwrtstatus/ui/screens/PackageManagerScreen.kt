@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -41,7 +43,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
+import com.mmckb.openwrtstatus.ui.components.AppSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -163,7 +165,10 @@ fun PackageManagerScreen(
         storageLoading = true
         setMsg(null, false)
         scope.launch {
-            launch {
+            // 记录包管理器类型：上传安装的临时文件必须与后端一致（.ipk / .apk）。
+            // 此前恒为 null，opkg 设备上传的包被存成 /tmp/upload.apk，安装与清理错位。
+            backend = withContext(Dispatchers.IO) { client.backend(ssh) }
+            val installedJob = launch {
                 try {
                     installed = client.listInstalled(ssh)
                 } catch (e: Exception) {
@@ -191,6 +196,8 @@ fun PackageManagerScreen(
             }
             try {
                 val raw = client.listAvailable(ssh, emptySet())
+                // 可用列表的"已安装"标记依赖已安装结果：先等它就绪，避免竞态
+                installedJob.join()
                 val names = installed.orEmpty().map { it.name }.toSet()
                 available = raw.map { it.copy(installed = names.contains(it.name)) }
             } catch (e: Exception) {
@@ -288,12 +295,14 @@ fun PackageManagerScreen(
             scope.launch {
                 busy = true
                 message = null
+                // 上传与安装必须是同一个文件：opkg 装 .ipk，apk 装 .apk
+                val uploadPath = if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH
                 try {
                     val bytes = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                             ?: throw SshFileException("无法读取所选文件。")
                     }
-                    withContext(Dispatchers.IO) { SshFiles.upload(ssh, UPLOAD_TMP_PATH, bytes) }
+                    withContext(Dispatchers.IO) { SshFiles.upload(ssh, uploadPath, bytes) }
                     busy = false
                     opRunning = true
                     opDialogHidden = false
@@ -301,7 +310,7 @@ fun PackageManagerScreen(
                     reloadOnOpClose = true
                     opInfo = "上传安装"
                     val result = withContext(Dispatchers.IO) {
-                        client.install(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH)
+                        client.install(ssh, uploadPath, allowUntrusted = true)
                     }
                     opRunning = false
                     opResult = result
@@ -315,7 +324,7 @@ fun PackageManagerScreen(
                     reloadOnOpClose = false
                 } finally {
                     runCatching {
-                        withContext(Dispatchers.IO) { SshFiles.delete(ssh, if (backend == "opkg") "/tmp/upload.ipk" else UPLOAD_TMP_PATH, isDir = false) }
+                        withContext(Dispatchers.IO) { SshFiles.delete(ssh, uploadPath, isDir = false) }
                     }
                     busy = false
                     opRunning = false
@@ -345,12 +354,22 @@ fun PackageManagerScreen(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .imePadding()
             .padding(horizontal = 16.dp)
-            .padding(top = 2.dp, bottom = 12.dp)
+            .padding(top = 2.dp, bottom = 0.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "软件包",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
             TextButton(
                 onClick = { runOp("update", emptyList(), "更新列表") },
                 enabled = !busy && sshEnabled
@@ -379,12 +398,6 @@ fun PackageManagerScreen(
             ) { Text("软件源") }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "软件包",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface
-            )
             Spacer(Modifier.weight(1f))
             // 标题右侧的状态胶囊：运行中（主色+转圈）→ 成功（绿色+打勾动画）/
             // 失败（红色+打叉动画）。颜色与内容切换均带过渡，停留约 1.8 秒后
@@ -635,6 +648,8 @@ fun PackageManagerScreen(
                         onUpgrade = { runOp("upgrade", listOf(pkg.name), "升级") }
                     )
                 }
+                // 背景延伸到手势条区域，最后一行垫在 inset 之上
+                item { Spacer(Modifier.navigationBarsPadding().height(6.dp)) }
             }
         }
     }
@@ -797,13 +812,13 @@ fun PackageManagerScreen(
                                     color = colors.onSurfaceVariant
                                 )
                             }
-                            Switch(
+                            AppSwitch(
                                 checked = repo.enabled,
                                 onCheckedChange = { enabled ->
                                     // 至少启用一个仓库：关掉最后一个启用项时阻止并提示。
                                     if (!enabled && sources.orEmpty().count { it.enabled } <= 1) {
                                         sourcesError = "至少启用一个软件包仓库。"
-                                        return@Switch
+                                        return@AppSwitch
                                     }
                                     sourcesError = null
                                     sources = sources.orEmpty().mapIndexed { i, r ->

@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mmckb.openwrtstatus.data.ssh.SshTerminal
 import com.mmckb.openwrtstatus.ui.RouterViewModel
 import com.mmckb.openwrtstatus.ui.theme.AppShapes
+import com.mmckb.openwrtstatus.ui.components.AppTextField
 import com.mmckb.openwrtstatus.ui.components.rememberTopBarPadding
 import com.mmckb.openwrtstatus.ui.theme.LocalAppColors
 
@@ -56,10 +56,12 @@ fun TerminalScreen(
     viewModel: RouterViewModel,
     hideOutput: Boolean = false,
     bottomSpacer: androidx.compose.ui.unit.Dp = 76.dp,
+    inlineInput: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.terminal.state.collectAsStateWithLifecycle()
     val output by viewModel.terminal.output.collectAsStateWithLifecycle()
+    val inlineInput by viewModel.terminalInlineInput.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
     var input by remember { mutableStateOf("") }
     val colors = LocalAppColors.current
@@ -75,7 +77,7 @@ fun TerminalScreen(
             .imePadding()
             .padding(horizontal = 16.dp)
             .padding(top = rememberTopBarPadding())
-            .padding(bottom = 12.dp),
+            .padding(bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         if (state is SshTerminal.State.Failed) {
@@ -96,50 +98,88 @@ fun TerminalScreen(
                     .background(Color.Black, AppShapes.card)
                     .padding(14.dp)
             ) {
-                Text(
-                    text = output.ifEmpty { "未连接。点击右上角「连接」开始 SSH 会话。" },
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
-                    color = Color(0xFFE6E8EB),
-                    modifier = Modifier.verticalScroll(scrollState)
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                ) {
+                    Text(
+                        text = output.ifEmpty { "未连接。点击右上角「连接」开始 SSH 会话。" },
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = Color(0xFFE6E8EB)
+                    )
+                    if (inlineInput) {
+                        // 模仿电脑终端：输出区底部内联提示符输入行（无独立输入框/发送键）
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "❯ ",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                color = Color(0xFF7EE787)
+                            )
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = input,
+                                onValueChange = { v ->
+                                    // 输入法回车会产生换行：剥掉并作为回车发送命令
+                                    if (v.contains('\n')) {
+                                        val cmd = v.replace("\n", "")
+                                        if (cmd.isNotBlank()) viewModel.sendCommand(cmd)
+                                        input = ""
+                                    } else {
+                                        input = v
+                                    }
+                                },
+                                singleLine = false,
+                                textStyle = LocalTextStyle.current.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFE6E8EB)
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF7EE787)),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
             }
         } else {
             Spacer(Modifier.weight(1f))
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 输入框与发送按钮同高同圆角。
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(52.dp),
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                placeholder = {
-                    Text("输入命令后回车", style = MaterialTheme.typography.bodySmall)
-                },
-                textStyle = LocalTextStyle.current.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp
+        if (!inlineInput) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 输入框与发送按钮同高；圆角统一为卡片圆角。
+                AppTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    singleLine = true,
+                    placeholder = {
+                        Text("输入命令后回车", style = MaterialTheme.typography.bodySmall)
+                    },
+                    textStyle = LocalTextStyle.current.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp
+                    )
                 )
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    if (input.isNotBlank()) {
-                        viewModel.sendCommand(input.trim())
-                        input = ""
-                    }
-                },
-                enabled = connected,
-                shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
-                modifier = Modifier.height(52.dp)
-            ) { Text("发送") }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        if (input.isNotBlank()) {
+                            viewModel.sendCommand(input.trim())
+                            input = ""
+                        }
+                    },
+                    enabled = connected,
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+                    modifier = Modifier.height(52.dp)
+                ) { Text("发送") }
+            }
         }
 
         Spacer(Modifier.height(bottomSpacer))
@@ -150,10 +190,12 @@ fun TerminalScreen(
 @Composable
 fun TerminalOutputPane(
     viewModel: RouterViewModel,
+    inlineInput: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val output by viewModel.terminal.output.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
+    var input by remember { mutableStateOf("") }
 
     LaunchedEffect(output) {
         scrollState.animateScrollTo(scrollState.maxValue)
@@ -165,16 +207,54 @@ fun TerminalOutputPane(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        Text(
-            text = output.ifEmpty { "未连接。在左侧点击「连接」开始 SSH 会话。" },
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            color = Color(0xFFE6E8EB),
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
-                .padding(top = 44.dp, start = 14.dp, end = 14.dp, bottom = 14.dp)
-        )
+        ) {
+            Text(
+                text = output.ifEmpty { "未连接。在左侧点击「连接」开始 SSH 会话。" },
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = Color(0xFFE6E8EB),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 44.dp, start = 14.dp, end = 14.dp, bottom = 14.dp)
+            )
+            if (inlineInput) {
+                // 内联提示符输入行（与左侧主终端同款交互）
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 44.dp)
+                ) {
+                    Text(
+                        "❯ ",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        color = Color(0xFF7EE787)
+                    )
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = input,
+                        onValueChange = { v ->
+                            if (v.contains('\n')) {
+                                val cmd = v.replace("\n", "")
+                                if (cmd.isNotBlank()) viewModel.sendCommand(cmd)
+                                input = ""
+                            } else {
+                                input = v
+                            }
+                        },
+                        textStyle = LocalTextStyle.current.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            color = Color(0xFFE6E8EB)
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF7EE787)),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
     }
 }

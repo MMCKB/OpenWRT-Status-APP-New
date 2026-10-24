@@ -8,11 +8,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.mmckb.openwrtstatus.data.local.SettingsStore
 import com.mmckb.openwrtstatus.ui.components.ConnectionToastHost
 import com.mmckb.openwrtstatus.ui.screens.AboutScreen
 import com.mmckb.openwrtstatus.ui.theme.OpenWrtStatusTheme
+import kotlinx.coroutines.launch
 
 /** 关于页（二级页，独立 Activity）：系统返回手势自带 Activity 预测性返回动画。 */
 class AboutActivity : ComponentActivity() {
@@ -30,7 +38,20 @@ class AboutActivity : ComponentActivity() {
         setContent {
             OpenWrtStatusTheme {
                 Box(Modifier.fillMaxSize()) {
-                    AboutScreen(onBack = { finish() })
+                    // 解锁状态读本地（DataStore 异步加载）；解锁时写入并立即生效——
+                    // 主界面在 aboutLauncher 回调里重读，跨 Activity 也能生效
+                    val store = remember { SettingsStore(applicationContext) }
+                    val scope = rememberCoroutineScope()
+                    var unlocked by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { unlocked = store.isHiddenDiagUnlocked() }
+                    AboutScreen(
+                        onBack = { finish() },
+                        hiddenDiagUnlocked = unlocked,
+                        onUnlockHiddenDiag = {
+                            scope.launch { store.saveHiddenDiagUnlocked(true) }
+                            unlocked = true
+                        }
+                    )
                     ConnectionToastHost(Modifier.align(Alignment.CenterEnd))
                 }
             }

@@ -29,12 +29,14 @@
 - 远程行编辑：Tab 补全、shell 历史、`Ctrl+C` 等控制键均可正常使用
 
 ### 设置
-- 只保留一个「关于」入口，内含版本号、GitHub 仓库与开源许可信息
+- 连接状态通知、工具页排版、终端输入方式等开关
+- 「主题设置」入口：深浅色模式（跟随系统 / 浅色 / 深色）与 AMOLED 纯黑（深色模式下背景与卡片压成纯黑），即时生效于全部页面
+- 「关于」入口，内含版本号、GitHub 仓库与开源许可信息
 
 ### 视觉
 - 底部悬浮 Tab 使用 Kyant0 的**液态玻璃**库（`backdrop`）：实时模糊、折射、高光与阴影，
   切换 Tab 有按压/拖拽果冻动效（交互层改编自其官方示例）
-- 扁平卡片 + 描边分层的自定义色板，跟随系统深色模式
+- 扁平卡片 + 描边分层的自定义色板，默认跟随系统深色模式，可在主题设置中覆盖
 
 ### 其他
 - **自动刷新**：按固定间隔（默认 5 秒）自动轮询；支持手动刷新
@@ -88,13 +90,28 @@ POST http://<地址>:<端口>/ubus
 应用默认通过 **HTTP** 明文访问路由器（局域网内常见），在 `AndroidManifest.xml`
 与 `res/xml/network_security_config.xml` 中显式允许明文流量并信任用户证书。
 若路由器使用 HTTPS 且为自签名证书，请在设备编辑页开启「忽略证书校验」。
-账号密码仅保存在本机，不会上传。
+
+设备连接信息仅保存在本机、不会上传，并且**不以明文落盘**：
+
+- 地址、端口、用户名（ubus 与 SSH 两套）以及两套密码，在写入 DataStore 前用
+  **Android Keystore** 中的 AES-256-GCM 密钥加密（密钥不可导出、只存在于该设备的
+  硬件密钥库中），存储形如 `enc:v1:<base64(iv‖ciphertext‖gcmTag)>`。
+  地址与用户名同样能定位到具体路由器，因此与密码一并加密；
+  SSH 主机指纹表也整串加密——它的键就是「地址:端口」；
+- 仅设备标签（用户自取的名字）与几个功能开关保持明文，便于排错；
+- 从旧版本升级时，首次读取会自动把已有的明文字段加密回写，无需用户干预；
+- 凭据也**不会经过 Intent 传递**：二级页只接收设备 id，配置由页面自己从本地读取
+  （见 `ui/DeviceHandoff.kt`），避免明文经 Binder 落在 system_server 的 Intent 记录里；
+- `res/xml/backup_rules.xml` 与 `data_extraction_rules.xml` 已把 DataStore 排除在
+  云备份与设备迁移之外，凭据不会离开设备；
+- 若密钥因系统原因失效，解密会失败并退化为「字段为空」，此时需在设备编辑页重新填写
+  （设备列表本身不受影响）。
 
 ## 本地构建
 
 ### 方式一：Android Studio（推荐）
 1. 用 Android Studio 打开本项目根目录。
-2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 9.7.1`。
+2. 若缺少 Gradle Wrapper，Android Studio 会提示并自动生成；或先执行 `gradle wrapper --gradle-version 9.8.1`。
 3. 点击 **Run** 或执行 `./gradlew :app:assembleDebug`。
 
 ### 方式二：命令行（已安装 Gradle）
@@ -105,9 +122,9 @@ gradle :app:assembleRelease      # 发布包（同一密钥签名）
 APK 产物位于 `app/build/outputs/apk/`。
 
 ### 环境要求
-- JDK 17 及以上（CI 使用 21）
+- JDK 17 及以上（CI 使用 25）
 - Android SDK（Platform android-37.2、Build-Tools 36+）
-- Gradle 9.7.1（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
+- Gradle 9.8.1（CI 中显式安装；需 Gradle 9.x 以配合 AGP 9）
 
 ## 签名
 
@@ -134,22 +151,23 @@ APK 产物位于 `app/build/outputs/apk/`。
 
 推送代码到 `main` / `Dev` 分支，或手动在 **Actions → Build APK → Run workflow**，
 GitHub Actions 会自动：
-1. 配置 JDK 21 与 Android SDK（Platform android-37.2、Build-Tools 36.0.0）；
-2. 安装 Gradle 9.7.1 并构建 `assembleDebug` 与 `assembleRelease`（统一 MMCKB 密钥签名）；
+1. 配置 JDK 25 与 Android SDK（Platform android-37.2、Build-Tools 36.0.0）；
+2. 安装 Gradle 9.8.1 并构建 `assembleDebug` 与 `assembleRelease`（统一 MMCKB 密钥签名）；
 3. 分别上传 `openwrt-status-app-debug` 与 `openwrt-status-app-release` 产物。
 
 ## 技术栈
 
 | 组件 | 版本（Dev 分支） |
 | --- | --- |
-| Kotlin | 2.4.20 |
-| Android Gradle Plugin | 9.4.0（AGP 9 内置 Kotlin 支持） |
-| Gradle | 9.7.1 |
+| Kotlin | 2.4.21 |
+| Android Gradle Plugin | 9.4.1（AGP 9 内置 Kotlin 支持） |
+| Gradle | 9.8.1 |
 | Compose BOM | 2026.09.00（Compose 1.12.1） |
 | compileSdk / targetSdk / minSdk | 37.2 / 37 / 24 |
 | 液态玻璃 | `io.github.kyant0:backdrop:2.0.1` + `shapes:1.2.1` |
-| SSH | `com.github.mwiede:jsch:2.28.7` |
+| SSH | `com.github.mwiede:jsch:2.28.8` |
 | 网络 | `com.squareup.okhttp3:okhttp:5.5.0` |
+| 本地存储 | `androidx.datastore:datastore-preferences:1.2.1`（凭据经 Android Keystore AES-GCM 加密） |
 
 ## 项目结构
 

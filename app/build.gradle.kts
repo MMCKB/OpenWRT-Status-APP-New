@@ -54,7 +54,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = if (hasCustomSigning) {
                 signingConfigs.getByName("mmckb")
             } else {
@@ -115,23 +116,26 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
 
     // Liquid glass / backdrop effects (Kyant0, Apache-2.0, Maven Central)
     implementation("io.github.kyant0:backdrop:2.0.1")
     implementation("io.github.kyant0:shapes:1.2.1")
 
     // SSH remote shell (maintained JSch fork, keeps the com.jcraft.jsch API)
-    implementation("com.github.mwiede:jsch:2.28.7")
+    implementation("com.github.mwiede:jsch:2.28.8")
 
     // WiFi 分享二维码生成（ZXing core，纯 Java 无传递依赖，Apache-2.0）
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
+
+    // 本地设置存储（Jetpack DataStore，替代 SharedPreferences）
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

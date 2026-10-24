@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
@@ -27,6 +28,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +56,12 @@ private const val REPO_URL = "https://github.com/MMCKB/OpenWRT-Status-APP-New"
  * A secondary page: it has its own slim back header instead of the app top bar.
  */
 @Composable
-fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    hiddenDiagUnlocked: Boolean = false,
+    onUnlockHiddenDiag: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
     val colors = LocalAppColors.current
     val context = LocalContext.current
 
@@ -61,13 +71,15 @@ fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
-            .padding(top = 2.dp, bottom = 12.dp),
+            .padding(top = 2.dp, bottom = 0.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppBackButton(onBack = onBack)
         }
         AppCard {
+            // 彩蛋：图标连点 7 次解锁「设备扩展信息」（内存/存储/端口状态）
+            var iconTaps by remember { mutableIntStateOf(0) }
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -78,7 +90,21 @@ fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .size(96.dp)
                         .clip(RoundedCornerShape(22.dp))
-                        .background(colorResource(R.color.ic_launcher_background)),
+                        .background(colorResource(R.color.ic_launcher_background))
+                        .clickable {
+                            if (!hiddenDiagUnlocked) {
+                                iconTaps++
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (iconTaps >= 7) "已解锁：设备扩展信息" else "再点 ${7 - iconTaps} 次解锁隐藏功能",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                                if (iconTaps >= 7) {
+                                    onUnlockHiddenDiag()
+                                    iconTaps = 0
+                                }
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
@@ -153,6 +179,8 @@ fun AboutScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     )
                 }
             }
+            // 本卡为页尾：卡片本体延伸进手势条区域（覆盖手势区），内容垫在 inset 之上
+            Spacer(Modifier.navigationBarsPadding().height(6.dp))
         }
     }
 }
