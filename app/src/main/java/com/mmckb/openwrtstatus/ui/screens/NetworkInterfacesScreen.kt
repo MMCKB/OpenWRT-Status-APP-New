@@ -254,7 +254,6 @@ fun NetworkInterfacesScreen(
                 )
                 }
             }
-            Spacer(Modifier.height(10.dp))
 
             if (loading) {
                 item {
