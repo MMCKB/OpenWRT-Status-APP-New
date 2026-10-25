@@ -23,9 +23,19 @@ import com.mmckb.openwrtstatus.ui.theme.lightAppColors
  *
  * 同时预热主题设置（进程内首次调用同步读 DataStore，后续命中内存），
  * 保证首个 Activity 的首帧就是用户所选主题。
+ *
+ * 系统深浅色切换（uiMode）已由 Manifest 的 configChanges 自处理——Activity 不再
+ * 重建，状态与滚动位置不丢；此处挂配置监听即时重设系统栏与窗口背景（幂等：
+ * 主题模式为固定浅色/深色时重设为同值，「跟随系统」时按新外观换色）。Compose
+ * 侧的换色由 LocalConfiguration 更新驱动（OpenWrtStatusTheme），无需在此处理。
  */
 fun androidx.activity.ComponentActivity.setupEdgeToEdge() {
     ThemePrefs.ensureLoaded(this)
+    applySystemBarsAndBackground()
+    addOnConfigurationChangedListener { applySystemBarsAndBackground() }
+}
+
+private fun androidx.activity.ComponentActivity.applySystemBarsAndBackground() {
     val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
         Configuration.UI_MODE_NIGHT_YES
     val prefs = ThemePrefs.state.value

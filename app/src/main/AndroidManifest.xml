@@ -21,12 +21,19 @@
         android:theme="@style/Theme.OpenWrtStatus"
         tools:targetApi="34">
 
+        <!--
+            uiMode 全局自处理：系统深浅色切换不再销毁重建 Activity（表单/Tab/内联二级页
+            状态不丢），Compose 换色由响应式主题层自动完成，系统栏与窗口背景由
+            setupEdgeToEdge 的配置监听重设（见 Edge.kt）。
+            二级页刻意只声明 uiMode、不声明 orientation：旋转到横屏的 finish() 交接
+            依赖默认重建流程触发，不能自处理。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.OpenWrtStatus"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -37,18 +44,21 @@
             android:name=".AboutActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus" />
 
         <activity
             android:name=".ThemeSettingsActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus" />
 
         <activity
             android:name=".FileManagerActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -56,6 +66,7 @@
             android:name=".PackageManagerActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -63,12 +74,14 @@
             android:name=".WirelessActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus" />
 
         <activity
             android:name=".AdminActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -76,6 +89,7 @@
             android:name=".LedActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -83,6 +97,7 @@
             android:name=".ProcessesActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -90,6 +105,7 @@
             android:name=".RoutesActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -97,6 +113,7 @@
             android:name=".RealtimeActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -104,6 +121,7 @@
             android:name=".ChannelAnalysisActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -111,6 +129,7 @@
             android:name=".NftablesActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -118,6 +137,7 @@
             android:name=".LogsActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -125,6 +145,7 @@
             android:name=".FlashActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -132,6 +153,7 @@
             android:name=".NetworkInterfacesActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -139,6 +161,7 @@
             android:name=".CrontabActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -146,6 +169,7 @@
             android:name=".StartupActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -153,6 +177,7 @@
             android:name=".SystemActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
@@ -160,6 +185,7 @@
             android:name=".DeviceEditActivity"
             android:exported="false"
             android:label="@string/app_name"
+            android:configChanges="uiMode"
             android:theme="@style/Theme.OpenWrtStatus"
             android:windowSoftInputMode="adjustResize" />
 
